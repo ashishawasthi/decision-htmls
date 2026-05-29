@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calculators</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #181b22;
+    --panel-2: #1f232c;
+    --border: #2a2f3a;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --accent: #60a5fa;
+    --api: #60a5fa;
+    --selfhost: #a78bfa;
+    --onprem: #f472b6;
+    --bar: #3b82f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 48px 32px 24px;
+    border-bottom: 1px solid var(--border);
+    max-width: 1100px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  header .eyebrow {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  header h1 {
+    margin: 0 0 10px;
+    font-size: 32px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 15px;
+    max-width: 720px;
+  }
+  main {
+    flex: 1;
+    padding: 32px;
+    max-width: 1100px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 20px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 24px 20px;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    background: var(--accent-color, var(--accent));
+    opacity: 0.85;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent-color, var(--accent));
+    box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  }
+  .card .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent-color, var(--accent));
+    font-weight: 600;
+    margin-bottom: 14px;
+  }
+  .card h2 {
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+  .card .description {
+    color: var(--muted);
+    font-size: 13.5px;
+    margin: 0 0 18px;
+    flex: 1;
+  }
+  .card .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 18px;
+  }
+  .card .meta .tag {
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    background: var(--panel-2);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    letter-spacing: 0.02em;
+  }
+  .card .footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .card .open {
+    color: var(--accent-color, var(--accent));
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .card .arrow {
+    display: inline-block;
+    transition: transform 0.15s ease;
+  }
+  .card:hover .arrow { transform: translateX(3px); }
+
+  .card.cost     { --accent-color: var(--api); }
+  .card.memory   { --accent-color: var(--bar); }
+
+  footer {
+    padding: 24px 32px 32px;
+    max-width: 1100px;
+    margin: 0 auto;
+    width: 100%;
+    color: var(--muted);
+    font-size: 12px;
+    border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Interactive Tools</div>
+  <h1>Calculators</h1>
+  <p>Two companion tools for thinking about AI infrastructure decisions. One answers <em>where</em> to run a workload, the other answers <em>can it fit</em> on a given GPU.</p>
+</header>
+
+<main>
+  <div class="card-grid">
+
+    <a class="card cost" href="agent-infra-cost-calculator.html">
+      <div class="label">Cost &middot; Where to run</div>
+      <h2>Gen AI Deployment Options &amp; Estimates</h2>
+      <p class="description">Compare <b style="color:var(--api)">Vertex AI managed APIs</b> (Gemini, Claude, partner models) vs <b style="color:var(--selfhost)">GCP self-host</b> (open weights on GPU VMs with CUD/spot) vs <b style="color:var(--onprem)">on-premise H100 clusters</b> with Active/Passive DR. Live model catalogs and 3-year cumulative cost view.</p>
+      <div class="meta">
+        <span class="tag">Managed API / Self-host / On-prem</span>
+        <span class="tag">Gemini / Claude / Llama</span>
+        <span class="tag">On-demand / Spot / CUD</span>
+        <span class="tag">BF16 / FP8 / INT4</span>
+      </div>
+      <div class="footer">
+        <span class="open">Open <span class="arrow">&rarr;</span></span>
+      </div>
+    </a>
+
+    <a class="card memory" href="qlora-gemma4-memory-calculator.html">
+      <div class="label">Memory &middot; Can it fit</div>
+      <h2>Gemma 4 Memory Calculator</h2>
+      <p class="description">Pick the memory-saving levers (quantization, LoRA rank, optimizer, batch size, sequence length, checkpointing) and see the estimated peak GPU memory along with which GPUs fit: T4, L4, RTX 4090, A100, H100. Calibrated against empirical OOM events.</p>
+      <div class="meta">
+        <span class="tag">LoRA / Full FT</span>
+        <span class="tag">FP16 / 8-bit / NF4</span>
+        <span class="tag">T4 / L4 / 4090 / A100 / H100</span>
+      </div>
+      <div class="footer">
+        <span class="open">Open <span class="arrow">&rarr;</span></span>
+      </div>
+    </a>
+
+  </div>
+</main>
+
+<footer>
+  Both calculators are self-contained static HTML, with no build and no dependencies. Open either directly in a browser.
+</footer>
+
+</body>
+</html>
