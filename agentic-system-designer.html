@@ -27,7 +27,7 @@
 
   main{display:grid;grid-template-columns:minmax(360px,420px) 1fr;gap:18px;padding:18px 20px;align-items:start}
   section.config{display:flex;flex-direction:column;gap:12px;min-width:0}
-  section.output{display:flex;flex-direction:column;gap:14px;position:sticky;top:12px;min-width:0}
+  section.output{display:flex;flex-direction:column;gap:14px;min-width:0}
 
   .selector{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px}
   .selector .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -39,6 +39,8 @@
   .chip.active{border-color:var(--accent);color:var(--text);background:#1d2b44}
   button.mini{font:inherit;font-size:12px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 9px;cursor:pointer}
   button.mini:hover{border-color:var(--accent)}
+  button.mini.icon{padding:4px 7px;display:inline-flex;align-items:center;color:var(--muted)}
+  button.mini.icon:hover{color:var(--text)}
   .toggle-adv{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px}
 
   fieldset{border:1px solid var(--border);border-radius:8px;background:var(--panel);margin:0;padding:10px 12px 12px}
@@ -59,7 +61,7 @@
 
   .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
   .panel h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
-  #issues-strip{position:sticky;top:0;z-index:5}
+  /* issues panel sits under the diagram (architecture leads) */
   .issue{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-top:1px dashed var(--border);font-size:12.5px}
   .issue:first-of-type{border-top:none}
   .issue .sev{font-size:10px;font-weight:700;border-radius:4px;padding:1px 5px;flex:none}
@@ -114,14 +116,14 @@
 </head>
 <body>
 <header>
-  <h1>Agentic System Designer <span style="color:var(--muted);font-weight:400;font-size:13px">— design &amp; defend a GenAI system on Google Cloud</span></h1>
+  <h1>Agentic System Designer <span style="color:var(--muted);font-weight:400;font-size:13px">— design a GenAI system on Google Cloud</span></h1>
   <div class="sub">Toggle the inputs → the architecture, metrics, and risks recompute live. Deterministic, no LLM. Pricing/heuristics ~May 2026.</div>
 </header>
 
 <div class="banner" id="intro">
   <span class="x" id="introClose">×</span>
   <b>How to read this:</b> left = the decisions (Clarify → Scale → Deep-dive); right = the resulting design, sizing, and what breaks at scale.
-  Boxes marked <b>⊕</b> drill into a detail diagram. Controls that an input <i>forces</i> show a <span style="color:var(--warn)">lock</span>.
+  Boxes marked <b>⊕</b> drill in. On panels, <span class="tag" style="margin:0">blue tags</span> name the <b>driving input</b>, <span class="tag static" style="margin:0">grey</span> = fixed; a control an input forces shows a <span class="lock" style="margin:0">🔒 cause</span> badge.
   <div class="legend">
     <span><i style="background:var(--client)"></i>client</span>
     <span><i style="background:var(--gateway)"></i>gateway</span>
@@ -203,6 +205,8 @@
       <div class="ctl" data-vis="languages"><label>Languages</label><div class="checks" id="languages">
         <label><input type="checkbox" name="languages" value="en">EN</label>
         <label><input type="checkbox" name="languages" value="zh">ZH</label>
+        <label><input type="checkbox" name="languages" value="ja">JA</label>
+        <label><input type="checkbox" name="languages" value="hi">HI</label>
         <label><input type="checkbox" name="languages" value="ms">MS</label>
         <label><input type="checkbox" name="languages" value="ta">TA</label>
       </div></div>
@@ -305,12 +309,12 @@
 
   <!-- RIGHT: output -->
   <section class="output">
-    <div class="panel" id="issues-strip"><h3>Issues &amp; levers <span id="issueCount" class="vis-count"></span></h3><div id="issues"></div></div>
     <div>
       <div class="diagram-head"><h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Architecture</h3>
-        <button class="mini" id="copyMermaid">Copy Mermaid</button></div>
+        <button class="mini icon" id="copyMermaid" title="Copy Mermaid source" aria-label="Copy Mermaid source"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
       <div id="diagram"></div>
     </div>
+    <div class="panel" id="issues-strip"><h3>Issues &amp; levers <span id="issueCount" class="vis-count"></span></h3><div id="issues"></div></div>
     <div class="panel"><h3>Metrics</h3><div class="metrics" id="metrics"></div></div>
     <div class="panel"><h3>Observability</h3><div id="observability"></div></div>
     <div class="panel"><h3>Risk &amp; failure</h3><div id="risk"></div></div>
@@ -408,20 +412,20 @@ function applyPreset(purpose, preset){
 function deriveOverrides(){
   const o=state.overrides, i=state.inputs, locks={};
   const {aud,lvl}=sens(i.audienceSensitivity);
-  const lock=(k,v,reason)=>{o[k]=v;locks[k]=reason;};
+  const lock=(k,v,reason,cause)=>{o[k]=v;locks[k]={reason,cause};};
   // compliance / privacy locks
-  if(lvl>=2){ lock('gateway',true,'Regulated+ → gateway required'); lock('auditLog',true,'Regulated+ → immutable audit log'); }
-  if(lvl>=3){ lock('sandbox',true,'Strict-PII → transient sandbox'); lock('residencyPin',true,'Strict-PII → region pin + VPC-SC'); }
-  if(aud!=='internal'){ lock('guardrails',true,'External/public → safety guardrails'); }
+  if(lvl>=2){ lock('gateway',true,'Regulated+ → gateway required','regulated'); lock('auditLog',true,'Regulated+ → immutable audit log','regulated'); }
+  if(lvl>=3){ lock('sandbox',true,'Strict-PII → transient sandbox','strict-PII'); lock('residencyPin',true,'Strict-PII → region pin + VPC-SC','strict-PII'); }
+  if(aud!=='internal'){ lock('guardrails',true,'External/public → safety guardrails', aud==='public'?'public':'external'); }
   // performance locks
-  if(i.latencyPreset==='subsecond'){ lock('pattern','single','Sub-second → single-agent path'); lock('retrieval', o.retrieval==='rerank'?'hybrid':o.retrieval,'Sub-second → drop reranker'); }
+  if(i.latencyPreset==='subsecond'){ lock('pattern','single','Sub-second → single-agent path','sub-second'); lock('retrieval', o.retrieval==='rerank'?'hybrid':o.retrieval,'Sub-second → drop reranker','sub-second'); }
   // scale locks
   const heavyCorpus = (i.corpusSize||0) >= 5e6;
-  if(heavyCorpus && i.dataSources.includes('doc_corpus')){ lock('ingestionSep',true,'Large corpus → separate ingestion'); }
+  if(heavyCorpus && i.dataSources.includes('doc_corpus')){ lock('ingestionSep',true,'Large corpus → separate ingestion','large corpus'); }
   // governance
-  if(state.purpose==='automation'){ lock('hitlApproval', o.hitlApproval==='none'?'maker_checker':o.hitlApproval,'Automation merge → human approval'); }
+  if(state.purpose==='automation'){ lock('hitlApproval', o.hitlApproval==='none'?'maker_checker':o.hitlApproval,'Automation merge → human approval','automation'); }
   // topology
-  if(o.deployment==='onprem' && o.vectorDB==='vertex'){ lock('vectorDB','elastic','On-prem → self-hosted vector DB'); }
+  if(o.deployment==='onprem' && o.vectorDB==='vertex'){ lock('vectorDB','elastic','On-prem → self-hosted vector DB','on-prem'); }
   state.locks=locks;
 }
 
@@ -496,6 +500,10 @@ function runLinter(m){
 }
 
 /* ===================== Diagram ===================== */
+const SRC_LABEL={bigquery:'BigQuery',onprem:'On-prem',vector:'Vector',stream:'Stream',kg:'KG',web:'Web',doc_corpus:'Corpus'};
+const AGENT_ROLES={assistant:['Q&A','summarize','draft','policy','compare','extract','plan','translate'],automation:['code-gen','review','test','docs','migrate','plan']};
+const roleList=(p,n)=>{const r=AGENT_ROLES[p];return n<=r.length?r.slice(0,n).join(' · '):r.join(' · ')+` +${n-r.length}`;};
+const srcList=arr=>arr.map(s=>SRC_LABEL[s]||s).join(' · ');
 const DRILLABLE={gateway:'LLM Gateway',ingestion:'Ingestion',funnel:'Retrieval',sandbox:'Sandbox'};
 function buildMainDiagram(){
   const i=state.inputs,o=state.overrides; const L=[]; L.push('flowchart TD');
@@ -505,14 +513,14 @@ function buildMainDiagram(){
     L.push(node('Client','Client UI','client'));
     let head='Client';
     if(o.gateway){ L.push(node('GW','LLM Gateway ⊕','gateway')); L.push('Client --> GW'); head='GW'; }
-    L.push(node('Orch', o.pattern==='multi'?`Orchestrator<br/>(${o.numAgents} agents)`:'Orchestrator','orch'));
+    L.push(node('Orch', o.pattern==='multi'?`Orchestrator<br/>${roleList('assistant',o.numAgents)}`:'Orchestrator<br/>single agent','orch'));
     if(o.guardrails){ L.push(node('Guard','Safety guardrails','gov')); L.push(`${head} --> Guard`); L.push('Guard --> Orch'); }
     else { L.push(`${head} --> Orch`); }
     if(['hybrid','dense','rerank'].includes(o.retrieval)){ L.push(node('Retr','Retrieval funnel ⊕','retr')); L.push('Orch --> Retr'); }
     if(o.sandbox){ L.push(node('Sand','Transient sandbox ⊕','gov')); L.push('Orch --> Sand'); }
     L.push(node('LLM','Model(s)','orch')); L.push('Orch --> LLM');
     // data layer (grouped)
-    if(i.dataSources.length){ L.push(node('Data',`Data layer<br/>(${i.dataSources.length} sources)`,'data')); L.push('Retr --> Data'); }
+    if(i.dataSources.length){ L.push(node('Data',`Data layer<br/>${srcList(i.dataSources)}`,'data')); L.push((['hybrid','dense','rerank'].includes(o.retrieval)?'Retr':'Orch')+' --> Data'); }
     if(o.ingestionSep){ L.push(node('Ingest','Ingestion ⊕','data')); L.push('Ingest --> Data'); }
     L.push(node('Obs','Observability','obs')); L.push('Orch --> Obs');
     if(o.hitlApproval!=='none'){ L.push(node('Appr','Approval gate','gov')); L.push('LLM --> Appr'); }
@@ -521,7 +529,7 @@ function buildMainDiagram(){
     L.push(node('Trig','Trigger (ticket/event)','client'));
     L.push(node('Req','Requirement agent','orch')); L.push('Trig --> Req');
     L.push(node('Plan','Planner','orch')); L.push('Req --> Plan');
-    L.push(node('Exec',`Executor pool<br/>(${o.numAgents})`,'orch')); L.push('Plan --> Exec');
+    L.push(node('Exec',`Executor pool<br/>${roleList('automation',o.numAgents)}`,'orch')); L.push('Plan --> Exec');
     L.push(node('QG','Quality gate','retr')); L.push('Exec --> QG');
     if(o.hitlApproval!=='none'){ L.push(node('Appr','Human approval','gov')); L.push('QG --> Appr'); }
     L.push(node('State','State store (Spanner)','data')); L.push('Exec --> State');
@@ -563,13 +571,13 @@ function applyControlStates(){
   // locks + warn marks
   const issues=lastIssues||[];
   $$('.ctl[data-ov]').forEach(el=>{
-    const k=el.dataset.ov; const reason=state.locks[k];
-    el.classList.toggle('locked',!!reason);
+    const k=el.dataset.ov; const lockInfo=state.locks[k];
+    el.classList.toggle('locked',!!lockInfo);
     const ctrl=el.querySelector('[data-bind]');
-    if(ctrl){ ctrl.disabled=!!reason; }
+    if(ctrl){ ctrl.disabled=!!lockInfo; }
     let lk=el.querySelector('.lock');
-    if(reason && !lk){ lk=document.createElement('span'); lk.className='lock'; lk.textContent='locked'; el.querySelector('label').appendChild(lk); }
-    if(reason && lk){ lk.title=reason; } if(!reason && lk) lk.remove();
+    if(lockInfo && !lk){ lk=document.createElement('span'); lk.className='lock'; el.querySelector('label').appendChild(lk); }
+    if(lockInfo && lk){ lk.textContent='🔒 '+lockInfo.cause; lk.title='Locked: '+lockInfo.reason; } if(!lockInfo && lk) lk.remove();
     let wm=el.querySelector('.warnmark'); const hasIssue=issues.some(x=>x.src===k);
     if(hasIssue && !wm){ wm=document.createElement('span'); wm.className='warnmark'; wm.textContent='⚠'; wm.title='See issues & levers'; el.querySelector('label').appendChild(wm); }
     if(!hasIssue && wm) wm.remove();
@@ -628,6 +636,7 @@ function metricCards(m){
   cards.push(card('Storage / mo', money(m.storageMo), 'index + logs (illustrative)'));
   return cards.join('');
 }
+function driverTags(drv){ return drv ? drv.map(d=>`<span class="tag" title="driven by ${d}">${d}</span>`).join(' ') : '<span class="tag static" title="same for every config">fixed</span>'; }
 function obsHtml(m){
   const i=state.inputs,o=state.overrides;
   const path = state.purpose==='assistant'
@@ -635,32 +644,34 @@ function obsHtml(m){
     : ['trigger','planner','executor','quality-gate'];
   const crit = state.purpose==='assistant'?'faithfulness + citation accuracy':'PR-success + rework rounds';
   const slo = i.latencyPreset==='subsecond'?'p95 < 1s':(i.latencyPreset==='minutes'?'per-run < N min':'p95 < 2s start / 6s full');
+  const comps=[o.gateway&&'gateway',(o.retrieval==='rerank')&&'rerank',o.sandbox&&'sandbox'].filter(Boolean);
   const rows=[
-    ['Live trace', path.join(' → '),'dynamic'],
-    ['Eval', `Vertex Eval on 5% async sample — ${crit}; drift > 2σ`,'dynamic'],
-    ['SLO', slo,'dynamic'],
-    o.feedbackLoop?['Feedback','thumbs + reason → eval store','dynamic']:null,
-    ['Always-on','Cloud Trace + Logging (redacted) + OpenTelemetry','static'],
+    ['Live trace', path.join(' → '), comps.length?comps:['components']],
+    ['Eval', `Vertex Eval on 5% async sample — ${crit}; drift > 2σ`, ['purpose']],
+    ['SLO', slo, ['latency']],
+    o.feedbackLoop?['Feedback','thumbs + reason → eval store', ['feedback loop']]:null,
+    ['Always-on','Cloud Trace + Logging (redacted) + OpenTelemetry', null],
   ].filter(Boolean);
-  return rows.map(([k,v,t])=>`<div class="obs-row"><b>${k}</b> <span class="tag ${t==='static'?'static':''}">${t}</span><br>${v}</div>`).join('');
+  return rows.map(([k,v,drv])=>`<div class="obs-row"><b>${k}</b> ${driverTags(drv)}<br>${v}</div>`).join('');
 }
 function riskHtml(m){
   const o=state.overrides,i=state.inputs;
   // dynamic bottleneck
-  let bottleneck='LLM provider quota';
-  if((i.corpusSize||0)*K.chunksPerDoc>1e8) bottleneck='vector index (shard by line × region)';
-  else if(o.retrieval==='rerank' && m.volPeak>10) bottleneck='reranker latency (cascade small→medium)';
-  else if(o.stateStore.includes('spanner') && m.volPeak>50) bottleneck='Spanner write path (partition by key)';
-  else if(o.gateway && m.volPeak>20) bottleneck='gateway shard (per-region quota)';
+  let bottleneck='LLM provider quota', bdrv=['volume'];
+  if((i.corpusSize||0)*K.chunksPerDoc>1e8){ bottleneck='vector index (shard by line × region)'; bdrv=['corpus','scale']; }
+  else if(o.retrieval==='rerank' && m.volPeak>10){ bottleneck='reranker latency (cascade small→medium)'; bdrv=['rerank','volume']; }
+  else if(o.stateStore.includes('spanner') && m.volPeak>50){ bottleneck='Spanner write path (partition by key)'; bdrv=['state store','volume']; }
+  else if(o.gateway && m.volPeak>20){ bottleneck='gateway shard (per-region quota)'; bdrv=['gateway','volume']; }
   const spofs=['orchestrator → stateless autoscaled', o.retrieval!=='none'&&'vector index → multi-region read failover','model → reasoning→fast→cached failover'].filter(Boolean);
   const gaps=[!o.guardrails&&'safety guardrails',o.hitlApproval==='none'&&'approval gate',!o.modelRiskGov&&'version-pinning',!o.residencyPin&&sens(i.audienceSensitivity).lvl>=2&&'residency pin'].filter(Boolean);
+  const govDrv=['sensitivity']; if(!o.guardrails)govDrv.push('guardrails'); if(o.hitlApproval==='none')govDrv.push('approval');
   const rows=[
-    ['What breaks at 10×', bottleneck,'dynamic'],
-    ['SPOFs', spofs.join('; '),'dynamic'],
-    gaps.length?['Governance gaps', gaps.join(', '),'dynamic']:null,
-    ['Alerting','P1 auto-rollback / P2 page / P3 dashboard · non-blocking fallback','static'],
+    ['What breaks at 10×', bottleneck, bdrv],
+    ['SPOFs', spofs.join('; '), ['retrieval','model']],
+    gaps.length?['Governance gaps', gaps.join(', '), govDrv.slice(0,3)]:null,
+    ['Alerting','P1 auto-rollback / P2 page / P3 dashboard · non-blocking fallback', null],
   ].filter(Boolean);
-  return rows.map(([k,v,t])=>`<div class="risk-row"><b>${k}</b> <span class="tag ${t==='static'?'static':''}">${t}</span><br>${v}</div>`).join('');
+  return rows.map(([k,v,drv])=>`<div class="risk-row"><b>${k}</b> ${driverTags(drv)}<br>${v}</div>`).join('');
 }
 function bomHtml(){
   const o=state.overrides,i=state.inputs,b=new Set();
@@ -784,7 +795,8 @@ $('#advanced').addEventListener('change',e=>{ state.ui.advancedMode=e.target.che
 document.querySelector('main').addEventListener('input',e=>{ if(e.target.id==='advanced'||e.target.closest('#modal'))return; onInput(); });
 document.querySelector('main').addEventListener('change',e=>{ if(e.target.id==='advanced'||e.target.id==='purpose'||e.target.closest('#modal'))return; onInput(); });
 $('#introClose').addEventListener('click',()=>{ $('#intro').style.display='none'; });
-$('#copyMermaid').addEventListener('click',()=>{ navigator.clipboard?.writeText(diagSrc); $('#copyMermaid').textContent='Copied'; setTimeout(()=>$('#copyMermaid').textContent='Copy Mermaid',1200); });
+const COPY_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+$('#copyMermaid').addEventListener('click',()=>{ navigator.clipboard?.writeText(diagSrc); $('#copyMermaid').textContent='✓'; setTimeout(()=>$('#copyMermaid').innerHTML=COPY_ICON,1200); });
 $('#permalinkBtn').addEventListener('click',()=>{ navigator.clipboard?.writeText(location.href); $('#permalinkBtn').textContent='Copied'; setTimeout(()=>$('#permalinkBtn').textContent='Copy permalink',1200); });
 
 /* ===================== Self-test ===================== */
