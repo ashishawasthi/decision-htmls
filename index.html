@@ -196,6 +196,22 @@
       font-size: 12px;
       border-top: 1px solid var(--border);
     }
+
+    footer p {
+      margin: 0;
+    }
+
+    footer .disclaimer {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #6b7280;
+      max-width: 820px;
+    }
+
+    footer .disclaimer a {
+      color: inherit;
+      text-decoration: underline;
+    }
   </style>
 </head>
 
@@ -265,8 +281,14 @@
   </main>
 
   <footer>
-    All three tools are self-contained static HTML, with no build and no dependencies. Open any of them directly in a
-    browser.
+    <p class="footer-note">All three tools are self-contained static HTML, with no build and no dependencies. Open any
+      of them directly in a browser.</p>
+    <p class="disclaimer">
+      Rough estimates for planning and learning, not exact figures. Verify against official sources before any
+      purchasing, capacity, or design decision. A personal project, not affiliated with or endorsed by Google or any
+      vendor; all trademarks belong to their respective owners. Provided "as is" with no warranty. See the
+      <a href="DISCLAIMER.md">full disclaimer</a> for details.
+    </p>
   </footer>
 
 </body>
