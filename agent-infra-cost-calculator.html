@@ -36,9 +36,38 @@
     }
 
     header {
-      padding: 24px 32px 16px;
+      position: relative;
+      padding: 24px 32px 16px 84px;
       border-bottom: 1px solid var(--border);
     }
+
+    .backlink {
+      position: absolute;
+      top: 20px;
+      left: 28px;
+      width: 40px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--muted);
+      text-decoration: none;
+      transition: color .15s ease, border-color .15s ease, background .15s ease, transform .15s ease;
+    }
+
+    .backlink:hover {
+      color: var(--text);
+      border-color: var(--accent);
+      background: var(--panel-2);
+      transform: translateX(-3px);
+    }
+
+    .backlink:active { transform: translateX(-1px); }
+
+    .backlink svg { display: block; }
 
     header h1 {
       margin: 0 0 6px;
@@ -627,6 +656,7 @@
 <body>
 
   <header>
+    <a class="backlink" href="index.html" aria-label="Back to all tools" title="Back to all tools"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></a>
     <h1>Gen AI Deployment Options &amp; Estimates</h1>
     <p>Compare <b style="color:var(--api)">Vertex AI managed APIs</b> (Gemini, Claude, partner models) vs <b
         style="color:var(--selfhost)">GCP self-host</b> (open weights on GPU VMs with CUD/spot) vs <b
@@ -696,7 +726,7 @@
             many of the week's 168 hours your service actually carries traffic. 42 hr/wk (one fourth) is typical for
             daytime-only B2B usage; lower means the same monthly volume gets compressed into a narrower window.
             <b>Average &rarr; supported peak</b>: within those active hours, the burst multiple over the active-window
-            average (1.5&ndash;2&times; for steady SaaS, 3&ndash;4&times; for typical user-facing, 5&times;+ for spiky
+            average (1.5-2&times; for steady SaaS, 3-4&times; for typical user-facing, 5&times;+ for spiky
             consumer). Combined peak multiplier = (168 / active_hrs) &times; burst. Defaults <b>(168/42) &times; 3 =
               12&times;</b>. When auto-linked, peak TPS = monthly volume &times; combined &divide; (730&middot;3600
             sec). Uncheck the box (or type into Peak TPS) to set it manually.</div>
@@ -801,7 +831,7 @@
           </div>
           <div class="tradeoff"><b>WACC</b>: capital tied up in on-prem hardware can't earn returns elsewhere. At 10%
             WACC, $290k of CapEx per server costs $29k/yr of foregone return. GCP CUD prices already bake financing into
-            the hourly rate; on-prem doesn't. <b>Utilization target</b>: real on-prem clusters target 70&ndash;80%
+            the hourly rate; on-prem doesn't. <b>Utilization target</b>: real on-prem clusters target 70-80%
             steady (not 100%) for ops headroom, model upgrades, traffic spikes. Sizing on-prem to 100% peak gives it an
             artificial advantage vs GCP self-host which is also sized to a utilization target. Set both knobs to the
             same value for a fair comparison.</div>
@@ -884,26 +914,26 @@
         H100 fleet):</p>
       <ul>
         <li><b>Networking hardware</b>: 400GbE NICs + spine/leaf switches, often InfiniBand fabric for multi-node
-          serving. ~$50k&ndash;200k one-time CapEx amortized over 3 years &asymp; <b>$1.4k&ndash;5.5k / mo</b>.</li>
-        <li><b>Internet bandwidth + peering / Direct Connect</b>: <b>$1k&ndash;3k / mo</b> for production scale.</li>
-        <li><b>Storage</b>: NVMe + NFS for model weights, KV cache spill, observability logs. <b>$1k&ndash;2k / mo</b>.
+          serving. ~$50k-200k one-time CapEx amortized over 3 years &asymp; <b>$1.4k-5.5k / mo</b>.</li>
+        <li><b>Internet bandwidth + peering / Direct Connect</b>: <b>$1k-3k / mo</b> for production scale.</li>
+        <li><b>Storage</b>: NVMe + NFS for model weights, KV cache spill, observability logs. <b>$1k-2k / mo</b>.
         </li>
         <li><b>Software &amp; licensing</b>: monitoring stack (Datadog/Prometheus/Grafana), k8s/Slurm, optional NVIDIA
-          AI Enterprise / vendor support. <b>$2k&ndash;5k / mo</b> at production scale.</li>
+          AI Enterprise / vendor support. <b>$2k-5k / mo</b> at production scale.</li>
         <li><b>Insurance + compliance</b>: hardware insurance plus SOC 2 / ISO 27001 / HIPAA audits if you're
-          enterprise. <b>$500&ndash;2k / mo</b>.</li>
-        <li><b>Backup power, UPS, generator</b>: $50k&ndash;200k one-time + quarterly testing.</li>
-        <li><b>Procurement lead time</b>: 5&ndash;6 months from order to production. If sized for a 24-month horizon,
+          enterprise. <b>$500-2k / mo</b>.</li>
+        <li><b>Backup power, UPS, generator</b>: $50k-200k one-time + quarterly testing.</li>
+        <li><b>Procurement lead time</b>: 5-6 months from order to production. If sized for a 24-month horizon,
           that's ~25% of useful life lost.</li>
         <li><b>Cooling retrofit for high-density H100</b>: 8x H100 server pulls ~5.6 kW IT; standard air cooling tops
-          out around 15&ndash;20 kW/rack. Liquid cooling adds <b>$50k&ndash;150k one-time</b> per pod.</li>
-        <li><b>Residual value</b> (<i>credit, not cost</i>): H100s typically retain 30&ndash;50% after 3 years. Not
+          out around 15-20 kW/rack. Liquid cooling adds <b>$50k-150k one-time</b> per pod.</li>
+        <li><b>Residual value</b> (<i>credit, not cost</i>): H100s typically retain 30-50% after 3 years. Not
           modeled; conservatively over-counts CapEx amortization.</li>
       </ul>
-      <p><b>Often-overlooked managed-API / self-host costs:</b> data egress out of GCP ($0.08&ndash;$0.12/GB), Cloud
+      <p><b>Often-overlooked managed-API / self-host costs:</b> data egress out of GCP ($0.08-$0.12/GB), Cloud
         Logging / Monitoring fees, regional NAT/PSC charges, longer-term tax / FX exposure on multi-year CUDs.</p>
       <p style="margin-top:8px; color: var(--warn);">Rough rule of thumb: adding the items above can close the
-        on-prem-vs-GCP gap by <b>$10k&ndash;20k / mo</b> at this fleet size. With realistic hidden costs included, GCP
+        on-prem-vs-GCP gap by <b>$10k-20k / mo</b> at this fleet size. With realistic hidden costs included, GCP
         self-host on H100 CUD often lands within ~10% of fully-loaded on-prem TCO at sub-10-server scale.</p>
     </div>
 
@@ -1096,7 +1126,7 @@
     const SECONDS_PER_MONTH = MONTHLY_HOURS * 3600;
     // Peak-to-average ratio: typical user-facing workloads see a ~3x burst.
     // Sources: 80/20 rule (≈4x), Robust Perception "peak-to-mean" notes, ByteByteGo
-    // QPS rule-of-thumb. The DOM slider exposes 1.5–8× so users can adjust.
+    // QPS rule-of-thumb. The DOM slider exposes 1.5-8x so users can adjust.
     // Supported-peak multiplier is split into two factors:
     //  1. ACTIVE_HOURS_DEFAULT: hours per week the service actually carries traffic.
     //     Compression multiplier = 168 / active_hours. Default 42 = 1/4 of week = 4×.

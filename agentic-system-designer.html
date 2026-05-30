@@ -43,9 +43,42 @@
     }
 
     header {
-      padding: 14px 20px;
+      position: relative;
+      padding: 14px 20px 14px 72px;
       border-bottom: 1px solid var(--border);
       background: var(--panel)
+    }
+
+    .backlink {
+      position: absolute;
+      top: 11px;
+      left: 20px;
+      width: 40px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--muted);
+      text-decoration: none;
+      transition: color .15s ease, border-color .15s ease, background .15s ease, transform .15s ease
+    }
+
+    .backlink:hover {
+      color: var(--text);
+      border-color: var(--accent);
+      background: var(--panel2);
+      transform: translateX(-3px)
+    }
+
+    .backlink:active {
+      transform: translateX(-1px)
+    }
+
+    .backlink svg {
+      display: block
     }
 
     header h1 {
@@ -666,6 +699,7 @@
 
 <body>
   <header>
+    <a class="backlink" href="index.html" aria-label="Back to all tools" title="Back to all tools"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></a>
     <h1>Agentic System Designer <span style="color:var(--muted);font-weight:400;font-size:13px">- design a GenAI system
         on Google Cloud</span></h1>
     <div class="sub">Toggle the inputs → the architecture, metrics, and risks recompute live. Deterministic, no LLM.
@@ -729,7 +763,7 @@
           <select data-bind="inputs.latencyPreset">
             <option value="subsecond">Sub-second (deterministic)</option>
             <option value="agentic">&lt;2s start / &lt;6s full (agentic)</option>
-            <option value="batch">5–10s batch</option>
+            <option value="batch">5-10s batch</option>
             <option value="minutes">Per-run minutes (automation)</option>
           </select>
         </div>
@@ -1082,8 +1116,13 @@
         strictpii_verify: { label: 'Strict-PII verification', inputs: { actors: 300, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 6000, tokensOut: 1000, audienceSensitivity: 'internal_strictpii', dataSources: ['web', 'kg', 'onprem'], corpusSize: 0, freshness: 'realtime', languages: ['en'] } },
       },
       automation: {
-        midsize: { label: 'Mid-size org', inputs: { actors: 300, actionsPerDay: 6, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
-        large: { label: 'Large org (10×)', inputs: { actors: 3000, actionsPerDay: 6, burst: 4, activeHoursPerWeek: 80, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
+        // Presets differ by trust tier (audience & sensitivity), the one input that
+        // changes the automation design: each tier mandates a different governance
+        // posture (gateway / guardrails / sandbox / residency), visible in the diagram.
+        internal_lowstakes: { label: 'Internal · low-stakes', inputs: { actors: 300, actionsPerDay: 6, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_low', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
+        regulated: { label: 'Regulated enterprise', inputs: { actors: 800, actionsPerDay: 6, burst: 4, activeHoursPerWeek: 80, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
+        strictpii: { label: 'Strict-PII / high-stakes', inputs: { actors: 400, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 60, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_strictpii', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
+        external_facing: { label: 'External-facing', inputs: { actors: 1500, actionsPerDay: 4, burst: 5, activeHoursPerWeek: 120, latencyPreset: 'minutes', tokensIn: 6000, tokensOut: 1500, audienceSensitivity: 'external_regulated', dataSources: ['bigquery'], corpusSize: 0, freshness: 'eod', languages: ['en', 'zh'] } },
       }
     };
 
@@ -1124,7 +1163,17 @@
       state.inputs = structuredClone(p.inputs);
       state.overrides = DEFAULT_OVERRIDES();
       // automation tweaks
-      if (purpose === 'automation') { state.overrides.retrieval = 'none'; state.overrides.pattern = 'multi'; state.overrides.numAgents = 5; state.overrides.stateStore = 'spanner'; }
+      if (purpose === 'automation') {
+        state.overrides.retrieval = 'none'; state.overrides.pattern = 'multi'; state.overrides.numAgents = 5; state.overrides.stateStore = 'spanner';
+        // Seed governance from the preset's trust tier (assistant keeps the secure-by-default
+        // overrides; deriveOverrides then locks the mandated subset so it can't be removed).
+        const { aud, lvl } = sens(state.inputs.audienceSensitivity);
+        state.overrides.gateway = lvl >= 2;
+        state.overrides.auditLog = lvl >= 2;
+        state.overrides.sandbox = lvl >= 3;
+        state.overrides.residencyPin = lvl >= 3;
+        state.overrides.guardrails = aud !== 'internal';
+      }
     }
 
     /* ===================== Rules engine: derive overrides + locks ===================== */
@@ -1240,7 +1289,7 @@
       const { aud, lvl } = sens(i.audienceSensitivity);
       const qa = state.purpose === 'assistant' && (i.dataSources.includes('doc_corpus') || i.dataSources.includes('vector'));
       // caching
-      if (qa && !o.autocomplete) add('caching', 'Add query autocomplete - canonicalizes phrasings, lifts cache-hit ~5–15%→~40–60% at ≈zero inference cost.', 'cost↓ latency↓', 'autocomplete');
+      if (qa && !o.autocomplete) add('caching', 'Add query autocomplete - canonicalizes phrasings, lifts cache-hit ~5-15%→~40-60% at ≈zero inference cost.', 'cost↓ latency↓', 'autocomplete');
       if (o.autocomplete && !o.warming) add('caching', 'Precompute the top-N suggested queries offline → ≈$0 + ms latency on the popular head.', '', 'warming');
       // conflict
       if (i.latencyPreset === 'subsecond' && (o.pattern === 'multi' || o.retrieval === 'rerank')) add('conflict', 'Sub-second SLO + multi-agent/rerank can blow the TTFT budget - single-agent + cached path, or raise the SLO.', '', 'pattern');
@@ -1294,9 +1343,13 @@
         if (o.feedbackLoop) { L.push(node('Fb', 'Feedback → eval', 'gov')); L.push('Obs --> Fb'); }
       } else {
         L.push(node('Trig', 'Trigger (ticket/event)', 'client'));
-        L.push(node('Req', 'Requirement agent', 'orch')); L.push('Trig --> Req');
+        let head = 'Trig';
+        if (o.gateway) { L.push(node('GW', 'LLM Gateway ⊕', 'gateway')); L.push(`${head} --> GW`); head = 'GW'; }
+        if (o.guardrails) { L.push(node('Guard', 'Safety guardrails', 'gov')); L.push(`${head} --> Guard`); head = 'Guard'; }
+        L.push(node('Req', 'Requirement agent', 'orch')); L.push(`${head} --> Req`);
         L.push(node('Plan', 'Planner', 'orch')); L.push('Req --> Plan');
         L.push(node('Exec', `Executor pool<br/>${roleList('automation', o.numAgents)}`, 'orch')); L.push('Plan --> Exec');
+        if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Exec --> Sand'); }
         L.push(node('QG', 'Quality gate', 'retr')); L.push('Exec --> QG');
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human approval', 'gov')); L.push('QG --> Appr'); }
         L.push(node('State', 'State store (Spanner)', 'data')); L.push('Exec --> State');
@@ -1508,7 +1561,7 @@
       const root = $('#modal-root'), box = $('#modal');
       let inner = `<span class="close" id="modalClose">×</span><h2>${titles[key]} ${subcalc ? '· sub-calculator' : '· detail'}</h2>`;
       inner += `<div class="sub">${subcalc ? 'Has its own sizing axis - independent of the main app.' : 'Read-only detail view.'}</div>`;
-      inner += `<div class="mdiagram" id="mdiagram">rendering…</div>`;
+      inner += `<div class="mdiagram" id="mdiagram">rendering...</div>`;
       if (key === 'gateway') {
         const g = state.componentInputs.gateway; const agg = g.aggregateQPS ?? Math.max(1, Math.round(lastMetrics.volPeak));
         const regions = Math.max(1, Math.ceil(agg / (K.apigeeRpsPerRegion)));
@@ -1614,7 +1667,12 @@
       // grounding: wiring a web source raises naive cost (Gemini grounds)
       applyPreset('assistant', 'expert_copilot'); const w0 = computeMetrics().costNaive; state.inputs.dataSources = [...state.inputs.dataSources, 'web']; const w1 = computeMetrics().costNaive; assert('web grounding adds cost', w1 > w0);
       // self-host: int4 fleet ≤ bf16 fleet; on-prem collapses token cost to $0
-      applyPreset('automation', 'large'); state.overrides.deployment = 'onprem'; deriveOverrides(); state.overrides.quant = 'bf16'; const nbf = computeMetrics().gpuNodes; state.overrides.quant = 'int4'; const ni4 = computeMetrics().gpuNodes; assert('int4 ≤ bf16 fleet', ni4 <= nbf); assert('on-prem zeroes token cost', computeMetrics().costOpt === 0);
+      applyPreset('automation', 'regulated'); state.overrides.deployment = 'onprem'; deriveOverrides(); state.overrides.quant = 'bf16'; const nbf = computeMetrics().gpuNodes; state.overrides.quant = 'int4'; const ni4 = computeMetrics().gpuNodes; assert('int4 ≤ bf16 fleet', ni4 <= nbf); assert('on-prem zeroes token cost', computeMetrics().costOpt === 0);
+      // automation trust-tier presets yield distinct governance designs
+      applyPreset('automation', 'internal_lowstakes'); deriveOverrides(); const low = { ...state.overrides };
+      applyPreset('automation', 'strictpii'); deriveOverrides(); const sp = { ...state.overrides };
+      assert('low-stakes has no gateway', low.gateway === false && low.guardrails === false && low.sandbox === false);
+      assert('strict-PII mandates sandbox', sp.sandbox === true && sp.gateway === true && !!state.locks.sandbox);
       const pass = results.every(r => r[1]);
       const bar = $('#testbar'); bar.style.display = 'block'; bar.className = pass ? 'pass' : 'fail';
       bar.innerHTML = (pass ? '✓ all self-tests pass - ' : '✗ FAILURES - ') + results.map(r => `${r[1] ? '✓' : '✗'} ${r[0]}`).join(' · ');
