@@ -2,8 +2,11 @@
 
 A small set of interactive HTML tools for reasoning about how to build and run
 generative AI workloads on Google Cloud. Each tool is a single HTML file with its
-CSS and JavaScript inline. There is no build step and there are no runtime
-dependencies, so any file opens straight in a browser.
+CSS and JavaScript inline, and there is no build step. The landing page, the cost
+calculator, and the memory calculator are fully self-contained and open straight
+from disk. The Agentic System Designer is the exception: it loads a diagram
+library from a CDN, so it needs to be served over HTTP and needs internet access
+(the section below explains why).
 
 ## Tools
 
@@ -18,10 +21,17 @@ Each tool page has a back control at the top left that returns to the landing pa
 
 ## Viewing the tools
 
-Open any of the HTML files directly in a browser. That is enough for everyday use.
+Three of the four pages open straight from disk: double-click the file, or open
+it in a browser. The landing page, the cost calculator, and the memory calculator
+all work this way, and the links between pages work too.
 
-To serve the whole folder over HTTP instead, so relative links resolve the way
-they would when hosted, run either of these from the repository root:
+The Agentic System Designer is the exception. Its whole app runs as an ES module
+that imports the Mermaid diagram library from a CDN. Browsers restrict ES modules
+loaded over file:// (Chrome blocks them), so this page can fail to run when opened
+from disk, and it needs internet access for the library. Serve it over HTTP
+instead.
+
+To start a local server, run either of these from the repository root:
 
 ```
 python3 -m http.server 8765

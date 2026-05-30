@@ -551,6 +551,51 @@
       letter-spacing: 0
     }
 
+    .cost-in {
+      width: 72px;
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-size: 12px;
+      text-align: right;
+      font-family: ui-monospace, monospace
+    }
+
+    .cost-in:focus {
+      outline: none;
+      border-color: var(--accent)
+    }
+
+    .cost-in.red {
+      border-color: var(--err);
+      color: var(--err);
+      background: rgba(248, 81, 73, .07)
+    }
+
+    .cost-in.red::placeholder {
+      color: var(--err);
+      opacity: .8
+    }
+
+    .cost-row.red .cl {
+      color: var(--err)
+    }
+
+    .cost-row .permo {
+      color: var(--muted);
+      font-size: 10.5px;
+      margin-left: 3px
+    }
+
+    .cost-row .cred {
+      color: var(--err);
+      font-size: 10.5px;
+      font-weight: 400;
+      margin-left: 6px
+    }
+
     .bomlist {
       display: flex;
       flex-wrap: wrap;
@@ -1144,6 +1189,7 @@
       purpose: 'assistant', preset: 'expert_copilot',
       inputs: {}, overrides: {}, locks: {},
       componentInputs: { gateway: { aggregateQPS: null, tenantApps: 1, providers: 1 }, ingestion: { docsPerDay: null, backfillDocs: 0, docPages: 40, reindexSLOmin: 5 } },
+      costOverrides: {},   // BOM component name → user-entered $/mo (overrides any estimate)
       ui: { openModal: null, introDismissed: false },
     };
 
@@ -1162,6 +1208,7 @@
       const p = PRESETS[purpose][preset];
       state.inputs = structuredClone(p.inputs);
       state.overrides = DEFAULT_OVERRIDES();
+      state.costOverrides = {};
       // automation tweaks
       if (purpose === 'automation') {
         state.overrides.retrieval = 'none'; state.overrides.pattern = 'multi'; state.overrides.numAgents = 5; state.overrides.stateStore = 'spanner';
@@ -1460,25 +1507,31 @@
       const o = state.overrides, cp = m.costParts || {};
       const row = (label, val, sub, tot) => `<div class="cost-row${tot ? ' tot' : ''}"><span class="cl">${label}${sub ? ` <small>${sub}</small>` : ''}</span><span class="cn">${val}</span></div>`;
       const grp = t => `<div class="cost-grp">${t}</div>`;
-      const rows = []; let grand = 0;
+      const rows = [];
       const apiActive = o.deployment !== 'onprem';            // onprem locks model to open weights → no token-metered API
       if (apiActive) {
-        rows.push(grp('API - managed inference <small>($ / yr)</small>'));
-        rows.push(row('Input - fresh', money(cp.fresh)));
-        rows.push(row('Input - cached', money(cp.cached), 'billed at model cache-read rate'));
+        rows.push(grp('GenAI — managed inference <small>($ / yr)</small>'));
+        rows.push(row('Input — fresh', money(cp.fresh)));
+        rows.push(row('Input — cached', money(cp.cached), 'billed at model cache-read rate'));
         rows.push(row('Output', money(cp.output)));
         if (cp.grounding > 0) rows.push(row('Grounding', money(cp.grounding), 'live web search · $/1k calls'));
-        rows.push(row('API $/yr', money(m.costOpt), '', true));
-        grand += m.costOpt;
+        rows.push(row('GenAI $/yr', money(m.costOpt), '', true));
       }
       if (m.gpuYr) {
-        rows.push(grp('Self-host - open weights on GPUs'));
+        rows.push(grp('GenAI — self-host on GPUs <small>($ / yr)</small>'));
         rows.push(row('GPU fleet', `${money(m.gpuMo)}/mo`, `${m.gpuNodes}×8 ${(o.accelerator || 'h100').toUpperCase()} · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util`));
         rows.push(row('Inference $/yr', money(m.gpuYr), '', true));
-        grand += m.gpuYr;
       }
-      const multi = apiActive && m.gpuYr;
-      if (multi) rows.push(row('Total $/yr', money(grand), 'API + self-host', true));
+      // ---- platform & infrastructure: every BOM component, editable; unpriced ones red ----
+      const s = costSummary(m);
+      const costInput = (name, val, red) => `<input class="cost-in${red ? ' red' : ''}" data-cost="${name.replace(/"/g, '&quot;')}" type="number" min="0" step="1" value="${val != null ? Math.round(val) : ''}" placeholder="enter" aria-label="${name} monthly cost"><span class="permo">/mo</span>`;
+      rows.push(grp('Platform &amp; infrastructure <small>($ / mo · editable)</small>'));
+      s.priced.forEach(x => rows.push(`<div class="cost-row"><span class="cl">${x.name} <small>${x.src === 'manual' ? 'manual' : 'est.'}</small></span><span class="cn">${costInput(x.name, x.mo, false)}</span></div>`));
+      s.red.forEach(x => rows.push(`<div class="cost-row red"><span class="cl">${x.name} <small>no public price — enter cost</small></span><span class="cn">${costInput(x.name, null, true)}</span></div>`));
+      if (s.free.length) rows.push(`<div class="cost-row"><span class="cl">Included at no charge <small>${s.free.join(' · ')}</small></span><span class="cn">$0</span></div>`);
+      rows.push(row('Platform $/mo', money(s.platMo) + (s.red.length ? ` <span class="cred">+${s.red.length} unpriced</span>` : ''), s.priced.length + ' priced', true));
+      // ---- combined run-rate ----
+      rows.push(row('Total run-rate $/yr', money(s.totalYr), `GenAI + platform×12${s.red.length ? ' · excludes unpriced' : ''}`, true));
       return `<div class="costbox">${rows.join('')}</div>`;
     }
     function driverTags(drv) { return drv ? drv.map(d => `<span class="tag" title="driven by ${d}">${d}</span>`).join(' ') : '<span class="tag static" title="same for every config">fixed</span>'; }
@@ -1533,6 +1586,65 @@
       if (o.deployment !== 'gcp') b.add('vLLM on GKE');
       [o.reasoningModel, o.fastModel].forEach(id => b.add(modelById(id).name));
       return [...b];
+    }
+
+    /* ===================== Platform cost model (illustrative ~May 2026, $/mo) ===================== */
+    // Returns an estimated monthly $ for a BOM component, 0 if bundled/free, or
+    // null if the tool can't size its spend (→ shown red for manual entry).
+    function bomMonthlyCost(name, m) {
+      const i = state.inputs;
+      const R = i.actors * i.actionsPerDay * 30.4;              // requests / month
+      const Tk = m.tokensDay * 30.4;                             // tokens / month
+      const idxNodes = m.indexGB > 0 ? Math.max(1, Math.ceil(m.indexGB / 50)) : 0;
+      const dbNodes = Math.max(1, Math.ceil((m.volPeak || 0) / 100));
+      const docsDay = (state.componentInputs.ingestion.docsPerDay ?? Math.round((i.corpusSize || 0) * 0.002));
+      const pages = state.componentInputs.ingestion.docPages || 40;
+      const P = {
+        'ADK + Agent Engine': 40 + R * 0.0006,
+        'Agent Studio': 40 + R * 0.0006,
+        'LangGraph': R * 0.0004,
+        'Apigee': 120 + R * 0.0003,
+        'Cloud Logging (WORM)': 5 + (Tk / 1e6) * 0.05,
+        'Vertex AI Vector Search': idxNodes * 438,
+        'AlloyDB': 300 + m.indexGB * 0.3,
+        'Elasticsearch': idxNodes * 450,
+        'BM25': 0,
+        'Dataflow': docsDay > 0 ? 30 + docsDay * 0.02 : 0,
+        'Document AI': docsDay * pages * 30.4 * 0.0015,
+        'BigQuery': null,                                        // query spend not modeled → manual
+        'Spanner': dbNodes * 657 + m.indexGB * 0.3,
+        'Cloud SQL': 200 + dbNodes * 120,
+        'Memorystore': 70,
+        'Cloud Trace': (R / 1e6) * 2.0,
+        'Vertex AI Eval': (R * 0.05 / 1000) * 0.5,
+        'Model Armor': (R / 1000) * 0.5,
+        'Workload Identity': 0,
+        'Vertex Model Registry': 0,
+        'VPC Service Controls': 0,
+        'Cloud DLP': (Tk / 1e6) * 1.0,
+        'IAM': 0,
+        'vLLM on GKE': 73,                                       // GKE cluster mgmt (GPUs are in the inference line)
+      };
+      return (name in P) ? P[name] : null;
+    }
+    // Pure aggregator: splits the BOM into priced / unpriced(red) / free, sums platform $,
+    // and returns the combined annual run-rate. costOverrides win over estimates.
+    function costSummary(m) {
+      const o = state.overrides;
+      const genai = (m.costOpt || 0) + (m.gpuYr || 0);          // models + self-host GPU
+      const models = new Set([modelById(o.reasoningModel).name, modelById(o.fastModel).name]);
+      const comps = bomHtml().filter(n => !models.has(n));
+      const priced = [], red = [], free = [];
+      comps.forEach(name => {
+        const ov = state.costOverrides[name];
+        const est = bomMonthlyCost(name, m);
+        if (ov != null) priced.push({ name, mo: ov, src: 'manual' });
+        else if (est == null) red.push({ name });
+        else if (est === 0) free.push(name);
+        else priced.push({ name, mo: est, src: 'est' });
+      });
+      const platMo = priced.reduce((s, x) => s + x.mo, 0);
+      return { genai, priced, red, free, platMo, platYr: platMo * 12, totalYr: genai + platMo * 12 };
     }
 
     let diagSrc = '';
@@ -1628,16 +1740,23 @@
     /* ===================== Permalink ===================== */
     let plTimer = null;
     function schedulePermalink() { clearTimeout(plTimer); plTimer = setTimeout(() => { try { location.replace('#' + encodeState()); } catch (e) { } }, 120); }
-    function encodeState() { return btoa(unescape(encodeURIComponent(JSON.stringify({ p: state.purpose, pr: state.preset, i: state.inputs, o: state.overrides })))); }
-    function decodeState(h) { try { const d = JSON.parse(decodeURIComponent(escape(atob(h)))); if (d.p) { state.purpose = d.p; state.preset = d.pr; state.inputs = d.i; state.overrides = d.o; return true; } } catch (e) { } return false; }
+    function encodeState() { return btoa(unescape(encodeURIComponent(JSON.stringify({ p: state.purpose, pr: state.preset, i: state.inputs, o: state.overrides, co: state.costOverrides })))); }
+    function decodeState(h) { try { const d = JSON.parse(decodeURIComponent(escape(atob(h)))); if (d.p) { state.purpose = d.p; state.preset = d.pr; state.inputs = d.i; state.overrides = d.o; state.costOverrides = d.co || {}; return true; } } catch (e) { } return false; }
 
     /* ===================== Wiring ===================== */
     function onInput() { readControls(); render(); }
     $('#purpose').addEventListener('change', e => { const pur = e.target.value; const first = Object.keys(PRESETS[pur])[0]; applyPreset(pur, first); render(); });
     $('#presetChips').addEventListener('click', e => { const c = e.target.closest('.chip'); if (c) { applyPreset(state.purpose, c.dataset.preset); render(); } });
     $('#resetBtn').addEventListener('click', () => { applyPreset(state.purpose, state.preset); render(); });
-    document.querySelector('main').addEventListener('input', e => { if (e.target.closest('#modal')) return; onInput(); });
-    document.querySelector('main').addEventListener('change', e => { if (e.target.id === 'purpose' || e.target.closest('#modal')) return; onInput(); });
+    document.querySelector('main').addEventListener('input', e => { if (e.target.dataset.cost != null || e.target.closest('#modal')) return; onInput(); });
+    document.querySelector('main').addEventListener('change', e => { if (e.target.dataset.cost != null || e.target.id === 'purpose' || e.target.closest('#modal')) return; onInput(); });
+    // editable BOM cost line items (commit on blur/enter so typing doesn't rebuild the panel)
+    $('#cost').addEventListener('change', e => {
+      const t = e.target; if (t.dataset.cost == null) return;
+      const v = t.value === '' ? null : Math.max(0, +t.value);
+      if (v == null || isNaN(v)) delete state.costOverrides[t.dataset.cost]; else state.costOverrides[t.dataset.cost] = v;
+      render(); schedulePermalink();
+    });
     $('#introClose').addEventListener('click', () => { $('#intro').style.display = 'none'; });
     const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
     $('#copyMermaid').addEventListener('click', () => { navigator.clipboard?.writeText(diagSrc); $('#copyMermaid').textContent = '✓'; setTimeout(() => $('#copyMermaid').innerHTML = COPY_ICON, 1200); });
@@ -1673,6 +1792,12 @@
       applyPreset('automation', 'strictpii'); deriveOverrides(); const sp = { ...state.overrides };
       assert('low-stakes has no gateway', low.gateway === false && low.guardrails === false && low.sandbox === false);
       assert('strict-PII mandates sandbox', sp.sandbox === true && sp.gateway === true && !!state.locks.sandbox);
+      // BOM costing: platform adds to GenAI; BigQuery is unpriced until entered; override lifts total + clears red
+      applyPreset('assistant', 'expert_copilot'); state.costOverrides = {}; const cs0 = costSummary(computeMetrics());
+      assert('platform cost > 0', cs0.platMo > 0 && cs0.totalYr > computeMetrics().costOpt);
+      assert('BigQuery unpriced by default', cs0.red.some(x => x.name === 'BigQuery'));
+      state.costOverrides['BigQuery'] = 1000; const cs1 = costSummary(computeMetrics());
+      assert('cost override lifts total + clears red', cs1.totalYr > cs0.totalYr && !cs1.red.some(x => x.name === 'BigQuery'));
       const pass = results.every(r => r[1]);
       const bar = $('#testbar'); bar.style.display = 'block'; bar.className = pass ? 'pass' : 'fail';
       bar.innerHTML = (pass ? '✓ all self-tests pass - ' : '✗ FAILURES - ') + results.map(r => `${r[1] ? '✓' : '✗'} ${r[0]}`).join(' · ');
