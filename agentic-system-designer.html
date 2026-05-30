@@ -1,839 +1,1637 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agentic System Designer — GCP</title>
-<style>
-  :root{
-    --bg:#0f1419; --panel:#161b22; --panel2:#1c2430; --border:#2a3441; --muted:#8b98a8;
-    --text:#e6edf3; --accent:#4c9aff; --accent2:#7c5cff;
-    --client:#5ec8f8; --gateway:#f4a259; --orch:#7c5cff; --retr:#4cd4b0; --data:#e6c84c; --obs:#9aa5b1; --gov:#ff6b9d;
-    --ok:#3fb950; --warn:#d29922; --err:#f85149;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  a{color:var(--accent)}
-  header{padding:14px 20px;border-bottom:1px solid var(--border);background:var(--panel)}
-  header h1{margin:0;font-size:18px;font-weight:650}
-  header .sub{color:var(--muted);font-size:12px;margin-top:2px}
-  .banner{margin:10px 20px 0;padding:10px 12px;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:6px;background:var(--panel2);font-size:12.5px;color:var(--muted)}
-  .banner b{color:var(--text)}
-  .banner .x{float:right;cursor:pointer;color:var(--muted);font-weight:700;padding:0 4px}
-  .banner.warn{border-left-color:var(--warn)}
-  .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
-  .legend span{display:inline-flex;align-items:center;gap:4px;font-size:11px}
-  .legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agentic System Designer - GCP</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --accent2: #7c5cff;
+      --client: #5ec8f8;
+      --gateway: #f4a259;
+      --orch: #7c5cff;
+      --retr: #4cd4b0;
+      --data: #e6c84c;
+      --obs: #9aa5b1;
+      --gov: #ff6b9d;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+    }
 
-  main{display:grid;grid-template-columns:minmax(360px,420px) 1fr;gap:18px;padding:18px 20px;align-items:start}
-  section.config{display:flex;flex-direction:column;gap:12px;min-width:0}
-  section.output{display:flex;flex-direction:column;gap:14px;min-width:0}
+    * {
+      box-sizing: border-box
+    }
 
-  .selector{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px}
-  .selector .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  select,input[type=number]{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 7px;font:inherit}
-  input[type=number]{width:92px}
-  label{color:var(--muted)}
-  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-  .chip{font-size:11.5px;padding:3px 9px;border:1px solid var(--border);border-radius:999px;background:var(--panel2);color:var(--muted);cursor:pointer}
-  .chip.active{border-color:var(--accent);color:var(--text);background:#1d2b44}
-  button.mini{font:inherit;font-size:12px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 9px;cursor:pointer}
-  button.mini:hover{border-color:var(--accent)}
-  button.mini.icon{padding:4px 7px;display:inline-flex;align-items:center;color:var(--muted)}
-  button.mini.icon:hover{color:var(--text)}
-  .toggle-adv{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px}
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif
+    }
 
-  fieldset{border:1px solid var(--border);border-radius:8px;background:var(--panel);margin:0;padding:10px 12px 12px}
-  fieldset>legend{font-size:12px;font-weight:600;color:var(--text);padding:0 6px;text-transform:uppercase;letter-spacing:.04em}
-  .ctl{display:flex;align-items:center;gap:8px;padding:4px 0;flex-wrap:wrap}
-  .ctl>label:first-child{flex:1;min-width:120px}
-  .ctl.hidden{display:none}
-  .ctl.locked .lockwrap{opacity:.55}
-  .ctl .lock{font-size:10px;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:0 4px;margin-left:4px;cursor:help}
-  .ctl .warnmark{color:var(--warn);cursor:help;font-weight:700}
-  .ctl .hint{flex-basis:100%;font-size:11px;color:var(--muted);margin:2px 0 0}
-  input[type=range]{flex:1;min-width:90px;accent-color:var(--accent)}
-  output.val{font-variant-numeric:tabular-nums;color:var(--text);min-width:54px;text-align:right;font-size:12px}
-  .checks{display:flex;flex-wrap:wrap;gap:4px 12px}
-  .checks label{display:inline-flex;align-items:center;gap:5px;color:var(--text);font-size:12.5px}
-  fieldset.adv-hidden{display:none}
-  .vis-count{font-size:11px;color:var(--muted);font-weight:400;margin-left:6px}
+    a {
+      color: var(--accent)
+    }
 
-  .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
-  .panel h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
-  /* issues panel sits under the diagram (architecture leads) */
-  .issue{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-top:1px dashed var(--border);font-size:12.5px}
-  .issue:first-of-type{border-top:none}
-  .issue .sev{font-size:10px;font-weight:700;border-radius:4px;padding:1px 5px;flex:none}
-  .sev.conflict,.sev.privacy,.sev.safety,.sev.residency{background:#3a1d22;color:var(--err);border:1px solid var(--err)}
-  .sev.scaling,.sev.access,.sev.governance{background:#3a2f1a;color:var(--warn);border:1px solid var(--warn)}
-  .sev.cost,.sev.quality,.sev.caching{background:#16302a;color:var(--retr);border:1px solid var(--retr)}
-  .issue .save{color:var(--muted);font-size:11px;white-space:nowrap}
-  .empty{color:var(--muted);font-size:12px}
+    header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel)
+    }
 
-  #diagram{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;min-height:120px;overflow:auto}
-  #diagram svg{max-width:100%;height:auto}
-  #diagram .drill{cursor:pointer}
-  #diagram pre{white-space:pre-wrap;font-size:11px;color:var(--muted)}
-  .diagram-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-  .diagram-head h3{margin:0;flex:1}
+    header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 650
+    }
 
-  .metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px}
-  .metric{border-left:2px solid var(--border);padding-left:8px}
-  .metric .k{font-size:11px;color:var(--muted)}
-  .metric .v{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
-  .metric .v small{font-size:11px;font-weight:400;color:var(--muted)}
-  .metric[title]{cursor:help}
+    header .sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px
+    }
 
-  .bomlist{display:flex;flex-wrap:wrap;gap:5px}
-  .bomlist span{font-size:11px;border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--muted)}
-  .obs-row,.risk-row{padding:4px 0;border-top:1px dashed var(--border);font-size:12.5px}
-  .obs-row:first-child,.risk-row:first-child{border-top:none}
-  .tag{font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:4px;padding:0 4px;margin-left:4px}
-  .tag.static{color:var(--muted)}
+    .banner {
+      margin: 10px 20px 0;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      background: var(--panel2);
+      font-size: 12.5px;
+      color: var(--muted)
+    }
 
-  details.cat{margin:0 20px 14px}
-  details.cat summary{cursor:pointer;color:var(--muted);font-size:12px;padding:6px 0}
-  .foot{padding:0 20px 30px;color:var(--muted);font-size:11px}
+    .banner b {
+      color: var(--text)
+    }
 
-  #modal-root{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);z-index:50}
-  #modal-root.open{display:flex}
-  .modal{background:var(--panel);border:1px solid var(--border);border-radius:10px;max-width:760px;width:92%;max-height:88vh;overflow:auto;padding:16px 18px}
-  .modal h2{margin:0 0 4px;font-size:16px}
-  .modal .close{float:right;cursor:pointer;font-size:20px;color:var(--muted);line-height:1}
-  .modal .sub{color:var(--muted);font-size:12px;margin-bottom:10px}
-  .modal .mdiagram{background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:10px;margin:8px 0;overflow:auto}
-  .modal .mdiagram svg{max-width:100%}
-  #testbar{display:none;margin:10px 20px 0;padding:8px 12px;border-radius:6px;font-size:12.5px;font-family:ui-monospace,monospace}
-  #testbar.pass{background:#16302a;border:1px solid var(--ok);color:var(--ok)}
-  #testbar.fail{background:#3a1d22;border:1px solid var(--err);color:var(--err)}
+    .banner .x {
+      float: right;
+      cursor: pointer;
+      color: var(--muted);
+      font-weight: 700;
+      padding: 0 4px
+    }
 
-  @media (max-width:880px){
-    main{grid-template-columns:1fr}
-    section.output{position:static}
-  }
-</style>
+    .banner.warn {
+      border-left-color: var(--warn)
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 6px
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px
+    }
+
+    .legend i {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      display: inline-block
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(360px, 420px) 1fr;
+      gap: 18px;
+      padding: 18px 20px;
+      align-items: start
+    }
+
+    section.config {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0
+    }
+
+    section.output {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0
+    }
+
+    .selector {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px
+    }
+
+    .selector .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap
+    }
+
+    select,
+    input[type=number] {
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 7px;
+      font: inherit
+    }
+
+    input[type=number] {
+      width: 92px
+    }
+
+    label {
+      color: var(--muted)
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px
+    }
+
+    .chip {
+      font-size: 11.5px;
+      padding: 3px 9px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--panel2);
+      color: var(--muted);
+      cursor: pointer
+    }
+
+    .chip.active {
+      border-color: var(--accent);
+      color: var(--text);
+      background: #1d2b44
+    }
+
+    button.mini {
+      font: inherit;
+      font-size: 12px;
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 9px;
+      cursor: pointer
+    }
+
+    button.mini:hover {
+      border-color: var(--accent)
+    }
+
+    button.mini.icon {
+      padding: 4px 7px;
+      display: inline-flex;
+      align-items: center;
+      color: var(--muted)
+    }
+
+    button.mini.icon:hover {
+      color: var(--text)
+    }
+
+
+    fieldset {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      margin: 0;
+      padding: 10px 12px 12px
+    }
+
+    fieldset>legend {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      padding: 0 6px;
+      text-transform: uppercase;
+      letter-spacing: .04em
+    }
+
+    .ctl {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      flex-wrap: wrap
+    }
+
+    .ctl>label:first-child {
+      flex: 1;
+      min-width: 120px
+    }
+
+    .ctl.hidden {
+      display: none
+    }
+
+    .ctl.locked .lockwrap {
+      opacity: .55
+    }
+
+    .ctl .lock {
+      font-size: 10px;
+      color: var(--warn);
+      border: 1px solid var(--warn);
+      border-radius: 4px;
+      padding: 0 4px;
+      margin-left: 4px;
+      cursor: help
+    }
+
+    .ctl .warnmark {
+      color: var(--warn);
+      cursor: help;
+      font-weight: 700
+    }
+
+    .ctl .hint {
+      flex-basis: 100%;
+      font-size: 11px;
+      color: var(--muted);
+      margin: 2px 0 0
+    }
+
+    input[type=range] {
+      flex: 1;
+      min-width: 90px;
+      accent-color: var(--accent)
+    }
+
+    output.val {
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      min-width: 54px;
+      text-align: right;
+      font-size: 12px
+    }
+
+    .checks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 12px
+    }
+
+    .checks label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text);
+      font-size: 12.5px
+    }
+
+
+    .vis-count {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 400;
+      margin-left: 6px
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px
+    }
+
+    .panel h3 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted)
+    }
+
+    /* issues panel sits under the diagram (architecture leads) */
+    .issue {
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+      padding: 5px 0;
+      border-top: 1px dashed var(--border);
+      font-size: 12.5px
+    }
+
+    .issue:first-of-type {
+      border-top: none
+    }
+
+    .issue .sev {
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 4px;
+      padding: 1px 5px;
+      flex: none
+    }
+
+    .sev.conflict,
+    .sev.privacy,
+    .sev.safety,
+    .sev.residency {
+      background: #3a1d22;
+      color: var(--err);
+      border: 1px solid var(--err)
+    }
+
+    .sev.scaling,
+    .sev.access,
+    .sev.governance {
+      background: #3a2f1a;
+      color: var(--warn);
+      border: 1px solid var(--warn)
+    }
+
+    .sev.cost,
+    .sev.quality,
+    .sev.caching {
+      background: #16302a;
+      color: var(--retr);
+      border: 1px solid var(--retr)
+    }
+
+    .issue .save {
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: 12px
+    }
+
+    #diagram {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      min-height: 120px;
+      overflow: auto
+    }
+
+    #diagram svg {
+      max-width: 100%;
+      height: auto
+    }
+
+    #diagram .drill {
+      cursor: pointer
+    }
+
+    #diagram pre {
+      white-space: pre-wrap;
+      font-size: 11px;
+      color: var(--muted)
+    }
+
+    .diagram-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px
+    }
+
+    .diagram-head h3 {
+      margin: 0;
+      flex: 1
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 14px
+    }
+
+    .metric {
+      border-left: 2px solid var(--border);
+      padding-left: 8px
+    }
+
+    .metric .k {
+      font-size: 11px;
+      color: var(--muted)
+    }
+
+    .metric .v {
+      font-size: 15px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums
+    }
+
+    .metric .v small {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--muted)
+    }
+
+    .metric[title] {
+      cursor: help
+    }
+
+    .costbox {
+      display: flex;
+      flex-direction: column;
+      gap: 1px
+    }
+
+    .cost-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      font-size: 12.5px;
+      padding: 2px 0;
+      align-items: baseline
+    }
+
+    .cost-row .cl {
+      color: var(--muted)
+    }
+
+    .cost-row .cl small {
+      font-size: 10.5px;
+      opacity: .8;
+      margin-left: 4px
+    }
+
+    .cost-row .cn {
+      font-family: ui-monospace, monospace;
+      color: var(--text);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums
+    }
+
+    .cost-row.tot {
+      border-top: 1px solid var(--border);
+      margin-top: 2px;
+      padding-top: 4px
+    }
+
+    .cost-row.tot .cl {
+      color: var(--text);
+      font-weight: 600
+    }
+
+    .cost-row.tot .cn {
+      font-weight: 700
+    }
+
+    .cost-grp {
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+      margin-top: 9px;
+      padding-top: 6px;
+      border-top: 1px dashed var(--border)
+    }
+
+    .cost-grp:first-child {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: none
+    }
+
+    .cost-grp small {
+      text-transform: none;
+      letter-spacing: 0
+    }
+
+    .bomlist {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px
+    }
+
+    .bomlist span {
+      font-size: 11px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 6px;
+      color: var(--muted)
+    }
+
+    .obs-row,
+    .risk-row {
+      padding: 4px 0;
+      border-top: 1px dashed var(--border);
+      font-size: 12.5px
+    }
+
+    .obs-row:first-child,
+    .risk-row:first-child {
+      border-top: none
+    }
+
+    .tag {
+      font-size: 10px;
+      color: var(--accent);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0 4px;
+      margin-left: 4px
+    }
+
+    .tag.static {
+      color: var(--muted)
+    }
+
+    details.cat {
+      margin: 0 20px 14px
+    }
+
+    details.cat summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 6px 0
+    }
+
+    .foot {
+      padding: 0 20px 30px;
+      color: var(--muted);
+      font-size: 11px
+    }
+
+    #modal-root {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, .6);
+      z-index: 50
+    }
+
+    #modal-root.open {
+      display: flex
+    }
+
+    .modal {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      max-width: 760px;
+      width: 92%;
+      max-height: 88vh;
+      overflow: auto;
+      padding: 16px 18px
+    }
+
+    .modal h2 {
+      margin: 0 0 4px;
+      font-size: 16px
+    }
+
+    .modal .close {
+      float: right;
+      cursor: pointer;
+      font-size: 20px;
+      color: var(--muted);
+      line-height: 1
+    }
+
+    .modal .sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 10px
+    }
+
+    .modal .mdiagram {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      margin: 8px 0;
+      overflow: auto
+    }
+
+    .modal .mdiagram svg {
+      max-width: 100%
+    }
+
+    #testbar {
+      display: none;
+      margin: 10px 20px 0;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-family: ui-monospace, monospace
+    }
+
+    #testbar.pass {
+      background: #16302a;
+      border: 1px solid var(--ok);
+      color: var(--ok)
+    }
+
+    #testbar.fail {
+      background: #3a1d22;
+      border: 1px solid var(--err);
+      color: var(--err)
+    }
+
+    @media (max-width:880px) {
+      main {
+        grid-template-columns: 1fr
+      }
+
+      section.output {
+        position: static
+      }
+    }
+  </style>
 </head>
+
 <body>
-<header>
-  <h1>Agentic System Designer <span style="color:var(--muted);font-weight:400;font-size:13px">— design a GenAI system on Google Cloud</span></h1>
-  <div class="sub">Toggle the inputs → the architecture, metrics, and risks recompute live. Deterministic, no LLM. Pricing/heuristics ~May 2026.</div>
-</header>
+  <header>
+    <h1>Agentic System Designer <span style="color:var(--muted);font-weight:400;font-size:13px">- design a GenAI system
+        on Google Cloud</span></h1>
+    <div class="sub">Toggle the inputs → the architecture, metrics, and risks recompute live. Deterministic, no LLM.
+      Pricing/heuristics ~May 2026.</div>
+  </header>
 
-<div class="banner" id="intro">
-  <span class="x" id="introClose">×</span>
-  <b>How to read this:</b> left = the decisions (Clarify → Scale → Deep-dive); right = the resulting design, sizing, and what breaks at scale.
-  Boxes marked <b>⊕</b> drill in. On panels, <span class="tag" style="margin:0">blue tags</span> name the <b>driving input</b>, <span class="tag static" style="margin:0">grey</span> = fixed; a control an input forces shows a <span class="lock" style="margin:0">🔒 cause</span> badge.
-  <div class="legend">
-    <span><i style="background:var(--client)"></i>client</span>
-    <span><i style="background:var(--gateway)"></i>gateway</span>
-    <span><i style="background:var(--orch)"></i>orchestration</span>
-    <span><i style="background:var(--retr)"></i>retrieval</span>
-    <span><i style="background:var(--data)"></i>data</span>
-    <span><i style="background:var(--obs)"></i>observability</span>
-    <span><i style="background:var(--gov)"></i>governance</span>
+  <div class="banner" id="intro">
+    <span class="x" id="introClose">×</span>
+    <b>How to read this:</b> left = the decisions (Clarify → Scale → Deep-dive); right = the resulting design, sizing,
+    and what breaks at scale.
+    Boxes marked <b>⊕</b> drill in. On panels, <span class="tag" style="margin:0">blue tags</span> name the <b>driving
+      input</b>, <span class="tag static" style="margin:0">grey</span> = fixed; a control an input forces shows a <span
+      class="lock" style="margin:0">🔒 cause</span> badge.
+    <div class="legend">
+      <span><i style="background:var(--client)"></i>client</span>
+      <span><i style="background:var(--gateway)"></i>gateway</span>
+      <span><i style="background:var(--orch)"></i>orchestration</span>
+      <span><i style="background:var(--retr)"></i>retrieval</span>
+      <span><i style="background:var(--data)"></i>data</span>
+      <span><i style="background:var(--obs)"></i>observability</span>
+      <span><i style="background:var(--gov)"></i>governance</span>
+    </div>
   </div>
-</div>
-<div id="testbar"></div>
+  <div id="testbar"></div>
 
-<main>
-  <!-- LEFT: configuration -->
-  <section class="config">
-    <div class="selector">
-      <div class="row">
-        <label for="purpose">Purpose</label>
-        <select id="purpose" data-bind="purpose">
-          <option value="assistant">Agentic assistant / RAG</option>
-          <option value="automation">Multi-agent workflow automation</option>
-        </select>
-        <span class="toggle-adv"><input type="checkbox" id="advanced" data-bind="ui.advancedMode"><label for="advanced">Advanced</label></span>
+  <main>
+    <!-- LEFT: configuration -->
+    <section class="config">
+      <div class="selector">
+        <div class="row">
+          <label for="purpose">Purpose</label>
+          <select id="purpose" data-bind="purpose">
+            <option value="assistant">Agentic assistant / RAG</option>
+            <option value="automation">Multi-agent workflow automation</option>
+          </select>
+        </div>
+        <div class="chips" id="presetChips"></div>
+        <div class="row" style="margin-top:8px">
+          <button class="mini" id="resetBtn">Reset to preset defaults</button>
+          <button class="mini" id="permalinkBtn">Copy permalink</button>
+        </div>
       </div>
-      <div class="chips" id="presetChips"></div>
-      <div class="row" style="margin-top:8px">
-        <button class="mini" id="resetBtn">Reset to preset defaults</button>
-        <button class="mini" id="permalinkBtn">Copy permalink</button>
+
+      <fieldset data-grp="workload">
+        <legend>Workload &amp; SLO <span class="vis-count" id="visCount"></span></legend>
+        <div class="ctl" data-vis="always"><label>Actors (<span id="actorLabel">seats</span>)</label>
+          <input type="number" min="1" step="1" data-bind="inputs.actors">
+        </div>
+        <div class="ctl" data-vis="always"><label>Actions / actor / day</label>
+          <input type="number" min="1" step="1" data-bind="inputs.actionsPerDay">
+        </div>
+        <div class="ctl" data-vis="always"><label>Burst ×</label>
+          <input type="range" min="1.5" max="8" step="0.5" data-bind="inputs.burst"><output class="val"
+            data-out="inputs.burst"></output>
+        </div>
+        <div class="ctl" data-vis="always"><label>Active hrs / week</label>
+          <input type="range" min="20" max="168" step="2" data-bind="inputs.activeHoursPerWeek"><output class="val"
+            data-out="inputs.activeHoursPerWeek"></output>
+        </div>
+        <div class="ctl" data-vis="always"><label>Latency SLO</label>
+          <select data-bind="inputs.latencyPreset">
+            <option value="subsecond">Sub-second (deterministic)</option>
+            <option value="agentic">&lt;2s start / &lt;6s full (agentic)</option>
+            <option value="batch">5–10s batch</option>
+            <option value="minutes">Per-run minutes (automation)</option>
+          </select>
+        </div>
+        <div class="ctl" data-vis="always"><label>Tokens in / out / query</label>
+          <input type="number" min="0" step="100" data-bind="inputs.tokensIn"><input type="number" min="0" step="50"
+            data-bind="inputs.tokensOut">
+        </div>
+        <div class="ctl" data-vis="always"><label>Audience &amp; sensitivity</label>
+          <select data-bind="inputs.audienceSensitivity">
+            <option value="internal_low">Internal · low</option>
+            <option value="internal_regulated">Internal · regulated</option>
+            <option value="internal_strictpii">Internal · strict-PII</option>
+            <option value="external_enterprise">External · enterprise</option>
+            <option value="external_regulated">External · regulated</option>
+            <option value="public_strictpii">Public · strict-PII</option>
+          </select>
+        </div>
+        <div class="ctl" data-vis="always"><label>Data sources</label></div>
+        <div class="ctl" data-vis="always">
+          <div class="checks" id="dataSources">
+            <label><input type="checkbox" name="dataSources" value="bigquery">BigQuery</label>
+            <label><input type="checkbox" name="dataSources" value="onprem">On-prem DB</label>
+            <label><input type="checkbox" name="dataSources" value="vector">Vector store</label>
+            <label><input type="checkbox" name="dataSources" value="stream">Streaming</label>
+            <label><input type="checkbox" name="dataSources" value="kg">Knowledge graph</label>
+            <label><input type="checkbox" name="dataSources" value="web">Web / OSINT</label>
+            <label><input type="checkbox" name="dataSources" value="doc_corpus">Doc corpus</label>
+          </div>
+        </div>
+        <div class="ctl" data-vis="corpus"><label>Corpus size (docs)</label>
+          <input type="number" min="0" step="100000" data-bind="inputs.corpusSize">
+        </div>
+        <div class="ctl" data-vis="freshness"><label>Data freshness</label>
+          <select data-bind="inputs.freshness">
+            <option value="realtime">Real-time / streaming</option>
+            <option value="minutes">Minutes lag</option>
+            <option value="eod">End-of-day</option>
+            <option value="static">Static archive</option>
+          </select>
+        </div>
+        <div class="ctl" data-vis="languages"><label>Languages</label>
+          <div class="checks" id="languages">
+            <label><input type="checkbox" name="languages" value="en">EN</label>
+            <label><input type="checkbox" name="languages" value="zh">ZH</label>
+            <label><input type="checkbox" name="languages" value="ja">JA</label>
+            <label><input type="checkbox" name="languages" value="hi">HI</label>
+            <label><input type="checkbox" name="languages" value="ms">MS</label>
+            <label><input type="checkbox" name="languages" value="ta">TA</label>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset data-grp="3a">
+        <legend>Deployment &amp; topology</legend>
+        <div class="ctl" data-ov="deployment"><label>Deployment</label>
+          <select data-bind="overrides.deployment">
+            <option value="gcp">GCP</option>
+            <option value="hybrid">Hybrid</option>
+            <option value="onprem">On-prem</option>
+          </select>
+        </div>
+        <div class="ctl" data-ov="multiRegion"><label>Multi-region active-active</label>
+          <input type="checkbox" data-bind="overrides.multiRegion">
+        </div>
+      </fieldset>
+
+      <fieldset data-grp="3b">
+        <legend>Orchestration</legend>
+        <div class="ctl" data-ov="pattern"><label>Pattern</label>
+          <select data-bind="overrides.pattern">
+            <option value="single">Single agent</option>
+            <option value="multi">Multi-agent</option>
+          </select>
+        </div>
+        <div class="ctl" data-ov="numAgents" data-vis="multi"><label>Specialist agents</label>
+          <input type="number" min="1" max="12" step="1" data-bind="overrides.numAgents">
+        </div>
+        <div class="ctl" data-ov="reactMaxIter"><label>ReAct max iterations</label>
+          <input type="range" min="1" max="12" step="1" data-bind="overrides.reactMaxIter"><output class="val"
+            data-out="overrides.reactMaxIter"></output>
+        </div>
+        <div class="ctl" data-ov="platform"><label>Platform</label>
+          <select data-bind="overrides.platform">
+            <option value="adk">ADK + Agent Engine</option>
+            <option value="studio">Agent Studio</option>
+            <option value="langgraph">LangGraph</option>
+          </select>
+        </div>
+      </fieldset>
+
+      <fieldset data-grp="3c">
+        <legend>Models &amp; routing</legend>
+        <div class="ctl" data-ov="reasoningModel"><label>Reasoning model</label>
+          <select data-bind="overrides.reasoningModel"></select>
+        </div>
+        <div class="ctl" data-ov="fastModel"><label>Fast / lookup model</label>
+          <select data-bind="overrides.fastModel"></select>
+        </div>
+        <div class="ctl" data-ov="smartRouting"><label>Smart routing</label>
+          <input type="checkbox" data-bind="overrides.smartRouting">
+        </div>
+        <div class="ctl" data-ov="routingSplit" data-vis="routing"><label>% to fast model</label>
+          <input type="range" min="0" max="100" step="5" data-bind="overrides.routingSplit"><output class="val"
+            data-out="overrides.routingSplit"></output>
+        </div>
+        <div class="ctl" data-ov="judgeDiversity"><label>Cross-model judge diversity</label>
+          <input type="checkbox" data-bind="overrides.judgeDiversity">
+        </div>
+      </fieldset>
+
+      <fieldset data-grp="3d">
+        <legend>Retrieval</legend>
+        <div class="ctl" data-ov="retrieval"><label>Strategy</label>
+          <select data-bind="overrides.retrieval">
+            <option value="none">None</option>
+            <option value="dense">Pure dense</option>
+            <option value="hybrid">Hybrid (dense+BM25)</option>
+            <option value="rerank">Hybrid + reranker</option>
+          </select>
+        </div>
+        <div class="ctl" data-ov="metadataPrefilter" data-vis="retr"><label>Metadata pre-filter</label>
+          <input type="checkbox" data-bind="overrides.metadataPrefilter">
+        </div>
+        <div class="ctl" data-ov="vectorDB" data-vis="retr"><label>Vector DB</label>
+          <select data-bind="overrides.vectorDB">
+            <option value="vertex">Vertex Vector Search</option>
+            <option value="alloydb">AlloyDB (pgvector)</option>
+            <option value="elastic">Elasticsearch hybrid</option>
+          </select>
+        </div>
+        <div class="ctl" data-ov="ingestionSep" data-vis="retr"><label>Ingestion separation</label>
+          <input type="checkbox" data-bind="overrides.ingestionSep">
+        </div>
+        <div class="ctl" data-ov="hnswM" data-vis="retr"><label>HNSW M</label>
+          <input type="range" min="8" max="64" step="4" data-bind="overrides.hnswM"><output class="val"
+            data-out="overrides.hnswM"></output>
+        </div>
+        <div class="ctl" data-ov="hnswEf" data-vis="retr"><label>HNSW efSearch</label>
+          <input type="range" min="16" max="512" step="16" data-bind="overrides.hnswEf"><output class="val"
+            data-out="overrides.hnswEf"></output>
+        </div>
+      </fieldset>
+
+      <fieldset data-grp="3e">
+        <legend>Gateway &amp; governance</legend>
+        <div class="ctl" data-ov="gateway"><label>LLM Gateway (Apigee)</label>
+          <input type="checkbox" data-bind="overrides.gateway">
+        </div>
+        <div class="ctl" data-ov="auditLog" data-vis="gw"><label>Immutable audit log</label>
+          <input type="checkbox" data-bind="overrides.auditLog">
+        </div>
+        <div class="ctl" data-ov="rulesEngine"><label>Deterministic rules engine</label>
+          <input type="checkbox" data-bind="overrides.rulesEngine">
+        </div>
+        <div class="ctl" data-ov="sandbox"><label>Transient sandbox</label>
+          <input type="checkbox" data-bind="overrides.sandbox">
+        </div>
+      </fieldset>
+
+      <fieldset data-grp="3f">
+        <legend>State &amp; context cache</legend>
+        <div class="ctl" data-ov="stateStore"><label>State store</label>
+          <select data-bind="overrides.stateStore">
+            <option value="redis">Memorystore (Redis)</option>
+            <option value="redis_spanner">Redis + Spanner</option>
+            <option value="spanner">Spanner</option>
+            <option value="cloudsql">Cloud SQL</option>
+          </select>
+        </div>
+        <div class="ctl" data-ov="contextCache"><label>Context cache (system prompt)</label>
+          <input type="checkbox" data-bind="overrides.contextCache">
+        </div>
+        <div class="ctl" data-ov="reuseInputPct" data-vis="ctxreuse"><label>Reusable / cacheable input %</label>
+          <input type="range" min="0" max="90" step="5" data-bind="overrides.reuseInputPct"><output class="val"
+            data-out="overrides.reuseInputPct"></output>
+        </div>
+      </fieldset>
+
+      <fieldset data-grp="3g" data-vis="selfhost">
+        <legend>Self-hosted inference</legend>
+        <div class="ctl" data-ov="accelerator"><label>Accelerator</label>
+          <select data-bind="overrides.accelerator">
+            <option value="h100">H100 SXM5</option>
+            <option value="b200">B200</option>
+            <option value="tpu">TPU v6 Trillium</option>
+          </select>
+        </div>
+        <div class="ctl" data-ov="quant"><label>Quantization</label>
+          <select data-bind="overrides.quant">
+            <option value="bf16">BF16</option>
+            <option value="fp8">FP8</option>
+            <option value="int4">INT4</option>
+          </select>
+        </div>
+        <div class="ctl" data-ov="pagedAttn"><label>PagedAttention</label>
+          <input type="checkbox" data-bind="overrides.pagedAttn">
+        </div>
+        <div class="ctl" data-ov="gpuTier"><label>Pricing tier</label>
+          <select data-bind="overrides.gpuTier">
+            <option value="on_demand">On-demand</option>
+            <option value="cud_3y">3-year CUD</option>
+            <option value="spot">Spot</option>
+          </select>
+        </div>
+        <div class="ctl" data-ov="gpuUtil"><label>Steady utilisation %</label>
+          <input type="range" min="20" max="100" step="5" data-bind="overrides.gpuUtil"><output class="val"
+            data-out="overrides.gpuUtil"></output>
+        </div>
+      </fieldset>
+
+      <fieldset data-grp="3h">
+        <legend>Response caching (search / Q&amp;A)</legend>
+        <div class="ctl" data-ov="exactCache"><label>Exact-match cache</label><input type="checkbox"
+            data-bind="overrides.exactCache"></div>
+        <div class="ctl" data-ov="semanticCache"><label>Semantic cache</label><input type="checkbox"
+            data-bind="overrides.semanticCache"></div>
+        <div class="ctl" data-ov="autocomplete"><label>Query autocomplete</label><input type="checkbox"
+            data-bind="overrides.autocomplete"></div>
+        <div class="ctl" data-ov="warming"><label>Cache warming</label><input type="checkbox"
+            data-bind="overrides.warming"></div>
+        <div class="ctl" data-ov="cacheHit"><label>Effective cache-hit %</label>
+          <input type="range" min="0" max="80" step="5" data-bind="overrides.cacheHit"><output class="val"
+            data-out="overrides.cacheHit"></output>
+        </div>
+      </fieldset>
+
+      <fieldset data-grp="3i">
+        <legend>Trust &amp; governance</legend>
+        <div class="ctl" data-ov="guardrails"><label>Safety guardrails (injection / output)</label><input
+            type="checkbox" data-bind="overrides.guardrails"></div>
+        <div class="ctl" data-ov="toolAuthz"><label>Agent identity &amp; tool authz</label><input type="checkbox"
+            data-bind="overrides.toolAuthz"></div>
+        <div class="ctl" data-ov="costKillSwitch"><label>Cost guardrails / kill-switch</label><input type="checkbox"
+            data-bind="overrides.costKillSwitch"></div>
+        <div class="ctl" data-ov="residencyPin"><label>Data residency pin + VPC-SC</label><input type="checkbox"
+            data-bind="overrides.residencyPin"></div>
+        <div class="ctl" data-ov="hitlApproval"><label>Human approval</label>
+          <select data-bind="overrides.hitlApproval">
+            <option value="none">None</option>
+            <option value="maker_checker">Maker-checker</option>
+            <option value="dual">Dual-control</option>
+          </select>
+        </div>
+        <div class="ctl" data-ov="feedbackLoop"><label>Human feedback loop</label><input type="checkbox"
+            data-bind="overrides.feedbackLoop"></div>
+        <div class="ctl" data-ov="modelRiskGov"><label>Model risk governance</label><input type="checkbox"
+            data-bind="overrides.modelRiskGov"></div>
+        <div class="ctl" data-ov="safeRollout"><label>Safe rollout + eval gates</label><input type="checkbox"
+            data-bind="overrides.safeRollout"></div>
+      </fieldset>
+    </section>
+
+    <!-- RIGHT: output -->
+    <section class="output">
+      <div>
+        <div class="diagram-head">
+          <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Architecture</h3>
+          <button class="mini icon" id="copyMermaid" title="Copy Mermaid source" aria-label="Copy Mermaid source"><svg
+              viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg></button>
+        </div>
+        <div id="diagram"></div>
       </div>
-    </div>
+      <div class="panel" id="issues-strip">
+        <h3>Issues &amp; levers <span id="issueCount" class="vis-count"></span></h3>
+        <div id="issues"></div>
+      </div>
+      <div class="panel">
+        <h3>Metrics</h3>
+        <div class="metrics" id="metrics"></div>
+      </div>
+      <div class="panel">
+        <h3>Cost <span id="costHead" class="vis-count"></span></h3>
+        <div id="cost"></div>
+      </div>
+      <div class="panel">
+        <h3>Observability</h3>
+        <div id="observability"></div>
+      </div>
+      <div class="panel">
+        <h3>Risk &amp; failure</h3>
+        <div id="risk"></div>
+      </div>
+      <div class="panel">
+        <h3>Bill of materials</h3>
+        <div class="bomlist" id="bom"></div>
+      </div>
+    </section>
+  </main>
 
-    <fieldset data-grp="workload">
-      <legend>Workload &amp; SLO <span class="vis-count" id="visCount"></span></legend>
-      <div class="ctl" data-vis="always"><label>Actors (<span id="actorLabel">seats</span>)</label>
-        <input type="number" min="1" step="1" data-bind="inputs.actors"></div>
-      <div class="ctl" data-vis="always"><label>Actions / actor / day</label>
-        <input type="number" min="1" step="1" data-bind="inputs.actionsPerDay"></div>
-      <div class="ctl" data-vis="always"><label>Burst ×</label>
-        <input type="range" min="1.5" max="8" step="0.5" data-bind="inputs.burst"><output class="val" data-out="inputs.burst"></output></div>
-      <div class="ctl" data-vis="always"><label>Active hrs / week</label>
-        <input type="range" min="20" max="168" step="2" data-bind="inputs.activeHoursPerWeek"><output class="val" data-out="inputs.activeHoursPerWeek"></output></div>
-      <div class="ctl" data-vis="always"><label>Latency SLO</label>
-        <select data-bind="inputs.latencyPreset">
-          <option value="subsecond">Sub-second (deterministic)</option>
-          <option value="agentic">&lt;2s start / &lt;6s full (agentic)</option>
-          <option value="batch">5–10s batch</option>
-          <option value="minutes">Per-run minutes (automation)</option>
-        </select></div>
-      <div class="ctl" data-vis="always"><label>Tokens in / out / query</label>
-        <input type="number" min="0" step="100" data-bind="inputs.tokensIn"><input type="number" min="0" step="50" data-bind="inputs.tokensOut"></div>
-      <div class="ctl" data-vis="always"><label>Audience &amp; sensitivity</label>
-        <select data-bind="inputs.audienceSensitivity">
-          <option value="internal_low">Internal · low</option>
-          <option value="internal_regulated">Internal · regulated</option>
-          <option value="internal_strictpii">Internal · strict-PII</option>
-          <option value="external_enterprise">External · enterprise</option>
-          <option value="external_regulated">External · regulated</option>
-          <option value="public_strictpii">Public · strict-PII</option>
-        </select></div>
-      <div class="ctl" data-vis="always"><label>Data sources</label></div>
-      <div class="ctl" data-vis="always"><div class="checks" id="dataSources">
-        <label><input type="checkbox" name="dataSources" value="bigquery">BigQuery</label>
-        <label><input type="checkbox" name="dataSources" value="onprem">On-prem DB</label>
-        <label><input type="checkbox" name="dataSources" value="vector">Vector store</label>
-        <label><input type="checkbox" name="dataSources" value="stream">Streaming</label>
-        <label><input type="checkbox" name="dataSources" value="kg">Knowledge graph</label>
-        <label><input type="checkbox" name="dataSources" value="web">Web / OSINT</label>
-        <label><input type="checkbox" name="dataSources" value="doc_corpus">Doc corpus</label>
-      </div></div>
-      <div class="ctl" data-vis="corpus"><label>Corpus size (docs)</label>
-        <input type="number" min="0" step="100000" data-bind="inputs.corpusSize"></div>
-      <div class="ctl" data-vis="freshness"><label>Data freshness</label>
-        <select data-bind="inputs.freshness">
-          <option value="realtime">Real-time / streaming</option>
-          <option value="minutes">Minutes lag</option>
-          <option value="eod">End-of-day</option>
-          <option value="static">Static archive</option>
-        </select></div>
-      <div class="ctl" data-vis="languages"><label>Languages</label><div class="checks" id="languages">
-        <label><input type="checkbox" name="languages" value="en">EN</label>
-        <label><input type="checkbox" name="languages" value="zh">ZH</label>
-        <label><input type="checkbox" name="languages" value="ja">JA</label>
-        <label><input type="checkbox" name="languages" value="hi">HI</label>
-        <label><input type="checkbox" name="languages" value="ms">MS</label>
-        <label><input type="checkbox" name="languages" value="ta">TA</label>
-      </div></div>
-    </fieldset>
+  <div class="foot">Deterministic design tool - advice is computed from formulas + rules, no runtime LLM. Illustrative
+    pricing/heuristics ~May 2026.</div>
 
-    <fieldset data-grp="3a"><legend>Deployment &amp; topology</legend>
-      <div class="ctl" data-ov="deployment"><label>Deployment</label>
-        <select data-bind="overrides.deployment"><option value="gcp">GCP</option><option value="hybrid">Hybrid</option><option value="onprem">On-prem</option></select></div>
-      <div class="ctl" data-ov="multiRegion"><label>Multi-region active-active</label>
-        <input type="checkbox" data-bind="overrides.multiRegion"></div>
-    </fieldset>
+  <div id="modal-root">
+    <div class="modal" id="modal"></div>
+  </div>
 
-    <fieldset data-grp="3b"><legend>Orchestration</legend>
-      <div class="ctl" data-ov="pattern"><label>Pattern</label>
-        <select data-bind="overrides.pattern"><option value="single">Single agent</option><option value="multi">Multi-agent</option></select></div>
-      <div class="ctl" data-ov="numAgents" data-vis="multi"><label>Specialist agents</label>
-        <input type="number" min="1" max="12" step="1" data-bind="overrides.numAgents"></div>
-      <div class="ctl" data-ov="reactMaxIter"><label>ReAct max iterations</label>
-        <input type="range" min="1" max="12" step="1" data-bind="overrides.reactMaxIter"><output class="val" data-out="overrides.reactMaxIter"></output></div>
-      <div class="ctl adv" data-ov="platform"><label>Platform</label>
-        <select data-bind="overrides.platform"><option value="adk">ADK + Agent Engine</option><option value="studio">Agent Studio</option><option value="langgraph">LangGraph</option></select></div>
-    </fieldset>
+  <script type="module">
+    /* ===================== Mermaid (CDN + graceful fallback) ===================== */
+    let mermaid = null, mermaidOK = false;
+    try {
+      const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
+      mermaid = mod.default;
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'dark', flowchart: { htmlLabels: true, curve: 'basis' } });
+      mermaidOK = true;
+    } catch (e) { console.warn('Mermaid CDN unavailable - using source fallback', e); }
 
-    <fieldset data-grp="3c"><legend>Models &amp; routing</legend>
-      <div class="ctl" data-ov="reasoningModel"><label>Reasoning model</label>
-        <select data-bind="overrides.reasoningModel"></select></div>
-      <div class="ctl" data-ov="fastModel"><label>Fast / lookup model</label>
-        <select data-bind="overrides.fastModel"></select></div>
-      <div class="ctl" data-ov="smartRouting"><label>Smart routing</label>
-        <input type="checkbox" data-bind="overrides.smartRouting"></div>
-      <div class="ctl" data-ov="routingSplit" data-vis="routing"><label>% to fast model</label>
-        <input type="range" min="0" max="100" step="5" data-bind="overrides.routingSplit"><output class="val" data-out="overrides.routingSplit"></output></div>
-      <div class="ctl adv" data-ov="judgeDiversity"><label>Cross-model judge diversity</label>
-        <input type="checkbox" data-bind="overrides.judgeDiversity"></div>
-    </fieldset>
+    /* ===================== Constants (editable, ~May 2026) ===================== */
+    // $/1M tokens for in/out/cacheRead; grounding = $ per 1k live-search calls (0 = model can't ground).
+    const MODELS = [
+      { id: 'gemini-3-pro', name: 'Gemini 3 Pro', in: 2.0, out: 12.0, cacheRead: 0.20, grounding: 14.0 },
+      { id: 'gemini-35-flash', name: 'Gemini 3.5 Flash', in: 1.5, out: 9.0, cacheRead: 0.15, grounding: 14.0 },
+      { id: 'gemini-3-flash', name: 'Gemini 3 Flash', in: 0.5, out: 3.0, cacheRead: 0.05, grounding: 14.0 },
+      { id: 'claude-opus-48', name: 'Claude Opus 4.8', in: 5.0, out: 25.0, cacheRead: 0.50, grounding: 0 },
+      { id: 'llama4-selfhost', name: 'Llama 4 (self-host)', in: 0, out: 0, cacheRead: 0, grounding: 0 },
+    ];
+    const K = {
+      dim: 768, chunksPerDoc: 5, bytesPerFloat: 4,
+      apigeeRpsPerRegion: 30000, embedTokPerWorkerDay: 2.0e9, caseDurationSec: 90,
+      hoursMo: 730,
+      // Self-host fleet sizing (mirrors agent-infra-cost-calculator throughput model).
+      // nodeTokPerSec = decode tok/s for a 70B-active model at FP8 on one 8-accelerator node.
+      // Real node throughput scales by precision, accelerator class, and the open-weight
+      // serving model's active params (refActiveB, with a MoE routing penalty). costHr is
+      // per 8-accelerator node ($/hr), per pricing tier. Illustrative ~May 2026.
+      gpu: {
+        nodeTokPerSec: 8000, baseActiveB: 70, refActiveB: 17, moePenalty: 0.5,
+        precMult: { bf16: 1.0, fp8: 2.0, int4: 2.8 },
+        accel: {
+          h100: { tpsMult: 1.0, costHr: { on_demand: 88.49, cud_3y: 38.86, spot: 37.92 } },
+          b200: { tpsMult: 2.2, costHr: { on_demand: 130.0, cud_3y: 62.00, spot: 55.00 } },
+          tpu: { tpsMult: 1.3, costHr: { on_demand: 64.00, cud_3y: 32.00, spot: 24.00 } },
+        },
+      },
+      storageBQ: 0.02, storageGCS: 0.02, egress: 0.10, vsNodeHr: 0.6,
+      hnsw: { a: 0.5, b: 120, baseMs: 8 },
+      lat: { gateway: 40, retrieval: 70, rerank: 80, ttft: 400, perOutTokMs: 5 },
+    };
+    const modelById = id => MODELS.find(m => m.id === id) || MODELS[0];
 
-    <fieldset data-grp="3d"><legend>Retrieval</legend>
-      <div class="ctl" data-ov="retrieval"><label>Strategy</label>
-        <select data-bind="overrides.retrieval"><option value="none">None</option><option value="dense">Pure dense</option><option value="hybrid">Hybrid (dense+BM25)</option><option value="rerank">Hybrid + reranker</option></select></div>
-      <div class="ctl" data-ov="metadataPrefilter" data-vis="retr"><label>Metadata pre-filter</label>
-        <input type="checkbox" data-bind="overrides.metadataPrefilter"></div>
-      <div class="ctl" data-ov="vectorDB" data-vis="retr"><label>Vector DB</label>
-        <select data-bind="overrides.vectorDB"><option value="vertex">Vertex Vector Search</option><option value="alloydb">AlloyDB (pgvector)</option><option value="elastic">Elasticsearch hybrid</option></select></div>
-      <div class="ctl" data-ov="ingestionSep" data-vis="retr"><label>Ingestion separation</label>
-        <input type="checkbox" data-bind="overrides.ingestionSep"></div>
-      <div class="ctl adv" data-ov="hnswM" data-vis="retr"><label>HNSW M</label>
-        <input type="range" min="8" max="64" step="4" data-bind="overrides.hnswM"><output class="val" data-out="overrides.hnswM"></output></div>
-      <div class="ctl adv" data-ov="hnswEf" data-vis="retr"><label>HNSW efSearch</label>
-        <input type="range" min="16" max="512" step="16" data-bind="overrides.hnswEf"><output class="val" data-out="overrides.hnswEf"></output></div>
-    </fieldset>
+    /* ===================== Presets (primary-input bundles) ===================== */
+    const PRESETS = {
+      assistant: {
+        expert_copilot: { label: 'Expert copilot', inputs: { actors: 1000, actionsPerDay: 10, burst: 5, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 4000, tokensOut: 800, audienceSensitivity: 'internal_regulated', dataSources: ['vector', 'bigquery', 'doc_corpus'], corpusSize: 2e6, freshness: 'eod', languages: ['en'] } },
+        highvol_qa: { label: 'High-volume Q&A', inputs: { actors: 20000, actionsPerDay: 50, burst: 6, activeHoursPerWeek: 120, latencyPreset: 'subsecond', tokensIn: 3000, tokensOut: 500, audienceSensitivity: 'internal_regulated', dataSources: ['vector', 'doc_corpus'], corpusSize: 1e7, freshness: 'static', languages: ['en'] } },
+        customer_support: { label: 'Customer support', inputs: { actors: 50000, actionsPerDay: 4, burst: 7, activeHoursPerWeek: 168, latencyPreset: 'agentic', tokensIn: 2500, tokensOut: 600, audienceSensitivity: 'external_enterprise', dataSources: ['vector', 'doc_corpus'], corpusSize: 5e5, freshness: 'eod', languages: ['en', 'zh'] } },
+        strictpii_verify: { label: 'Strict-PII verification', inputs: { actors: 300, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 6000, tokensOut: 1000, audienceSensitivity: 'internal_strictpii', dataSources: ['web', 'kg', 'onprem'], corpusSize: 0, freshness: 'realtime', languages: ['en'] } },
+      },
+      automation: {
+        midsize: { label: 'Mid-size org', inputs: { actors: 300, actionsPerDay: 6, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
+        large: { label: 'Large org (10×)', inputs: { actors: 3000, actionsPerDay: 6, burst: 4, activeHoursPerWeek: 80, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
+      }
+    };
 
-    <fieldset data-grp="3e"><legend>Gateway &amp; governance</legend>
-      <div class="ctl" data-ov="gateway"><label>LLM Gateway (Apigee)</label>
-        <input type="checkbox" data-bind="overrides.gateway"></div>
-      <div class="ctl" data-ov="auditLog" data-vis="gw"><label>Immutable audit log</label>
-        <input type="checkbox" data-bind="overrides.auditLog"></div>
-      <div class="ctl" data-ov="rulesEngine"><label>Deterministic rules engine</label>
-        <input type="checkbox" data-bind="overrides.rulesEngine"></div>
-      <div class="ctl" data-ov="sandbox"><label>Transient sandbox</label>
-        <input type="checkbox" data-bind="overrides.sandbox"></div>
-    </fieldset>
+    /* ===================== Default override values ===================== */
+    const DEFAULT_OVERRIDES = () => ({
+      deployment: 'gcp', multiRegion: true,
+      pattern: 'multi', numAgents: 4, reactMaxIter: 6, platform: 'adk',
+      reasoningModel: 'gemini-35-flash', fastModel: 'gemini-3-flash', smartRouting: true, routingSplit: 70, judgeDiversity: false,
+      retrieval: 'rerank', metadataPrefilter: true, vectorDB: 'vertex', ingestionSep: false, hnswM: 32, hnswEf: 128,
+      gateway: true, auditLog: true, rulesEngine: true, sandbox: false,
+      stateStore: 'redis_spanner', contextCache: true, reuseInputPct: 50,
+      accelerator: 'h100', quant: 'fp8', pagedAttn: true, gpuTier: 'cud_3y', gpuUtil: 70,
+      exactCache: false, semanticCache: false, autocomplete: false, warming: false, cacheHit: 5,
+      guardrails: false, toolAuthz: false, costKillSwitch: false, residencyPin: false, hitlApproval: 'none', feedbackLoop: false, modelRiskGov: false, safeRollout: false,
+    });
 
-    <fieldset data-grp="3f"><legend>State &amp; context cache</legend>
-      <div class="ctl" data-ov="stateStore"><label>State store</label>
-        <select data-bind="overrides.stateStore"><option value="redis">Memorystore (Redis)</option><option value="redis_spanner">Redis + Spanner</option><option value="spanner">Spanner</option><option value="cloudsql">Cloud SQL</option></select></div>
-      <div class="ctl" data-ov="contextCache"><label>Context cache (system prompt)</label>
-        <input type="checkbox" data-bind="overrides.contextCache"></div>
-    </fieldset>
+    /* ===================== State ===================== */
+    const state = {
+      purpose: 'assistant', preset: 'expert_copilot',
+      inputs: {}, overrides: {}, locks: {},
+      componentInputs: { gateway: { aggregateQPS: null, tenantApps: 1, providers: 1 }, ingestion: { docsPerDay: null, backfillDocs: 0, docPages: 40, reindexSLOmin: 5 } },
+      ui: { openModal: null, introDismissed: false },
+    };
 
-    <fieldset data-grp="3g" data-vis="selfhost"><legend>Self-hosted inference</legend>
-      <div class="ctl" data-ov="accelerator"><label>Accelerator</label>
-        <select data-bind="overrides.accelerator"><option value="h100">H100 SXM5</option><option value="b200">B200</option><option value="tpu">TPU v6 Trillium</option></select></div>
-      <div class="ctl" data-ov="quant"><label>Quantization</label>
-        <select data-bind="overrides.quant"><option value="bf16">BF16</option><option value="fp8">FP8</option><option value="int4">INT4</option></select></div>
-      <div class="ctl" data-ov="pagedAttn"><label>PagedAttention</label>
-        <input type="checkbox" data-bind="overrides.pagedAttn"></div>
-    </fieldset>
+    /* ===================== Helpers ===================== */
+    const $ = (s, r = document) => r.querySelector(s);
+    const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+    const getPath = (o, p) => p.split('.').reduce((a, k) => a == null ? a : a[k], o);
+    const setPath = (o, p, v) => { const ks = p.split('.'); const last = ks.pop(); let t = o; for (const k of ks) { t = t[k] ?? (t[k] = {}); } t[last] = v; };
+    const fmt = (n, d = 0) => { if (n == null || isNaN(n)) return '-'; const a = Math.abs(n); if (a >= 1e9) return (n / 1e9).toFixed(d || 1) + 'B'; if (a >= 1e6) return (n / 1e6).toFixed(d || 1) + 'M'; if (a >= 1e3) return (n / 1e3).toFixed(d || 1) + 'k'; return n.toFixed(d); };
+    const money = n => { if (n == null || isNaN(n)) return '-'; if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M'; if (n >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'k'; return '$' + n.toFixed(2); };
+    const sens = s => ({ internal_low: { aud: 'internal', lvl: 0 }, internal_regulated: { aud: 'internal', lvl: 2 }, internal_strictpii: { aud: 'internal', lvl: 3 }, external_enterprise: { aud: 'external', lvl: 1 }, external_regulated: { aud: 'external', lvl: 2 }, public_strictpii: { aud: 'public', lvl: 3 } }[s]);
 
-    <fieldset data-grp="3h"><legend>Response caching (search / Q&amp;A)</legend>
-      <div class="ctl" data-ov="exactCache"><label>Exact-match cache</label><input type="checkbox" data-bind="overrides.exactCache"></div>
-      <div class="ctl" data-ov="semanticCache"><label>Semantic cache</label><input type="checkbox" data-bind="overrides.semanticCache"></div>
-      <div class="ctl" data-ov="autocomplete"><label>Query autocomplete</label><input type="checkbox" data-bind="overrides.autocomplete"></div>
-      <div class="ctl adv" data-ov="warming"><label>Cache warming</label><input type="checkbox" data-bind="overrides.warming"></div>
-      <div class="ctl" data-ov="cacheHit"><label>Effective cache-hit %</label>
-        <input type="range" min="0" max="80" step="5" data-bind="overrides.cacheHit"><output class="val" data-out="overrides.cacheHit"></output></div>
-    </fieldset>
+    /* ===================== Preset application ===================== */
+    function applyPreset(purpose, preset) {
+      state.purpose = purpose; state.preset = preset;
+      const p = PRESETS[purpose][preset];
+      state.inputs = structuredClone(p.inputs);
+      state.overrides = DEFAULT_OVERRIDES();
+      // automation tweaks
+      if (purpose === 'automation') { state.overrides.retrieval = 'none'; state.overrides.pattern = 'multi'; state.overrides.numAgents = 5; state.overrides.stateStore = 'spanner'; }
+    }
 
-    <fieldset data-grp="3i" class="adv"><legend>Trust &amp; governance</legend>
-      <div class="ctl" data-ov="guardrails"><label>Safety guardrails (injection / output)</label><input type="checkbox" data-bind="overrides.guardrails"></div>
-      <div class="ctl" data-ov="toolAuthz"><label>Agent identity &amp; tool authz</label><input type="checkbox" data-bind="overrides.toolAuthz"></div>
-      <div class="ctl" data-ov="costKillSwitch"><label>Cost guardrails / kill-switch</label><input type="checkbox" data-bind="overrides.costKillSwitch"></div>
-      <div class="ctl" data-ov="residencyPin"><label>Data residency pin + VPC-SC</label><input type="checkbox" data-bind="overrides.residencyPin"></div>
-      <div class="ctl" data-ov="hitlApproval"><label>Human approval</label>
-        <select data-bind="overrides.hitlApproval"><option value="none">None</option><option value="maker_checker">Maker-checker</option><option value="dual">Dual-control</option></select></div>
-      <div class="ctl" data-ov="feedbackLoop"><label>Human feedback loop</label><input type="checkbox" data-bind="overrides.feedbackLoop"></div>
-      <div class="ctl" data-ov="modelRiskGov"><label>Model risk governance</label><input type="checkbox" data-bind="overrides.modelRiskGov"></div>
-      <div class="ctl" data-ov="safeRollout"><label>Safe rollout + eval gates</label><input type="checkbox" data-bind="overrides.safeRollout"></div>
-    </fieldset>
-  </section>
+    /* ===================== Rules engine: derive overrides + locks ===================== */
+    function deriveOverrides() {
+      const o = state.overrides, i = state.inputs, locks = {};
+      const { aud, lvl } = sens(i.audienceSensitivity);
+      const lock = (k, v, reason, cause) => { o[k] = v; locks[k] = { reason, cause }; };
+      // compliance / privacy locks
+      if (lvl >= 2) { lock('gateway', true, 'Regulated+ → gateway required', 'regulated'); lock('auditLog', true, 'Regulated+ → immutable audit log', 'regulated'); }
+      if (lvl >= 3) { lock('sandbox', true, 'Strict-PII → transient sandbox', 'strict-PII'); lock('residencyPin', true, 'Strict-PII → region pin + VPC-SC', 'strict-PII'); }
+      if (aud !== 'internal') { lock('guardrails', true, 'External/public → safety guardrails', aud === 'public' ? 'public' : 'external'); }
+      // performance locks
+      if (i.latencyPreset === 'subsecond') { lock('pattern', 'single', 'Sub-second → single-agent path', 'sub-second'); lock('retrieval', o.retrieval === 'rerank' ? 'hybrid' : o.retrieval, 'Sub-second → drop reranker', 'sub-second'); }
+      // scale locks
+      const heavyCorpus = (i.corpusSize || 0) >= 5e6;
+      if (heavyCorpus && i.dataSources.includes('doc_corpus')) { lock('ingestionSep', true, 'Large corpus → separate ingestion', 'large corpus'); }
+      // governance
+      if (state.purpose === 'automation') { lock('hitlApproval', o.hitlApproval === 'none' ? 'maker_checker' : o.hitlApproval, 'Automation merge → human approval', 'automation'); }
+      // topology
+      if (o.deployment === 'onprem') {
+        lock('reasoningModel', 'llama4-selfhost', 'On-prem → open-weight self-hosted model (no token-metered API)', 'on-prem');
+        lock('fastModel', 'llama4-selfhost', 'On-prem → open-weight self-hosted model (no token-metered API)', 'on-prem');
+        lock('smartRouting', false, 'On-prem single open model → routing n/a', 'on-prem');
+        if (o.vectorDB === 'vertex') lock('vectorDB', 'elastic', 'On-prem → self-hosted vector DB', 'on-prem');
+      } else {
+        // Managed/hybrid path uses token-metered APIs - never leave a model stuck on the
+        // open-weight self-host entry (zero token price ⇒ misleading $0 API cost).
+        if (o.reasoningModel === 'llama4-selfhost') o.reasoningModel = 'gemini-35-flash';
+        if (o.fastModel === 'llama4-selfhost') o.fastModel = 'gemini-3-flash';
+      }
+      state.locks = locks;
+    }
 
-  <!-- RIGHT: output -->
-  <section class="output">
-    <div>
-      <div class="diagram-head"><h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Architecture</h3>
-        <button class="mini icon" id="copyMermaid" title="Copy Mermaid source" aria-label="Copy Mermaid source"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
-      <div id="diagram"></div>
-    </div>
-    <div class="panel" id="issues-strip"><h3>Issues &amp; levers <span id="issueCount" class="vis-count"></span></h3><div id="issues"></div></div>
-    <div class="panel"><h3>Metrics</h3><div class="metrics" id="metrics"></div></div>
-    <div class="panel"><h3>Observability</h3><div id="observability"></div></div>
-    <div class="panel"><h3>Risk &amp; failure</h3><div id="risk"></div></div>
-    <div class="panel"><h3>Bill of materials</h3><div class="bomlist" id="bom"></div></div>
-  </section>
-</main>
+    /* ===================== Metrics ===================== */
+    function computeMetrics() {
+      const i = state.inputs, o = state.overrides, m = {};
+      const activeSecPerDay = i.activeHoursPerWeek * 3600 / 7;
+      const dailyActions = i.actors * i.actionsPerDay;
+      m.volAvg = dailyActions / activeSecPerDay;
+      m.volPeak = m.volAvg * i.burst;
+      m.volLabel = state.purpose === 'automation' ? 'concurrent runs' : 'QPS';
+      m.tokensDay = dailyActions * (i.tokensIn + i.tokensOut);
+      // ---- token cost (managed API): explicit context-cache split + grounding ----
+      const rm = modelById(o.reasoningModel), fm = modelById(o.fastModel);
+      // Context cache: a fraction of input (reused system prompt / retrieved context) is
+      // billed at the model's cache-read price instead of full input - like the calculator's
+      // cache-hit slider, but the discount uses each model's real cacheRead rate.
+      const reuse = o.contextCache ? Math.min(0.9, (o.reuseInputPct || 0) / 100) : 0;
+      const callCost = mm => {
+        const fresh = i.tokensIn * (1 - reuse) * mm.in / 1e6;
+        const cached = i.tokensIn * reuse * (mm.cacheRead || 0) / 1e6;
+        const out = i.tokensOut * mm.out / 1e6;
+        return { fresh, cached, out, total: fresh + cached + out };
+      };
+      // Live grounding: one grounded search per action when a web source is wired ($/1k calls).
+      const groundPerCall = i.dataSources.includes('web') ? (rm.grounding || 0) / 1000 : 0;
+      // Naive baseline: reasoning model, no context cache, no routing, no response cache.
+      const naiveTok = i.tokensIn * rm.in / 1e6 + i.tokensOut * rm.out / 1e6;
+      m.costNaive = dailyActions * (naiveTok + groundPerCall) * 365;
+      // Optimized: smart-routing blend + context-cache split + response-cache hit.
+      const f = o.smartRouting ? o.routingSplit / 100 : 0;
+      const rc = callCost(rm), fc = callCost(fm);
+      const blend = k => f * fc[k] + (1 - f) * rc[k];
+      const respHit = Math.min(0.8, (o.cacheHit || 0) / 100 + (o.autocomplete ? 0.25 : 0) + (o.warming ? 0.1 : 0));
+      m.cacheHitEff = respHit;
+      const billed = dailyActions * (1 - respHit) * 365;          // calls still hitting inference
+      m.costParts = {
+        fresh: billed * blend('fresh'),
+        cached: billed * blend('cached'),
+        output: billed * blend('out'),
+        grounding: billed * groundPerCall,
+      };
+      m.costOpt = m.costParts.fresh + m.costParts.cached + m.costParts.output + m.costParts.grounding;
+      // latency p95 (assistant path)
+      const L = K.lat; let lat = L.gateway + L.ttft + i.tokensOut * L.perOutTokMs / 10;
+      if (['hybrid', 'dense', 'rerank'].includes(o.retrieval)) lat += L.retrieval;
+      if (o.retrieval === 'rerank') lat += L.rerank;
+      if (o.pattern === 'multi') lat *= (1 + o.reactMaxIter * 0.12);
+      m.latencyP95 = lat;
+      // vector index + HNSW
+      const chunks = (i.corpusSize || 0) * K.chunksPerDoc;
+      m.indexBytes = chunks * K.dim * K.bytesPerFloat;
+      m.indexGB = m.indexBytes / 1e9;
+      m.shards = Math.max(1, Math.ceil(chunks / 1e8));
+      m.hnswRecall = Math.min(0.999, 1 - K.hnsw.a * Math.exp(-o.hnswEf / K.hnsw.b) - (o.hnswM < 16 ? 0.03 : 0));
+      m.annP95 = K.hnsw.baseMs * (o.hnswEf / 128) * (1 + Math.log10(Math.max(1, chunks / 1e6)) / 10);
+      // ---- self-hosted inference fleet (precision / accelerator / utilisation aware) ----
+      if (o.deployment !== 'gcp') {
+        const g = K.gpu, ac = g.accel[o.accelerator] || g.accel.h100;
+        // Per-node decode throughput, scaled from the 70B-active@FP8 reference by precision,
+        // accelerator class, and the open-weight serving model's active size (MoE penalty).
+        const nodeTPS = Math.max(1, Math.round(g.nodeTokPerSec * (g.precMult[o.quant] || 1) * ac.tpsMult * (g.baseActiveB / g.refActiveB) * g.moePenalty / 2));
+        const util = Math.min(1, Math.max(0.2, (o.gpuUtil || 70) / 100));
+        const peakOutTPS = m.volPeak * i.tokensOut;            // decode-bound sizing
+        m.nodeTPS = nodeTPS;
+        m.gpuNodes = Math.max(1, Math.ceil(peakOutTPS / (nodeTPS * util)));
+        m.gpuCount = m.gpuNodes * 8;                            // 8 accelerators / node
+        const hourly = (ac.costHr[o.gpuTier] != null) ? ac.costHr[o.gpuTier] : ac.costHr.on_demand;
+        m.gpuTierLabel = (o.gpuTier || 'cud_3y').replace('_', ' ').toUpperCase();
+        m.gpuUtilPct = Math.round(util * 100);
+        m.gpuMo = m.gpuNodes * hourly * K.hoursMo;
+        m.gpuYr = m.gpuMo * 12;
+      }
+      // storage
+      m.storageMo = m.indexGB * K.storageGCS + (m.tokensDay / 1e6 * 0.001 * 30);
+      return m;
+    }
 
-<div class="foot">Deterministic design tool — advice is computed from formulas + rules, no runtime LLM. Illustrative pricing/heuristics ~May 2026.</div>
+    /* ===================== Linter ===================== */
+    function runLinter(m) {
+      const i = state.inputs, o = state.overrides, L = state.locks, out = [];
+      const add = (sev, msg, save, src) => out.push({ sev, msg, save: save || '', src });
+      const { aud, lvl } = sens(i.audienceSensitivity);
+      const qa = state.purpose === 'assistant' && (i.dataSources.includes('doc_corpus') || i.dataSources.includes('vector'));
+      // caching
+      if (qa && !o.autocomplete) add('caching', 'Add query autocomplete - canonicalizes phrasings, lifts cache-hit ~5–15%→~40–60% at ≈zero inference cost.', 'cost↓ latency↓', 'autocomplete');
+      if (o.autocomplete && !o.warming) add('caching', 'Precompute the top-N suggested queries offline → ≈$0 + ms latency on the popular head.', '', 'warming');
+      // conflict
+      if (i.latencyPreset === 'subsecond' && (o.pattern === 'multi' || o.retrieval === 'rerank')) add('conflict', 'Sub-second SLO + multi-agent/rerank can blow the TTFT budget - single-agent + cached path, or raise the SLO.', '', 'pattern');
+      if (i.freshness === 'realtime' && (o.exactCache || o.semanticCache)) add('conflict', 'Caching contradicts real-time freshness - scope to freshness-tolerant intents or shorten TTL.', '', 'exactCache');
+      // privacy / safety / residency
+      if (lvl >= 3 && o.semanticCache) add('privacy', 'Semantic cache stores query embeddings - isolate per tenant + short TTL, or disable under strict-PII.', '', 'semanticCache');
+      if (aud !== 'internal' && !o.guardrails && !L.guardrails) add('safety', 'Add injection/jailbreak + output filtering - PII redaction alone won\'t stop a poisoned doc or exfiltration.', '', 'guardrails');
+      // access / governance
+      if (o.pattern === 'multi' && !o.toolAuthz) add('access', 'Scope agent identity (workload identity + OBO) and allow-list tools - least privilege.', '', 'toolAuthz');
+      if (o.hitlApproval === 'none' && (state.purpose === 'automation' || aud !== 'internal')) add('governance', 'High-stakes path with no approval - add a maker-checker (4-eyes) gate.', '', 'hitlApproval');
+      if (!o.feedbackLoop) add('governance', 'Capture thumbs + reason - without it the eval set decays from week one.', '', 'feedbackLoop');
+      if (!o.modelRiskGov) add('governance', 'Pin model/prompt version + champion-challenger (model-risk regimes).', '', 'modelRiskGov');
+      // scaling
+      const chunks = (i.corpusSize || 0) * K.chunksPerDoc;
+      if (chunks > 1e8 && !o.metadataPrefilter) add('scaling', 'Pure ANN recall degrades past ~100M chunks - add a metadata pre-filter + shard.', '', 'metadataPrefilter');
+      if (m.volPeak > K.apigeeRpsPerRegion / 1000 && !o.multiRegion) add('scaling', 'Peak load nears single-region quota - shard by region + pre-negotiate.', '', 'multiRegion');
+      // cost
+      if (!o.contextCache && i.tokensIn >= 3000) add('cost', 'Largest cheap win: enable context cache on the reused system prompt - cached input bills at the model cache-read rate (~10% of input).', 'input cost↓', 'contextCache');
+      if (o.contextCache && i.tokensIn >= 3000 && (o.reuseInputPct || 0) < 40) add('cost', 'Context cache on but low reuse % - set reusable-input toward your real shared-prompt/retrieved fraction to capture the discount.', 'input cost↓', 'reuseInputPct');
+      if (i.dataSources.includes('web') && (modelById(o.reasoningModel).grounding || 0) > 0 && !o.autocomplete) add('cost', 'Live web grounding is billed per search - autocomplete + response cache cut repeat grounded calls on the popular head.', 'grounding↓', 'autocomplete');
+      if (!o.smartRouting) add('cost', 'Route lookups to the fast model; reserve the reasoning model for hard queries.', '', 'smartRouting');
+      if (o.reactMaxIter >= 8 && !o.costKillSwitch) add('cost', 'High ReAct iterations with no budget kill-switch - add a circuit-breaker.', '', 'costKillSwitch');
+      return out;
+    }
 
-<div id="modal-root"><div class="modal" id="modal"></div></div>
+    /* ===================== Diagram ===================== */
+    const SRC_LABEL = { bigquery: 'BigQuery', onprem: 'On-prem', vector: 'Vector', stream: 'Stream', kg: 'KG', web: 'Web', doc_corpus: 'Corpus' };
+    const AGENT_ROLES = { assistant: ['Q&A', 'summarize', 'draft', 'policy', 'compare', 'extract', 'plan', 'translate'], automation: ['code-gen', 'review', 'test', 'docs', 'migrate', 'plan'] };
+    const roleList = (p, n) => { const r = AGENT_ROLES[p]; return n <= r.length ? r.slice(0, n).join(' · ') : r.join(' · ') + ` +${n - r.length}`; };
+    const srcList = arr => arr.map(s => SRC_LABEL[s] || s).join(' · ');
+    const DRILLABLE = { gateway: 'LLM Gateway', ingestion: 'Ingestion', funnel: 'Retrieval', sandbox: 'Sandbox' };
+    function buildMainDiagram() {
+      const i = state.inputs, o = state.overrides; const L = []; L.push('flowchart TD');
+      const cls = [];
+      const node = (id, label, tier) => { cls.push(`class ${id} ${tier}`); return `${id}["${label}"]`; };
+      if (state.purpose === 'assistant') {
+        L.push(node('Client', 'Client UI', 'client'));
+        let head = 'Client';
+        if (o.gateway) { L.push(node('GW', 'LLM Gateway ⊕', 'gateway')); L.push('Client --> GW'); head = 'GW'; }
+        L.push(node('Orch', o.pattern === 'multi' ? `Orchestrator<br/>${roleList('assistant', o.numAgents)}` : 'Orchestrator<br/>single agent', 'orch'));
+        if (o.guardrails) { L.push(node('Guard', 'Safety guardrails', 'gov')); L.push(`${head} --> Guard`); L.push('Guard --> Orch'); }
+        else { L.push(`${head} --> Orch`); }
+        if (['hybrid', 'dense', 'rerank'].includes(o.retrieval)) { L.push(node('Retr', 'Retrieval funnel ⊕', 'retr')); L.push('Orch --> Retr'); }
+        if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Orch --> Sand'); }
+        L.push(node('LLM', 'Model(s)', 'orch')); L.push('Orch --> LLM');
+        // data layer (grouped)
+        if (i.dataSources.length) { L.push(node('Data', `Data layer<br/>${srcList(i.dataSources)}`, 'data')); L.push((['hybrid', 'dense', 'rerank'].includes(o.retrieval) ? 'Retr' : 'Orch') + ' --> Data'); }
+        if (o.ingestionSep) { L.push(node('Ingest', 'Ingestion ⊕', 'data')); L.push('Ingest --> Data'); }
+        L.push(node('Obs', 'Observability', 'obs')); L.push('Orch --> Obs');
+        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Approval gate', 'gov')); L.push('LLM --> Appr'); }
+        if (o.feedbackLoop) { L.push(node('Fb', 'Feedback → eval', 'gov')); L.push('Obs --> Fb'); }
+      } else {
+        L.push(node('Trig', 'Trigger (ticket/event)', 'client'));
+        L.push(node('Req', 'Requirement agent', 'orch')); L.push('Trig --> Req');
+        L.push(node('Plan', 'Planner', 'orch')); L.push('Req --> Plan');
+        L.push(node('Exec', `Executor pool<br/>${roleList('automation', o.numAgents)}`, 'orch')); L.push('Plan --> Exec');
+        L.push(node('QG', 'Quality gate', 'retr')); L.push('Exec --> QG');
+        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human approval', 'gov')); L.push('QG --> Appr'); }
+        L.push(node('State', 'State store (Spanner)', 'data')); L.push('Exec --> State');
+        L.push(node('Obs', 'Observability', 'obs')); L.push('Exec --> Obs');
+      }
+      L.push('classDef client fill:#16384a,stroke:#5ec8f8,color:#dbeefb;');
+      L.push('classDef gateway fill:#40301a,stroke:#f4a259,color:#ffe6cc;');
+      L.push('classDef orch fill:#2a2348,stroke:#7c5cff,color:#e7e0ff;');
+      L.push('classDef retr fill:#143a32,stroke:#4cd4b0,color:#d6fff3;');
+      L.push('classDef data fill:#3a3416,stroke:#e6c84c,color:#fff7cc;');
+      L.push('classDef obs fill:#23272e,stroke:#9aa5b1,color:#e6edf3;');
+      L.push('classDef gov fill:#3a1a2a,stroke:#ff6b9d,color:#ffd6e6;');
+      L.push(...cls);
+      return L.join('\n');
+    }
+    function buildComponentDiagram(key) {
+      const map = {
+        gateway: 'flowchart LR\n A[Auth IAM+mTLS]-->B[PII redact]-->C[Route]-->D[Semantic cache]-->E[Rate limit]-->F[Audit log]-->G[Provider fan-out]',
+        ingestion: 'flowchart LR\n A[Source]-->B[Document AI]-->C[Chunker]-->D[Embeddings]-->E[Vector + BM25 + GCS]',
+        sandbox: 'flowchart LR\n A[Ephemeral instance + KMS]-->B[Entity resolution]-->C[Web/OSINT + risk rules]-->D[Memory wipe]-->E[Audit hash]',
+        funnel: 'flowchart LR\n A[Metadata pre-filter]-->B[Dense + BM25 RRF]-->C[Reranker]-->D[Grounded generation + citations]',
+      };
+      return map[key] || '';
+    }
 
-<script type="module">
-/* ===================== Mermaid (CDN + graceful fallback) ===================== */
-let mermaid=null, mermaidOK=false;
-try{
-  const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
-  mermaid = mod.default;
-  mermaid.initialize({startOnLoad:false, securityLevel:'loose', theme:'dark', flowchart:{htmlLabels:true,curve:'basis'}});
-  mermaidOK = true;
-}catch(e){ console.warn('Mermaid CDN unavailable — using source fallback', e); }
+    /* ===================== Render ===================== */
+    let renderSeq = 0;
+    function applyControlStates() {
+      // visibility
+      const vis = visibleInputs();
+      let shown = 0, total = 0;
+      $$('.ctl[data-vis]').forEach(el => { total++; const key = el.dataset.vis; const ok = vis[key] !== false; el.classList.toggle('hidden', !ok); if (ok) shown++; });
+      $$('fieldset[data-vis]').forEach(el => { const key = el.dataset.vis; el.style.display = vis[key] === false ? 'none' : ''; });
+      $('#visCount').textContent = `(${shown}/${total} shown)`;
+      // locks + warn marks
+      const issues = lastIssues || [];
+      $$('.ctl[data-ov]').forEach(el => {
+        const k = el.dataset.ov; const lockInfo = state.locks[k];
+        el.classList.toggle('locked', !!lockInfo);
+        const ctrl = el.querySelector('[data-bind]');
+        if (ctrl) { ctrl.disabled = !!lockInfo; }
+        let lk = el.querySelector('.lock');
+        if (lockInfo && !lk) { lk = document.createElement('span'); lk.className = 'lock'; el.querySelector('label').appendChild(lk); }
+        if (lockInfo && lk) { lk.textContent = '🔒 ' + lockInfo.cause; lk.title = 'Locked: ' + lockInfo.reason; } if (!lockInfo && lk) lk.remove();
+        let wm = el.querySelector('.warnmark'); const hasIssue = issues.some(x => x.src === k);
+        if (hasIssue && !wm) { wm = document.createElement('span'); wm.className = 'warnmark'; wm.textContent = '⚠'; wm.title = 'See issues & levers'; el.querySelector('label').appendChild(wm); }
+        if (!hasIssue && wm) wm.remove();
+      });
+    }
+    function visibleInputs() {
+      const i = state.inputs, o = state.overrides; const v = { always: true };
+      const hasCorpus = i.dataSources.includes('doc_corpus') || i.dataSources.includes('vector');
+      const staleable = i.dataSources.some(s => ['stream', 'bigquery', 'onprem', 'doc_corpus'].includes(s));
+      v.corpus = hasCorpus; v.freshness = staleable;
+      v.languages = state.purpose === 'assistant';
+      v.multi = o.pattern === 'multi';
+      v.routing = o.smartRouting;
+      v.retr = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
+      v.gw = o.gateway;
+      v.ctxreuse = o.contextCache;
+      v.selfhost = o.deployment !== 'gcp';
+      return v;
+    }
 
-/* ===================== Constants (editable, ~May 2026) ===================== */
-const MODELS = [
-  {id:'gemini-3-pro',   name:'Gemini 3 Pro',     in:2.0,  out:12.0, cacheRead:0.20},
-  {id:'gemini-35-flash',name:'Gemini 3.5 Flash', in:1.5,  out:9.0,  cacheRead:0.15},
-  {id:'gemini-3-flash', name:'Gemini 3 Flash',   in:0.5,  out:3.0,  cacheRead:0.05},
-  {id:'claude-opus-48', name:'Claude Opus 4.8',  in:5.0,  out:25.0, cacheRead:0.50},
-  {id:'llama4-selfhost',name:'Llama 4 (self-host)',in:0,  out:0,    cacheRead:0},
-];
-const K = {
-  dim:768, chunksPerDoc:5, bytesPerFloat:4,
-  apigeeRpsPerRegion:30000, embedTokPerWorkerDay:2.0e9, caseDurationSec:90,
-  gpuTokPerSec:2300, gpuCostHr:3, hoursMo:730,
-  storageBQ:0.02, storageGCS:0.02, egress:0.10, vsNodeHr:0.6,
-  hnsw:{a:0.5,b:120,baseMs:8},
-  lat:{gateway:40, retrieval:70, rerank:80, ttft:400, perOutTokMs:5},
-};
-const modelById = id => MODELS.find(m=>m.id===id) || MODELS[0];
+    let lastIssues = [], lastMetrics = {};
+    function render() {
+      deriveOverrides();
+      const m = computeMetrics(); lastMetrics = m;
+      const issues = runLinter(m); lastIssues = issues;
+      // sync control values
+      syncControlsFromState();
+      applyControlStates();
+      // actor label
+      $('#actorLabel').textContent = state.purpose === 'automation' ? 'engineers' : 'seats';
+      // issues
+      $('#issueCount').textContent = issues.length ? `(${issues.length})` : '';
+      $('#issues').innerHTML = issues.length ? issues.map(x => `<div class="issue"><span class="sev ${x.sev}">${x.sev}</span><span>${x.msg}</span>${x.save ? `<span class="save">${x.save}</span>` : ''}</div>`).join('') : '<div class="empty">No conflicts - clean config.</div>';
+      // metrics
+      $('#metrics').innerHTML = metricCards(m);
+      // cost breakdown
+      $('#cost').innerHTML = costPanelHtml(m);
+      $('#costHead').textContent = state.overrides.deployment === 'onprem' ? '(self-host)' : (state.overrides.deployment === 'hybrid' ? '(API + self-host)' : '(managed API)');
+      // observability / risk / bom
+      $('#observability').innerHTML = obsHtml(m);
+      $('#risk').innerHTML = riskHtml(m);
+      $('#bom').innerHTML = bomHtml().map(s => `<span>${s}</span>`).join('');
+      // diagram
+      renderDiagram();
+      // permalink
+      schedulePermalink();
+    }
 
-/* ===================== Presets (primary-input bundles) ===================== */
-const PRESETS = {
-  assistant:{
-    expert_copilot:{label:'Expert copilot', inputs:{actors:3000,actionsPerDay:30,burst:5,activeHoursPerWeek:50,latencyPreset:'agentic',tokensIn:4000,tokensOut:800,audienceSensitivity:'internal_regulated',dataSources:['vector','bigquery','doc_corpus'],corpusSize:2e6,freshness:'eod',languages:['en']}},
-    highvol_qa:{label:'High-volume Q&A', inputs:{actors:20000,actionsPerDay:50,burst:6,activeHoursPerWeek:120,latencyPreset:'subsecond',tokensIn:3000,tokensOut:500,audienceSensitivity:'internal_regulated',dataSources:['vector','doc_corpus'],corpusSize:1e7,freshness:'static',languages:['en']}},
-    customer_support:{label:'Customer support', inputs:{actors:50000,actionsPerDay:4,burst:7,activeHoursPerWeek:168,latencyPreset:'agentic',tokensIn:2500,tokensOut:600,audienceSensitivity:'external_enterprise',dataSources:['vector','doc_corpus'],corpusSize:5e5,freshness:'eod',languages:['en','zh']}},
-    strictpii_verify:{label:'Strict-PII verification', inputs:{actors:300,actionsPerDay:8,burst:3,activeHoursPerWeek:50,latencyPreset:'agentic',tokensIn:6000,tokensOut:1000,audienceSensitivity:'internal_strictpii',dataSources:['web','kg','onprem'],corpusSize:0,freshness:'realtime',languages:['en']}},
-  },
-  automation:{
-    midsize:{label:'Mid-size org', inputs:{actors:300,actionsPerDay:6,burst:3,activeHoursPerWeek:50,latencyPreset:'minutes',tokensIn:8000,tokensOut:2000,audienceSensitivity:'internal_regulated',dataSources:['bigquery','onprem'],corpusSize:0,freshness:'eod',languages:['en']}},
-    large:{label:'Large org (10×)', inputs:{actors:3000,actionsPerDay:6,burst:4,activeHoursPerWeek:80,latencyPreset:'minutes',tokensIn:8000,tokensOut:2000,audienceSensitivity:'internal_regulated',dataSources:['bigquery','onprem'],corpusSize:0,freshness:'eod',languages:['en']}},
-  }
-};
+    function metricCards(m) {
+      const o = state.overrides;
+      const card = (k, v, t) => `<div class="metric" title="${(t || '').replace(/"/g, '&quot;')}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+      const cards = [];
+      cards.push(card(m.volLabel + ' avg / peak', `${fmt(m.volAvg, 2)} <small>/ ${fmt(m.volPeak, 2)}</small>`, 'actors × actions/day over the active window, × burst'));
+      cards.push(card('Tokens / day', fmt(m.tokensDay, 1), 'daily actions × (in+out)'));
+      cards.push(card('Cache hit (eff.)', (m.cacheHitEff * 100).toFixed(0) + '%', 'response cache: slider + autocomplete + warming, capped 80%'));
+      cards.push(card('Latency p95', fmt(m.latencyP95, 0) + ' <small>ms</small>', 'gateway+retrieval+rerank+TTFT+generation; ×ReAct loop'));
+      if (m.indexGB > 0) cards.push(card('Vector index', fmt(m.indexGB, 1) + ' <small>GB · ' + m.shards + ' shard(s)</small>', 'chunks × dim × 4 bytes'));
+      if (m.indexGB > 0) cards.push(card('HNSW recall / ANN p95', (m.hnswRecall * 100).toFixed(1) + '% <small>/ ' + fmt(m.annP95, 0) + 'ms</small>', 'efSearch/M trade recall vs latency'));
+      if (m.gpuNodes) cards.push(card('Self-host fleet', `${m.gpuNodes}×8 ${(o.accelerator || 'h100').toUpperCase()} <small>· ${money(m.gpuMo)}/mo</small>`, `${fmt(m.nodeTPS, 0)} tok/s/node · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util · sized by peak decode tok/s (peak QPS × out-tokens)`));
+      cards.push(card('Storage / mo', money(m.storageMo), 'index + logs (illustrative)'));
+      return cards.join('');
+    }
+    function costPanelHtml(m) {
+      const o = state.overrides, cp = m.costParts || {};
+      const row = (label, val, sub, tot) => `<div class="cost-row${tot ? ' tot' : ''}"><span class="cl">${label}${sub ? ` <small>${sub}</small>` : ''}</span><span class="cn">${val}</span></div>`;
+      const grp = t => `<div class="cost-grp">${t}</div>`;
+      const rows = []; let grand = 0;
+      const apiActive = o.deployment !== 'onprem';            // onprem locks model to open weights → no token-metered API
+      if (apiActive) {
+        rows.push(grp('API - managed inference <small>($ / yr)</small>'));
+        rows.push(row('Input - fresh', money(cp.fresh)));
+        rows.push(row('Input - cached', money(cp.cached), 'billed at model cache-read rate'));
+        rows.push(row('Output', money(cp.output)));
+        if (cp.grounding > 0) rows.push(row('Grounding', money(cp.grounding), 'live web search · $/1k calls'));
+        rows.push(row('API $/yr', money(m.costOpt), '', true));
+        grand += m.costOpt;
+      }
+      if (m.gpuYr) {
+        rows.push(grp('Self-host - open weights on GPUs'));
+        rows.push(row('GPU fleet', `${money(m.gpuMo)}/mo`, `${m.gpuNodes}×8 ${(o.accelerator || 'h100').toUpperCase()} · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util`));
+        rows.push(row('Inference $/yr', money(m.gpuYr), '', true));
+        grand += m.gpuYr;
+      }
+      const multi = apiActive && m.gpuYr;
+      if (multi) rows.push(row('Total $/yr', money(grand), 'API + self-host', true));
+      return `<div class="costbox">${rows.join('')}</div>`;
+    }
+    function driverTags(drv) { return drv ? drv.map(d => `<span class="tag" title="driven by ${d}">${d}</span>`).join(' ') : '<span class="tag static" title="same for every config">fixed</span>'; }
+    function obsHtml(m) {
+      const i = state.inputs, o = state.overrides;
+      const path = state.purpose === 'assistant'
+        ? ['client', o.gateway && 'gateway', 'orchestrator', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', 'LLM'].filter(Boolean)
+        : ['trigger', 'planner', 'executor', 'quality-gate'];
+      const crit = state.purpose === 'assistant' ? 'faithfulness + citation accuracy' : 'PR-success + rework rounds';
+      const slo = i.latencyPreset === 'subsecond' ? 'p95 < 1s' : (i.latencyPreset === 'minutes' ? 'per-run < N min' : 'p95 < 2s start / 6s full');
+      const comps = [o.gateway && 'gateway', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
+      const rows = [
+        ['Live trace', path.join(' → '), comps.length ? comps : ['components']],
+        ['Eval', `Vertex Eval on 5% async sample - ${crit}; drift > 2σ`, ['purpose']],
+        ['SLO', slo, ['latency']],
+        o.feedbackLoop ? ['Feedback', 'thumbs + reason → eval store', ['feedback loop']] : null,
+        ['Always-on', 'Cloud Trace + Logging (redacted) + OpenTelemetry', null],
+      ].filter(Boolean);
+      return rows.map(([k, v, drv]) => `<div class="obs-row"><b>${k}</b> ${driverTags(drv)}<br>${v}</div>`).join('');
+    }
+    function riskHtml(m) {
+      const o = state.overrides, i = state.inputs;
+      // dynamic bottleneck
+      let bottleneck = 'LLM provider quota', bdrv = ['volume'];
+      if ((i.corpusSize || 0) * K.chunksPerDoc > 1e8) { bottleneck = 'vector index (shard by line × region)'; bdrv = ['corpus', 'scale']; }
+      else if (o.retrieval === 'rerank' && m.volPeak > 10) { bottleneck = 'reranker latency (cascade small→medium)'; bdrv = ['rerank', 'volume']; }
+      else if (o.stateStore.includes('spanner') && m.volPeak > 50) { bottleneck = 'Spanner write path (partition by key)'; bdrv = ['state store', 'volume']; }
+      else if (o.gateway && m.volPeak > 20) { bottleneck = 'gateway shard (per-region quota)'; bdrv = ['gateway', 'volume']; }
+      const spofs = ['orchestrator → stateless autoscaled', o.retrieval !== 'none' && 'vector index → multi-region read failover', 'model → reasoning→fast→cached failover'].filter(Boolean);
+      const gaps = [!o.guardrails && 'safety guardrails', o.hitlApproval === 'none' && 'approval gate', !o.modelRiskGov && 'version-pinning', !o.residencyPin && sens(i.audienceSensitivity).lvl >= 2 && 'residency pin'].filter(Boolean);
+      const govDrv = ['sensitivity']; if (!o.guardrails) govDrv.push('guardrails'); if (o.hitlApproval === 'none') govDrv.push('approval');
+      const rows = [
+        ['What breaks at 10×', bottleneck, bdrv],
+        ['SPOFs', spofs.join('; '), ['retrieval', 'model']],
+        gaps.length ? ['Governance gaps', gaps.join(', '), govDrv.slice(0, 3)] : null,
+        ['Alerting', 'P1 auto-rollback / P2 page / P3 dashboard · non-blocking fallback', null],
+      ].filter(Boolean);
+      return rows.map(([k, v, drv]) => `<div class="risk-row"><b>${k}</b> ${driverTags(drv)}<br>${v}</div>`).join('');
+    }
+    function bomHtml() {
+      const o = state.overrides, i = state.inputs, b = new Set();
+      b.add(o.platform === 'adk' ? 'ADK + Agent Engine' : o.platform === 'studio' ? 'Agent Studio' : 'LangGraph');
+      if (o.gateway) b.add('Apigee'); if (o.auditLog) b.add('Cloud Logging (WORM)');
+      if (['hybrid', 'dense', 'rerank'].includes(o.retrieval)) b.add(o.vectorDB === 'vertex' ? 'Vertex AI Vector Search' : o.vectorDB === 'alloydb' ? 'AlloyDB' : 'Elasticsearch');
+      if (o.retrieval === 'hybrid' || o.retrieval === 'rerank') b.add('BM25');
+      if (o.ingestionSep) b.add('Dataflow'); if (i.dataSources.includes('doc_corpus')) b.add('Document AI');
+      if (i.dataSources.includes('bigquery')) b.add('BigQuery');
+      b.add(o.stateStore.includes('spanner') ? 'Spanner' : 'Cloud SQL'); if (o.stateStore.includes('redis')) b.add('Memorystore');
+      b.add('Cloud Trace'); b.add('Vertex AI Eval');
+      if (o.guardrails) b.add('Model Armor'); if (o.toolAuthz) b.add('Workload Identity'); if (o.modelRiskGov) b.add('Vertex Model Registry');
+      if (o.residencyPin) b.add('VPC Service Controls'); b.add('Cloud DLP'); b.add('IAM');
+      if (o.deployment !== 'gcp') b.add('vLLM on GKE');
+      [o.reasoningModel, o.fastModel].forEach(id => b.add(modelById(id).name));
+      return [...b];
+    }
 
-/* ===================== Default override values ===================== */
-const DEFAULT_OVERRIDES = ()=>({
-  deployment:'gcp', multiRegion:true,
-  pattern:'multi', numAgents:4, reactMaxIter:6, platform:'adk',
-  reasoningModel:'gemini-3-pro', fastModel:'gemini-3-flash', smartRouting:true, routingSplit:70, judgeDiversity:false,
-  retrieval:'rerank', metadataPrefilter:true, vectorDB:'vertex', ingestionSep:false, hnswM:32, hnswEf:128,
-  gateway:true, auditLog:true, rulesEngine:true, sandbox:false,
-  stateStore:'redis_spanner', contextCache:true,
-  accelerator:'h100', quant:'fp8', pagedAttn:true,
-  exactCache:false, semanticCache:false, autocomplete:false, warming:false, cacheHit:5,
-  guardrails:false, toolAuthz:false, costKillSwitch:false, residencyPin:false, hitlApproval:'none', feedbackLoop:false, modelRiskGov:false, safeRollout:false,
-});
+    let diagSrc = '';
+    async function renderDiagram() {
+      diagSrc = buildMainDiagram();
+      const host = $('#diagram');
+      if (!mermaidOK) { host.innerHTML = '<div class="empty">Mermaid offline - diagram source:</div><pre>' + diagSrc.replace(/</g, '&lt;') + '</pre>'; return; }
+      const id = 'd' + (++renderSeq);
+      try { const { svg } = await mermaid.render(id, diagSrc); host.innerHTML = svg; bindDrill(host); }
+      catch (e) { host.innerHTML = '<pre>' + diagSrc.replace(/</g, '&lt;') + '</pre>'; console.warn('mermaid render', e); }
+    }
+    function bindDrill(host) {
+      $$('.node', host).forEach(n => {
+        const t = (n.textContent || '');
+        let key = null;
+        if (/Gateway/.test(t)) key = 'gateway'; else if (/Ingestion/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
+        if (key) { n.classList.add('drill'); n.style.cursor = 'pointer'; n.addEventListener('click', () => openModal(key)); }
+      });
+    }
 
-/* ===================== State ===================== */
-const state = {
-  purpose:'assistant', preset:'expert_copilot',
-  inputs:{}, overrides:{}, locks:{},
-  componentInputs:{ gateway:{aggregateQPS:null,tenantApps:1,providers:1}, ingestion:{docsPerDay:null,backfillDocs:0,docPages:40,reindexSLOmin:5} },
-  ui:{ openModal:null, introDismissed:false, advancedMode:false },
-};
+    /* ===================== Drill-down modal ===================== */
+    async function openModal(key) {
+      state.ui.openModal = key;
+      const titles = { gateway: 'LLM Gateway', ingestion: 'Ingestion pipeline', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
+      const subcalc = key === 'gateway' || key === 'ingestion';
+      const root = $('#modal-root'), box = $('#modal');
+      let inner = `<span class="close" id="modalClose">×</span><h2>${titles[key]} ${subcalc ? '· sub-calculator' : '· detail'}</h2>`;
+      inner += `<div class="sub">${subcalc ? 'Has its own sizing axis - independent of the main app.' : 'Read-only detail view.'}</div>`;
+      inner += `<div class="mdiagram" id="mdiagram">rendering…</div>`;
+      if (key === 'gateway') {
+        const g = state.componentInputs.gateway; const agg = g.aggregateQPS ?? Math.max(1, Math.round(lastMetrics.volPeak));
+        const regions = Math.max(1, Math.ceil(agg / (K.apigeeRpsPerRegion)));
+        inner += `<div class="ctl"><label>Aggregate org-wide QPS (all apps)</label><input type="number" id="ciq" value="${agg}" min="1"></div>`;
+        inner += `<div class="ctl"><label>Tenant apps</label><input type="number" id="cit" value="${g.tenantApps}" min="1"></div>`;
+        inner += `<div class="metrics"><div class="metric"><div class="k">Regions</div><div class="v">${regions}</div></div><div class="metric"><div class="k">This app share</div><div class="v">${(100 * lastMetrics.volPeak / agg).toFixed(1)}%</div></div><div class="metric"><div class="k">DLP redaction QPS</div><div class="v">${fmt(agg, 1)}</div></div></div>`;
+      }
+      if (key === 'ingestion') {
+        const ing = state.componentInputs.ingestion; const docs = ing.docsPerDay ?? Math.round((state.inputs.corpusSize || 0) * 0.002);
+        const workers = Math.max(1, Math.ceil(docs * state.inputs.tokensIn / K.embedTokPerWorkerDay));
+        inner += `<div class="ctl"><label>Docs / day (arrival)</label><input type="number" id="cid" value="${docs}" min="0"></div>`;
+        inner += `<div class="metrics"><div class="metric"><div class="k">Embed workers</div><div class="v">${workers}</div></div><div class="metric"><div class="k">Reindex SLO</div><div class="v">${ing.reindexSLOmin} min</div></div></div>`;
+      }
+      box.innerHTML = inner; root.classList.add('open');
+      $('#modalClose').onclick = closeModal;
+      // render sub-diagram
+      const md = $('#mdiagram');
+      if (mermaidOK) { try { const { svg } = await mermaid.render('m' + (++renderSeq), buildComponentDiagram(key)); md.innerHTML = svg; } catch (e) { md.textContent = buildComponentDiagram(key); } }
+      else md.innerHTML = '<pre>' + buildComponentDiagram(key).replace(/</g, '&lt;') + '</pre>';
+      // wire sub-calc inputs
+      if (key === 'gateway') { $('#ciq').oninput = e => { state.componentInputs.gateway.aggregateQPS = +e.target.value; openModal('gateway'); }; $('#cit').oninput = e => { state.componentInputs.gateway.tenantApps = +e.target.value; }; }
+      if (key === 'ingestion') { $('#cid').oninput = e => { state.componentInputs.ingestion.docsPerDay = +e.target.value; openModal('ingestion'); }; }
+    }
+    function closeModal() { state.ui.openModal = null; $('#modal-root').classList.remove('open'); }
+    $('#modal-root').addEventListener('click', e => { if (e.target.id === 'modal-root') closeModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
-/* ===================== Helpers ===================== */
-const $=(s,r=document)=>r.querySelector(s);
-const $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const getPath=(o,p)=>p.split('.').reduce((a,k)=>a==null?a:a[k],o);
-const setPath=(o,p,v)=>{const ks=p.split('.');const last=ks.pop();let t=o;for(const k of ks){t=t[k]??(t[k]={});}t[last]=v;};
-const fmt=(n,d=0)=>{ if(n==null||isNaN(n))return '—'; const a=Math.abs(n); if(a>=1e9)return (n/1e9).toFixed(d||1)+'B'; if(a>=1e6)return (n/1e6).toFixed(d||1)+'M'; if(a>=1e3)return (n/1e3).toFixed(d||1)+'k'; return n.toFixed(d); };
-const money=n=>{ if(n==null||isNaN(n))return '—'; if(n>=1e6)return '$'+(n/1e6).toFixed(2)+'M'; if(n>=1e3)return '$'+(n/1e3).toFixed(1)+'k'; return '$'+n.toFixed(2); };
-const sens = s => ({internal_low:{aud:'internal',lvl:0},internal_regulated:{aud:'internal',lvl:2},internal_strictpii:{aud:'internal',lvl:3},external_enterprise:{aud:'external',lvl:1},external_regulated:{aud:'external',lvl:2},public_strictpii:{aud:'public',lvl:3}}[s]);
+    /* ===================== Controls sync ===================== */
+    function readControls() {
+      $$('[data-bind]').forEach(el => {
+        if (el.disabled) return;
+        const p = el.dataset.bind;
+        if (el.type === 'checkbox') { if (el.name) return; setPath(state, p, el.checked); }
+        else if (el.type === 'number' || el.type === 'range') setPath(state, p, el.value === '' ? 0 : +el.value);
+        else setPath(state, p, el.value);
+      });
+      // groups
+      state.inputs.dataSources = $$('#dataSources input:checked').map(c => c.value);
+      state.inputs.languages = $$('#languages input:checked').map(c => c.value);
+    }
+    function syncControlsFromState() {
+      $$('[data-bind]').forEach(el => {
+        if (el.name) return;
+        const v = getPath(state, el.dataset.bind);
+        if (el.type === 'checkbox') el.checked = !!v;
+        else if (v != null && document.activeElement !== el) el.value = v;
+      });
+      $$('#dataSources input').forEach(c => c.checked = state.inputs.dataSources.includes(c.value));
+      $$('#languages input').forEach(c => c.checked = (state.inputs.languages || []).includes(c.value));
+      $$('[data-out]').forEach(o => { const v = getPath(state, o.dataset.out); o.textContent = v != null ? v : ''; });
+      // model dropdowns
+      ['reasoningModel', 'fastModel'].forEach(role => {
+        const sel = $(`[data-bind="overrides.${role}"]`); if (sel && !sel.dataset.filled) { sel.innerHTML = MODELS.map(m => `<option value="${m.id}">${m.name}</option>`).join(''); sel.dataset.filled = '1'; }
+        if (sel) sel.value = state.overrides[role];
+      });
+      // preset chips
+      renderChips();
+    }
+    function renderChips() {
+      const chips = PRESETS[state.purpose];
+      $('#presetChips').innerHTML = Object.entries(chips).map(([k, v]) => `<span class="chip ${state.preset === k ? 'active' : ''}" data-preset="${k}">${v.label}</span>`).join('');
+    }
 
-/* ===================== Preset application ===================== */
-function applyPreset(purpose, preset){
-  state.purpose=purpose; state.preset=preset;
-  const p = PRESETS[purpose][preset];
-  state.inputs = structuredClone(p.inputs);
-  state.overrides = DEFAULT_OVERRIDES();
-  // automation tweaks
-  if(purpose==='automation'){ state.overrides.retrieval='none'; state.overrides.pattern='multi'; state.overrides.numAgents=5; state.overrides.stateStore='spanner'; }
-}
+    /* ===================== Permalink ===================== */
+    let plTimer = null;
+    function schedulePermalink() { clearTimeout(plTimer); plTimer = setTimeout(() => { try { location.replace('#' + encodeState()); } catch (e) { } }, 120); }
+    function encodeState() { return btoa(unescape(encodeURIComponent(JSON.stringify({ p: state.purpose, pr: state.preset, i: state.inputs, o: state.overrides })))); }
+    function decodeState(h) { try { const d = JSON.parse(decodeURIComponent(escape(atob(h)))); if (d.p) { state.purpose = d.p; state.preset = d.pr; state.inputs = d.i; state.overrides = d.o; return true; } } catch (e) { } return false; }
 
-/* ===================== Rules engine: derive overrides + locks ===================== */
-function deriveOverrides(){
-  const o=state.overrides, i=state.inputs, locks={};
-  const {aud,lvl}=sens(i.audienceSensitivity);
-  const lock=(k,v,reason,cause)=>{o[k]=v;locks[k]={reason,cause};};
-  // compliance / privacy locks
-  if(lvl>=2){ lock('gateway',true,'Regulated+ → gateway required','regulated'); lock('auditLog',true,'Regulated+ → immutable audit log','regulated'); }
-  if(lvl>=3){ lock('sandbox',true,'Strict-PII → transient sandbox','strict-PII'); lock('residencyPin',true,'Strict-PII → region pin + VPC-SC','strict-PII'); }
-  if(aud!=='internal'){ lock('guardrails',true,'External/public → safety guardrails', aud==='public'?'public':'external'); }
-  // performance locks
-  if(i.latencyPreset==='subsecond'){ lock('pattern','single','Sub-second → single-agent path','sub-second'); lock('retrieval', o.retrieval==='rerank'?'hybrid':o.retrieval,'Sub-second → drop reranker','sub-second'); }
-  // scale locks
-  const heavyCorpus = (i.corpusSize||0) >= 5e6;
-  if(heavyCorpus && i.dataSources.includes('doc_corpus')){ lock('ingestionSep',true,'Large corpus → separate ingestion','large corpus'); }
-  // governance
-  if(state.purpose==='automation'){ lock('hitlApproval', o.hitlApproval==='none'?'maker_checker':o.hitlApproval,'Automation merge → human approval','automation'); }
-  // topology
-  if(o.deployment==='onprem' && o.vectorDB==='vertex'){ lock('vectorDB','elastic','On-prem → self-hosted vector DB','on-prem'); }
-  state.locks=locks;
-}
+    /* ===================== Wiring ===================== */
+    function onInput() { readControls(); render(); }
+    $('#purpose').addEventListener('change', e => { const pur = e.target.value; const first = Object.keys(PRESETS[pur])[0]; applyPreset(pur, first); render(); });
+    $('#presetChips').addEventListener('click', e => { const c = e.target.closest('.chip'); if (c) { applyPreset(state.purpose, c.dataset.preset); render(); } });
+    $('#resetBtn').addEventListener('click', () => { applyPreset(state.purpose, state.preset); render(); });
+    document.querySelector('main').addEventListener('input', e => { if (e.target.closest('#modal')) return; onInput(); });
+    document.querySelector('main').addEventListener('change', e => { if (e.target.id === 'purpose' || e.target.closest('#modal')) return; onInput(); });
+    $('#introClose').addEventListener('click', () => { $('#intro').style.display = 'none'; });
+    const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    $('#copyMermaid').addEventListener('click', () => { navigator.clipboard?.writeText(diagSrc); $('#copyMermaid').textContent = '✓'; setTimeout(() => $('#copyMermaid').innerHTML = COPY_ICON, 1200); });
+    $('#permalinkBtn').addEventListener('click', () => { navigator.clipboard?.writeText(location.href); $('#permalinkBtn').textContent = 'Copied'; setTimeout(() => $('#permalinkBtn').textContent = 'Copy permalink', 1200); });
 
-/* ===================== Metrics ===================== */
-function computeMetrics(){
-  const i=state.inputs, o=state.overrides, m={};
-  const activeSecPerDay = i.activeHoursPerWeek*3600/7;
-  const dailyActions = i.actors*i.actionsPerDay;
-  m.volAvg = dailyActions/activeSecPerDay;
-  m.volPeak = m.volAvg*i.burst;
-  m.volLabel = state.purpose==='automation' ? 'concurrent runs' : 'QPS';
-  m.tokensDay = dailyActions*(i.tokensIn+i.tokensOut);
-  // cost
-  const rm=modelById(o.reasoningModel), fm=modelById(o.fastModel);
-  const costCall=(mm)=> i.tokensIn*mm.in/1e6 + i.tokensOut*mm.out/1e6;
-  m.costNaive = dailyActions*costCall(rm)*365;
-  let blended;
-  if(o.smartRouting){ const f=o.routingSplit/100; blended = f*costCall(fm)+(1-f)*costCall(rm); } else blended=costCall(rm);
-  const ctxFactor = o.contextCache ? 0.78 : 1;            // ~22% off input via cache read
-  const respHit = Math.min(0.8, (o.cacheHit||0)/100 + (o.autocomplete?0.25:0) + (o.warming?0.1:0));
-  m.cacheHitEff = respHit;
-  m.costOpt = dailyActions*blended*ctxFactor*(1-respHit)*365;
-  // latency p95 (assistant path)
-  const L=K.lat; let lat=L.gateway+L.ttft+i.tokensOut*L.perOutTokMs/10;
-  if(['hybrid','dense','rerank'].includes(o.retrieval)) lat+=L.retrieval;
-  if(o.retrieval==='rerank') lat+=L.rerank;
-  if(o.pattern==='multi') lat*= (1+o.reactMaxIter*0.12);
-  m.latencyP95 = lat;
-  // vector index + HNSW
-  const chunks=(i.corpusSize||0)*K.chunksPerDoc;
-  m.indexBytes = chunks*K.dim*K.bytesPerFloat;
-  m.indexGB = m.indexBytes/1e9;
-  m.shards = Math.max(1, Math.ceil(chunks/1e8));
-  m.hnswRecall = Math.min(0.999, 1 - K.hnsw.a*Math.exp(-o.hnswEf/K.hnsw.b) - (o.hnswM<16?0.03:0));
-  m.annP95 = K.hnsw.baseMs*(o.hnswEf/128)*(1+Math.log10(Math.max(1,chunks/1e6))/10);
-  // self-hosted GPUs
-  if(o.deployment!=='gcp'){ const reqPerGpu=K.gpuTokPerSec/Math.max(1,i.tokensOut); m.gpuCount=Math.max(1,Math.ceil(m.volPeak/reqPerGpu)); m.gpuMo=m.gpuCount*K.gpuCostHr*K.hoursMo; }
-  // storage
-  m.storageMo = m.indexGB*K.vsNodeHr*0 + m.indexGB*K.storageGCS + (m.tokensDay/1e6*0.001*30);
-  return m;
-}
+    /* ===================== Self-test ===================== */
+    function selfTest() {
+      const results = []; const assert = (n, c) => results.push([n, !!c]);
+      // determinism
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides(); const a = JSON.stringify(computeMetrics()); deriveOverrides(); const b = JSON.stringify(computeMetrics());
+      assert('determinism: same state → same metrics', a === b);
+      // lock: strict-PII → sandbox
+      applyPreset('assistant', 'strictpii_verify'); deriveOverrides(); assert('strict-PII locks sandbox on', state.overrides.sandbox === true && state.locks.sandbox);
+      assert('strict-PII locks residency pin', state.overrides.residencyPin === true);
+      // lock: subsecond → single agent
+      applyPreset('assistant', 'highvol_qa'); state.inputs.latencyPreset = 'subsecond'; deriveOverrides(); assert('sub-second locks single-agent', state.overrides.pattern === 'single');
+      // external locks guardrails
+      applyPreset('assistant', 'customer_support'); deriveOverrides(); assert('external locks guardrails on', state.overrides.guardrails === true);
+      // metrics sanity
+      applyPreset('assistant', 'expert_copilot'); const m = computeMetrics(); assert('cost opt ≤ naive', m.costOpt <= m.costNaive); assert('peak ≥ avg', m.volPeak >= m.volAvg);
+      // permalink round-trip
+      applyPreset('assistant', 'expert_copilot'); const enc = encodeState(); const snap = JSON.stringify(state.inputs); decodeState(enc); assert('permalink round-trip', JSON.stringify(state.inputs) === snap);
+      // hnsw moves a number
+      applyPreset('assistant', 'highvol_qa'); state.overrides.hnswEf = 64; const r1 = computeMetrics().hnswRecall; state.overrides.hnswEf = 512; const r2 = computeMetrics().hnswRecall; assert('efSearch raises recall', r2 > r1);
+      // context-cache split: higher reuse % lowers optimized cost
+      applyPreset('assistant', 'expert_copilot'); state.overrides.contextCache = true; state.overrides.reuseInputPct = 0; const k0 = computeMetrics().costOpt; state.overrides.reuseInputPct = 80; const k1 = computeMetrics().costOpt; assert('higher reuse % lowers cost', k1 < k0);
+      // grounding: wiring a web source raises naive cost (Gemini grounds)
+      applyPreset('assistant', 'expert_copilot'); const w0 = computeMetrics().costNaive; state.inputs.dataSources = [...state.inputs.dataSources, 'web']; const w1 = computeMetrics().costNaive; assert('web grounding adds cost', w1 > w0);
+      // self-host: int4 fleet ≤ bf16 fleet; on-prem collapses token cost to $0
+      applyPreset('automation', 'large'); state.overrides.deployment = 'onprem'; deriveOverrides(); state.overrides.quant = 'bf16'; const nbf = computeMetrics().gpuNodes; state.overrides.quant = 'int4'; const ni4 = computeMetrics().gpuNodes; assert('int4 ≤ bf16 fleet', ni4 <= nbf); assert('on-prem zeroes token cost', computeMetrics().costOpt === 0);
+      const pass = results.every(r => r[1]);
+      const bar = $('#testbar'); bar.style.display = 'block'; bar.className = pass ? 'pass' : 'fail';
+      bar.innerHTML = (pass ? '✓ all self-tests pass - ' : '✗ FAILURES - ') + results.map(r => `${r[1] ? '✓' : '✗'} ${r[0]}`).join(' · ');
+      console.log('[self-test]', pass ? 'PASS' : 'FAIL', results);
+      return pass;
+    }
 
-/* ===================== Linter ===================== */
-function runLinter(m){
-  const i=state.inputs,o=state.overrides,L=state.locks,out=[];
-  const add=(sev,msg,save,src)=>out.push({sev,msg,save:save||'',src});
-  const {aud,lvl}=sens(i.audienceSensitivity);
-  const qa = state.purpose==='assistant' && (i.dataSources.includes('doc_corpus')||i.dataSources.includes('vector'));
-  // caching
-  if(qa && !o.autocomplete) add('caching','Add query autocomplete — canonicalizes phrasings, lifts cache-hit ~5–15%→~40–60% at ≈zero inference cost.','cost↓ latency↓','autocomplete');
-  if(o.autocomplete && !o.warming) add('caching','Precompute the top-N suggested queries offline → ≈$0 + ms latency on the popular head.','','warming');
-  // conflict
-  if(i.latencyPreset==='subsecond' && (o.pattern==='multi'||o.retrieval==='rerank')) add('conflict','Sub-second SLO + multi-agent/rerank can blow the TTFT budget — single-agent + cached path, or raise the SLO.','','pattern');
-  if(i.freshness==='realtime' && (o.exactCache||o.semanticCache)) add('conflict','Caching contradicts real-time freshness — scope to freshness-tolerant intents or shorten TTL.','','exactCache');
-  // privacy / safety / residency
-  if(lvl>=3 && o.semanticCache) add('privacy','Semantic cache stores query embeddings — isolate per tenant + short TTL, or disable under strict-PII.','','semanticCache');
-  if(aud!=='internal' && !o.guardrails && !L.guardrails) add('safety','Add injection/jailbreak + output filtering — PII redaction alone won\'t stop a poisoned doc or exfiltration.','','guardrails');
-  // access / governance
-  if(o.pattern==='multi' && !o.toolAuthz) add('access','Scope agent identity (workload identity + OBO) and allow-list tools — least privilege.','','toolAuthz');
-  if(o.hitlApproval==='none' && (state.purpose==='automation'||aud!=='internal')) add('governance','High-stakes path with no approval — add a maker-checker (4-eyes) gate.','','hitlApproval');
-  if(!o.feedbackLoop) add('governance','Capture thumbs + reason — without it the eval set decays from week one.','','feedbackLoop');
-  if(!o.modelRiskGov) add('governance','Pin model/prompt version + champion-challenger (model-risk regimes).','','modelRiskGov');
-  // scaling
-  const chunks=(i.corpusSize||0)*K.chunksPerDoc;
-  if(chunks>1e8 && !o.metadataPrefilter) add('scaling','Pure ANN recall degrades past ~100M chunks — add a metadata pre-filter + shard.','','metadataPrefilter');
-  if(m.volPeak>K.apigeeRpsPerRegion/1000 && !o.multiRegion) add('scaling','Peak load nears single-region quota — shard by region + pre-negotiate.','','multiRegion');
-  // cost
-  if(!o.contextCache && i.tokensIn>=3000) add('cost','Largest cheap win: enable context cache on the reused system prompt.','~22% input cost','contextCache');
-  if(!o.smartRouting) add('cost','Route lookups to the fast model; reserve the reasoning model for hard queries.','','smartRouting');
-  if(o.reactMaxIter>=8 && !o.costKillSwitch) add('cost','High ReAct iterations with no budget kill-switch — add a circuit-breaker.','','costKillSwitch');
-  return out;
-}
-
-/* ===================== Diagram ===================== */
-const SRC_LABEL={bigquery:'BigQuery',onprem:'On-prem',vector:'Vector',stream:'Stream',kg:'KG',web:'Web',doc_corpus:'Corpus'};
-const AGENT_ROLES={assistant:['Q&A','summarize','draft','policy','compare','extract','plan','translate'],automation:['code-gen','review','test','docs','migrate','plan']};
-const roleList=(p,n)=>{const r=AGENT_ROLES[p];return n<=r.length?r.slice(0,n).join(' · '):r.join(' · ')+` +${n-r.length}`;};
-const srcList=arr=>arr.map(s=>SRC_LABEL[s]||s).join(' · ');
-const DRILLABLE={gateway:'LLM Gateway',ingestion:'Ingestion',funnel:'Retrieval',sandbox:'Sandbox'};
-function buildMainDiagram(){
-  const i=state.inputs,o=state.overrides; const L=[]; L.push('flowchart TD');
-  const cls=[];
-  const node=(id,label,tier)=>{ cls.push(`class ${id} ${tier}`); return `${id}["${label}"]`; };
-  if(state.purpose==='assistant'){
-    L.push(node('Client','Client UI','client'));
-    let head='Client';
-    if(o.gateway){ L.push(node('GW','LLM Gateway ⊕','gateway')); L.push('Client --> GW'); head='GW'; }
-    L.push(node('Orch', o.pattern==='multi'?`Orchestrator<br/>${roleList('assistant',o.numAgents)}`:'Orchestrator<br/>single agent','orch'));
-    if(o.guardrails){ L.push(node('Guard','Safety guardrails','gov')); L.push(`${head} --> Guard`); L.push('Guard --> Orch'); }
-    else { L.push(`${head} --> Orch`); }
-    if(['hybrid','dense','rerank'].includes(o.retrieval)){ L.push(node('Retr','Retrieval funnel ⊕','retr')); L.push('Orch --> Retr'); }
-    if(o.sandbox){ L.push(node('Sand','Transient sandbox ⊕','gov')); L.push('Orch --> Sand'); }
-    L.push(node('LLM','Model(s)','orch')); L.push('Orch --> LLM');
-    // data layer (grouped)
-    if(i.dataSources.length){ L.push(node('Data',`Data layer<br/>${srcList(i.dataSources)}`,'data')); L.push((['hybrid','dense','rerank'].includes(o.retrieval)?'Retr':'Orch')+' --> Data'); }
-    if(o.ingestionSep){ L.push(node('Ingest','Ingestion ⊕','data')); L.push('Ingest --> Data'); }
-    L.push(node('Obs','Observability','obs')); L.push('Orch --> Obs');
-    if(o.hitlApproval!=='none'){ L.push(node('Appr','Approval gate','gov')); L.push('LLM --> Appr'); }
-    if(o.feedbackLoop){ L.push(node('Fb','Feedback → eval','gov')); L.push('Obs --> Fb'); }
-  } else {
-    L.push(node('Trig','Trigger (ticket/event)','client'));
-    L.push(node('Req','Requirement agent','orch')); L.push('Trig --> Req');
-    L.push(node('Plan','Planner','orch')); L.push('Req --> Plan');
-    L.push(node('Exec',`Executor pool<br/>${roleList('automation',o.numAgents)}`,'orch')); L.push('Plan --> Exec');
-    L.push(node('QG','Quality gate','retr')); L.push('Exec --> QG');
-    if(o.hitlApproval!=='none'){ L.push(node('Appr','Human approval','gov')); L.push('QG --> Appr'); }
-    L.push(node('State','State store (Spanner)','data')); L.push('Exec --> State');
-    L.push(node('Obs','Observability','obs')); L.push('Exec --> Obs');
-  }
-  L.push('classDef client fill:#16384a,stroke:#5ec8f8,color:#dbeefb;');
-  L.push('classDef gateway fill:#40301a,stroke:#f4a259,color:#ffe6cc;');
-  L.push('classDef orch fill:#2a2348,stroke:#7c5cff,color:#e7e0ff;');
-  L.push('classDef retr fill:#143a32,stroke:#4cd4b0,color:#d6fff3;');
-  L.push('classDef data fill:#3a3416,stroke:#e6c84c,color:#fff7cc;');
-  L.push('classDef obs fill:#23272e,stroke:#9aa5b1,color:#e6edf3;');
-  L.push('classDef gov fill:#3a1a2a,stroke:#ff6b9d,color:#ffd6e6;');
-  L.push(...cls);
-  return L.join('\n');
-}
-function buildComponentDiagram(key){
-  const map={
-    gateway:'flowchart LR\n A[Auth IAM+mTLS]-->B[PII redact]-->C[Route]-->D[Semantic cache]-->E[Rate limit]-->F[Audit log]-->G[Provider fan-out]',
-    ingestion:'flowchart LR\n A[Source]-->B[Document AI]-->C[Chunker]-->D[Embeddings]-->E[Vector + BM25 + GCS]',
-    sandbox:'flowchart LR\n A[Ephemeral instance + KMS]-->B[Entity resolution]-->C[Web/OSINT + risk rules]-->D[Memory wipe]-->E[Audit hash]',
-    funnel:'flowchart LR\n A[Metadata pre-filter]-->B[Dense + BM25 RRF]-->C[Reranker]-->D[Grounded generation + citations]',
-  };
-  return map[key]||'';
-}
-
-/* ===================== Render ===================== */
-let renderSeq=0;
-function applyControlStates(){
-  // visibility
-  const vis = visibleInputs();
-  let shown=0,total=0;
-  $$('.ctl[data-vis]').forEach(el=>{ total++; const key=el.dataset.vis; const ok=vis[key]!==false; el.classList.toggle('hidden',!ok); if(ok)shown++; });
-  $$('fieldset[data-vis]').forEach(el=>{ const key=el.dataset.vis; el.style.display = vis[key]===false?'none':''; });
-  $('#visCount').textContent = `(${shown}/${total} shown)`;
-  // advanced
-  const adv=state.ui.advancedMode;
-  $$('.adv').forEach(el=>el.style.display = adv?'':'none');
-  $$('fieldset.adv').forEach(el=>el.classList.toggle('adv-hidden',!adv));
-  // locks + warn marks
-  const issues=lastIssues||[];
-  $$('.ctl[data-ov]').forEach(el=>{
-    const k=el.dataset.ov; const lockInfo=state.locks[k];
-    el.classList.toggle('locked',!!lockInfo);
-    const ctrl=el.querySelector('[data-bind]');
-    if(ctrl){ ctrl.disabled=!!lockInfo; }
-    let lk=el.querySelector('.lock');
-    if(lockInfo && !lk){ lk=document.createElement('span'); lk.className='lock'; el.querySelector('label').appendChild(lk); }
-    if(lockInfo && lk){ lk.textContent='🔒 '+lockInfo.cause; lk.title='Locked: '+lockInfo.reason; } if(!lockInfo && lk) lk.remove();
-    let wm=el.querySelector('.warnmark'); const hasIssue=issues.some(x=>x.src===k);
-    if(hasIssue && !wm){ wm=document.createElement('span'); wm.className='warnmark'; wm.textContent='⚠'; wm.title='See issues & levers'; el.querySelector('label').appendChild(wm); }
-    if(!hasIssue && wm) wm.remove();
-  });
-}
-function visibleInputs(){
-  const i=state.inputs,o=state.overrides; const v={always:true};
-  const hasCorpus=i.dataSources.includes('doc_corpus')||i.dataSources.includes('vector');
-  const staleable=i.dataSources.some(s=>['stream','bigquery','onprem','doc_corpus'].includes(s));
-  v.corpus=hasCorpus; v.freshness=staleable;
-  v.languages = state.purpose==='assistant';
-  v.multi = o.pattern==='multi';
-  v.routing = o.smartRouting;
-  v.retr = ['hybrid','dense','rerank'].includes(o.retrieval);
-  v.gw = o.gateway;
-  v.selfhost = o.deployment!=='gcp';
-  return v;
-}
-
-let lastIssues=[], lastMetrics={};
-function render(){
-  deriveOverrides();
-  const m=computeMetrics(); lastMetrics=m;
-  const issues=runLinter(m); lastIssues=issues;
-  // sync control values
-  syncControlsFromState();
-  applyControlStates();
-  // actor label
-  $('#actorLabel').textContent = state.purpose==='automation'?'engineers':'seats';
-  // issues
-  $('#issueCount').textContent = issues.length?`(${issues.length})`:'';
-  $('#issues').innerHTML = issues.length ? issues.map(x=>`<div class="issue"><span class="sev ${x.sev}">${x.sev}</span><span>${x.msg}</span>${x.save?`<span class="save">${x.save}</span>`:''}</div>`).join('') : '<div class="empty">No conflicts — clean config.</div>';
-  // metrics
-  $('#metrics').innerHTML = metricCards(m);
-  // observability / risk / bom
-  $('#observability').innerHTML = obsHtml(m);
-  $('#risk').innerHTML = riskHtml(m);
-  $('#bom').innerHTML = bomHtml().map(s=>`<span>${s}</span>`).join('');
-  // diagram
-  renderDiagram();
-  // permalink
-  schedulePermalink();
-}
-
-function metricCards(m){
-  const card=(k,v,t)=>`<div class="metric" title="${(t||'').replace(/"/g,'&quot;')}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
-  const cards=[];
-  cards.push(card(m.volLabel+' avg / peak', `${fmt(m.volAvg,2)} <small>/ ${fmt(m.volPeak,2)}</small>`, 'actors × actions/day over the active window, × burst'));
-  cards.push(card('Tokens / day', fmt(m.tokensDay,1), 'daily actions × (in+out)'));
-  cards.push(card('Cost / yr (naive→opt)', `${money(m.costNaive)} <small>→ ${money(m.costOpt)}</small>`, 'routing + context-cache + response-cache hit'));
-  cards.push(card('Cache hit (eff.)', (m.cacheHitEff*100).toFixed(0)+'%', 'slider + autocomplete + warming, capped by freshness'));
-  cards.push(card('Latency p95', fmt(m.latencyP95,0)+' <small>ms</small>', 'gateway+retrieval+rerank+TTFT+generation; ×ReAct loop'));
-  if(m.indexGB>0) cards.push(card('Vector index', fmt(m.indexGB,1)+' <small>GB · '+m.shards+' shard(s)</small>', 'chunks × dim × 4 bytes'));
-  if(m.indexGB>0) cards.push(card('HNSW recall / ANN p95', (m.hnswRecall*100).toFixed(1)+'% <small>/ '+fmt(m.annP95,0)+'ms</small>', 'efSearch/M trade recall vs latency'));
-  if(m.gpuCount) cards.push(card('Self-host GPUs', m.gpuCount+' <small>· '+money(m.gpuMo)+'/mo</small>', 'peak ÷ (tok/s ÷ out-tokens) × $/hr × 730'));
-  cards.push(card('Storage / mo', money(m.storageMo), 'index + logs (illustrative)'));
-  return cards.join('');
-}
-function driverTags(drv){ return drv ? drv.map(d=>`<span class="tag" title="driven by ${d}">${d}</span>`).join(' ') : '<span class="tag static" title="same for every config">fixed</span>'; }
-function obsHtml(m){
-  const i=state.inputs,o=state.overrides;
-  const path = state.purpose==='assistant'
-    ? ['client',o.gateway&&'gateway','orchestrator',o.retrieval==='rerank'&&'rerank',o.sandbox&&'sandbox','LLM'].filter(Boolean)
-    : ['trigger','planner','executor','quality-gate'];
-  const crit = state.purpose==='assistant'?'faithfulness + citation accuracy':'PR-success + rework rounds';
-  const slo = i.latencyPreset==='subsecond'?'p95 < 1s':(i.latencyPreset==='minutes'?'per-run < N min':'p95 < 2s start / 6s full');
-  const comps=[o.gateway&&'gateway',(o.retrieval==='rerank')&&'rerank',o.sandbox&&'sandbox'].filter(Boolean);
-  const rows=[
-    ['Live trace', path.join(' → '), comps.length?comps:['components']],
-    ['Eval', `Vertex Eval on 5% async sample — ${crit}; drift > 2σ`, ['purpose']],
-    ['SLO', slo, ['latency']],
-    o.feedbackLoop?['Feedback','thumbs + reason → eval store', ['feedback loop']]:null,
-    ['Always-on','Cloud Trace + Logging (redacted) + OpenTelemetry', null],
-  ].filter(Boolean);
-  return rows.map(([k,v,drv])=>`<div class="obs-row"><b>${k}</b> ${driverTags(drv)}<br>${v}</div>`).join('');
-}
-function riskHtml(m){
-  const o=state.overrides,i=state.inputs;
-  // dynamic bottleneck
-  let bottleneck='LLM provider quota', bdrv=['volume'];
-  if((i.corpusSize||0)*K.chunksPerDoc>1e8){ bottleneck='vector index (shard by line × region)'; bdrv=['corpus','scale']; }
-  else if(o.retrieval==='rerank' && m.volPeak>10){ bottleneck='reranker latency (cascade small→medium)'; bdrv=['rerank','volume']; }
-  else if(o.stateStore.includes('spanner') && m.volPeak>50){ bottleneck='Spanner write path (partition by key)'; bdrv=['state store','volume']; }
-  else if(o.gateway && m.volPeak>20){ bottleneck='gateway shard (per-region quota)'; bdrv=['gateway','volume']; }
-  const spofs=['orchestrator → stateless autoscaled', o.retrieval!=='none'&&'vector index → multi-region read failover','model → reasoning→fast→cached failover'].filter(Boolean);
-  const gaps=[!o.guardrails&&'safety guardrails',o.hitlApproval==='none'&&'approval gate',!o.modelRiskGov&&'version-pinning',!o.residencyPin&&sens(i.audienceSensitivity).lvl>=2&&'residency pin'].filter(Boolean);
-  const govDrv=['sensitivity']; if(!o.guardrails)govDrv.push('guardrails'); if(o.hitlApproval==='none')govDrv.push('approval');
-  const rows=[
-    ['What breaks at 10×', bottleneck, bdrv],
-    ['SPOFs', spofs.join('; '), ['retrieval','model']],
-    gaps.length?['Governance gaps', gaps.join(', '), govDrv.slice(0,3)]:null,
-    ['Alerting','P1 auto-rollback / P2 page / P3 dashboard · non-blocking fallback', null],
-  ].filter(Boolean);
-  return rows.map(([k,v,drv])=>`<div class="risk-row"><b>${k}</b> ${driverTags(drv)}<br>${v}</div>`).join('');
-}
-function bomHtml(){
-  const o=state.overrides,i=state.inputs,b=new Set();
-  b.add(o.platform==='adk'?'ADK + Agent Engine':o.platform==='studio'?'Agent Studio':'LangGraph');
-  if(o.gateway) b.add('Apigee'); if(o.auditLog) b.add('Cloud Logging (WORM)');
-  if(['hybrid','dense','rerank'].includes(o.retrieval)) b.add(o.vectorDB==='vertex'?'Vertex AI Vector Search':o.vectorDB==='alloydb'?'AlloyDB':'Elasticsearch');
-  if(o.retrieval==='hybrid'||o.retrieval==='rerank') b.add('BM25');
-  if(o.ingestionSep) b.add('Dataflow'); if(i.dataSources.includes('doc_corpus')) b.add('Document AI');
-  if(i.dataSources.includes('bigquery')) b.add('BigQuery');
-  b.add(o.stateStore.includes('spanner')?'Spanner':'Cloud SQL'); if(o.stateStore.includes('redis')) b.add('Memorystore');
-  b.add('Cloud Trace'); b.add('Vertex AI Eval');
-  if(o.guardrails) b.add('Model Armor'); if(o.toolAuthz) b.add('Workload Identity'); if(o.modelRiskGov) b.add('Vertex Model Registry');
-  if(o.residencyPin) b.add('VPC Service Controls'); b.add('Cloud DLP'); b.add('IAM');
-  if(o.deployment!=='gcp') b.add('vLLM on GKE');
-  [o.reasoningModel,o.fastModel].forEach(id=>b.add(modelById(id).name));
-  return [...b];
-}
-
-let diagSrc='';
-async function renderDiagram(){
-  diagSrc=buildMainDiagram();
-  const host=$('#diagram');
-  if(!mermaidOK){ host.innerHTML='<div class="empty">Mermaid offline — diagram source:</div><pre>'+diagSrc.replace(/</g,'&lt;')+'</pre>'; return; }
-  const id='d'+(++renderSeq);
-  try{ const {svg}=await mermaid.render(id,diagSrc); host.innerHTML=svg; bindDrill(host); }
-  catch(e){ host.innerHTML='<pre>'+diagSrc.replace(/</g,'&lt;')+'</pre>'; console.warn('mermaid render',e); }
-}
-function bindDrill(host){
-  $$('.node',host).forEach(n=>{
-    const t=(n.textContent||'');
-    let key=null;
-    if(/Gateway/.test(t))key='gateway'; else if(/Ingestion/.test(t))key='ingestion'; else if(/Retrieval funnel/.test(t))key='funnel'; else if(/sandbox/i.test(t))key='sandbox';
-    if(key){ n.classList.add('drill'); n.style.cursor='pointer'; n.addEventListener('click',()=>openModal(key)); }
-  });
-}
-
-/* ===================== Drill-down modal ===================== */
-async function openModal(key){
-  state.ui.openModal=key;
-  const titles={gateway:'LLM Gateway',ingestion:'Ingestion pipeline',sandbox:'Transient sandbox',funnel:'Retrieval funnel'};
-  const subcalc = key==='gateway'||key==='ingestion';
-  const root=$('#modal-root'), box=$('#modal');
-  let inner=`<span class="close" id="modalClose">×</span><h2>${titles[key]} ${subcalc?'· sub-calculator':'· detail'}</h2>`;
-  inner+=`<div class="sub">${subcalc?'Has its own sizing axis — independent of the main app.':'Read-only detail view.'}</div>`;
-  inner+=`<div class="mdiagram" id="mdiagram">rendering…</div>`;
-  if(key==='gateway'){
-    const g=state.componentInputs.gateway; const agg=g.aggregateQPS??Math.max(1,Math.round(lastMetrics.volPeak));
-    const regions=Math.max(1,Math.ceil(agg/(K.apigeeRpsPerRegion)));
-    inner+=`<div class="ctl"><label>Aggregate org-wide QPS (all apps)</label><input type="number" id="ciq" value="${agg}" min="1"></div>`;
-    inner+=`<div class="ctl"><label>Tenant apps</label><input type="number" id="cit" value="${g.tenantApps}" min="1"></div>`;
-    inner+=`<div class="metrics"><div class="metric"><div class="k">Regions</div><div class="v">${regions}</div></div><div class="metric"><div class="k">This app share</div><div class="v">${(100*lastMetrics.volPeak/agg).toFixed(1)}%</div></div><div class="metric"><div class="k">DLP redaction QPS</div><div class="v">${fmt(agg,1)}</div></div></div>`;
-  }
-  if(key==='ingestion'){
-    const ing=state.componentInputs.ingestion; const docs=ing.docsPerDay??Math.round((state.inputs.corpusSize||0)*0.002);
-    const workers=Math.max(1,Math.ceil(docs*state.inputs.tokensIn/K.embedTokPerWorkerDay));
-    inner+=`<div class="ctl"><label>Docs / day (arrival)</label><input type="number" id="cid" value="${docs}" min="0"></div>`;
-    inner+=`<div class="metrics"><div class="metric"><div class="k">Embed workers</div><div class="v">${workers}</div></div><div class="metric"><div class="k">Reindex SLO</div><div class="v">${ing.reindexSLOmin} min</div></div></div>`;
-  }
-  box.innerHTML=inner; root.classList.add('open');
-  $('#modalClose').onclick=closeModal;
-  // render sub-diagram
-  const md=$('#mdiagram');
-  if(mermaidOK){ try{ const {svg}=await mermaid.render('m'+(++renderSeq), buildComponentDiagram(key)); md.innerHTML=svg; }catch(e){ md.textContent=buildComponentDiagram(key); } }
-  else md.innerHTML='<pre>'+buildComponentDiagram(key).replace(/</g,'&lt;')+'</pre>';
-  // wire sub-calc inputs
-  if(key==='gateway'){ $('#ciq').oninput=e=>{state.componentInputs.gateway.aggregateQPS=+e.target.value;openModal('gateway');}; $('#cit').oninput=e=>{state.componentInputs.gateway.tenantApps=+e.target.value;}; }
-  if(key==='ingestion'){ $('#cid').oninput=e=>{state.componentInputs.ingestion.docsPerDay=+e.target.value;openModal('ingestion');}; }
-}
-function closeModal(){ state.ui.openModal=null; $('#modal-root').classList.remove('open'); }
-$('#modal-root').addEventListener('click',e=>{ if(e.target.id==='modal-root') closeModal(); });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
-
-/* ===================== Controls sync ===================== */
-function readControls(){
-  $$('[data-bind]').forEach(el=>{
-    if(el.disabled) return;
-    const p=el.dataset.bind;
-    if(el.type==='checkbox'){ if(el.name) return; setPath(state,p,el.checked); }
-    else if(el.type==='number'||el.type==='range') setPath(state,p,el.value===''?0:+el.value);
-    else setPath(state,p,el.value);
-  });
-  // groups
-  state.inputs.dataSources=$$('#dataSources input:checked').map(c=>c.value);
-  state.inputs.languages=$$('#languages input:checked').map(c=>c.value);
-}
-function syncControlsFromState(){
-  $$('[data-bind]').forEach(el=>{
-    if(el.name) return;
-    const v=getPath(state,el.dataset.bind);
-    if(el.type==='checkbox') el.checked=!!v;
-    else if(v!=null && document.activeElement!==el) el.value=v;
-  });
-  $$('#dataSources input').forEach(c=>c.checked=state.inputs.dataSources.includes(c.value));
-  $$('#languages input').forEach(c=>c.checked=(state.inputs.languages||[]).includes(c.value));
-  $$('[data-out]').forEach(o=>{ const v=getPath(state,o.dataset.out); o.textContent = v!=null?v:''; });
-  // model dropdowns
-  ['reasoningModel','fastModel'].forEach(role=>{
-    const sel=$(`[data-bind="overrides.${role}"]`); if(sel && !sel.dataset.filled){ sel.innerHTML=MODELS.map(m=>`<option value="${m.id}">${m.name}</option>`).join(''); sel.dataset.filled='1'; }
-    if(sel) sel.value=state.overrides[role];
-  });
-  // preset chips
-  renderChips();
-}
-function renderChips(){
-  const chips=PRESETS[state.purpose];
-  $('#presetChips').innerHTML=Object.entries(chips).map(([k,v])=>`<span class="chip ${state.preset===k?'active':''}" data-preset="${k}">${v.label}</span>`).join('');
-}
-
-/* ===================== Permalink ===================== */
-let plTimer=null;
-function schedulePermalink(){ clearTimeout(plTimer); plTimer=setTimeout(()=>{ try{ location.replace('#'+encodeState()); }catch(e){} },120); }
-function encodeState(){ return btoa(unescape(encodeURIComponent(JSON.stringify({p:state.purpose,pr:state.preset,i:state.inputs,o:state.overrides})))); }
-function decodeState(h){ try{ const d=JSON.parse(decodeURIComponent(escape(atob(h)))); if(d.p){state.purpose=d.p;state.preset=d.pr;state.inputs=d.i;state.overrides=d.o;return true;} }catch(e){} return false; }
-
-/* ===================== Wiring ===================== */
-function onInput(){ readControls(); render(); }
-$('#purpose').addEventListener('change',e=>{ const pur=e.target.value; const first=Object.keys(PRESETS[pur])[0]; applyPreset(pur,first); render(); });
-$('#presetChips').addEventListener('click',e=>{ const c=e.target.closest('.chip'); if(c){ applyPreset(state.purpose,c.dataset.preset); render(); } });
-$('#resetBtn').addEventListener('click',()=>{ applyPreset(state.purpose,state.preset); render(); });
-$('#advanced').addEventListener('change',e=>{ state.ui.advancedMode=e.target.checked; applyControlStates(); });
-document.querySelector('main').addEventListener('input',e=>{ if(e.target.id==='advanced'||e.target.closest('#modal'))return; onInput(); });
-document.querySelector('main').addEventListener('change',e=>{ if(e.target.id==='advanced'||e.target.id==='purpose'||e.target.closest('#modal'))return; onInput(); });
-$('#introClose').addEventListener('click',()=>{ $('#intro').style.display='none'; });
-const COPY_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-$('#copyMermaid').addEventListener('click',()=>{ navigator.clipboard?.writeText(diagSrc); $('#copyMermaid').textContent='✓'; setTimeout(()=>$('#copyMermaid').innerHTML=COPY_ICON,1200); });
-$('#permalinkBtn').addEventListener('click',()=>{ navigator.clipboard?.writeText(location.href); $('#permalinkBtn').textContent='Copied'; setTimeout(()=>$('#permalinkBtn').textContent='Copy permalink',1200); });
-
-/* ===================== Self-test ===================== */
-function selfTest(){
-  const results=[]; const assert=(n,c)=>results.push([n,!!c]);
-  // determinism
-  applyPreset('assistant','expert_copilot'); deriveOverrides(); const a=JSON.stringify(computeMetrics()); deriveOverrides(); const b=JSON.stringify(computeMetrics());
-  assert('determinism: same state → same metrics', a===b);
-  // lock: strict-PII → sandbox
-  applyPreset('assistant','strictpii_verify'); deriveOverrides(); assert('strict-PII locks sandbox on', state.overrides.sandbox===true && state.locks.sandbox);
-  assert('strict-PII locks residency pin', state.overrides.residencyPin===true);
-  // lock: subsecond → single agent
-  applyPreset('assistant','highvol_qa'); state.inputs.latencyPreset='subsecond'; deriveOverrides(); assert('sub-second locks single-agent', state.overrides.pattern==='single');
-  // external locks guardrails
-  applyPreset('assistant','customer_support'); deriveOverrides(); assert('external locks guardrails on', state.overrides.guardrails===true);
-  // metrics sanity
-  applyPreset('assistant','expert_copilot'); const m=computeMetrics(); assert('cost opt ≤ naive', m.costOpt<=m.costNaive); assert('peak ≥ avg', m.volPeak>=m.volAvg);
-  // permalink round-trip
-  applyPreset('assistant','expert_copilot'); const enc=encodeState(); const snap=JSON.stringify(state.inputs); decodeState(enc); assert('permalink round-trip', JSON.stringify(state.inputs)===snap);
-  // hnsw moves a number
-  applyPreset('assistant','highvol_qa'); state.overrides.hnswEf=64; const r1=computeMetrics().hnswRecall; state.overrides.hnswEf=512; const r2=computeMetrics().hnswRecall; assert('efSearch raises recall', r2>r1);
-  const pass=results.every(r=>r[1]);
-  const bar=$('#testbar'); bar.style.display='block'; bar.className=pass?'pass':'fail';
-  bar.innerHTML=(pass?'✓ all self-tests pass — ':'✗ FAILURES — ')+results.map(r=>`${r[1]?'✓':'✗'} ${r[0]}`).join(' · ');
-  console.log('[self-test]',pass?'PASS':'FAIL',results);
-  return pass;
-}
-
-/* ===================== Init ===================== */
-function init(){
-  if(location.hash.length>1 && decodeState(location.hash.slice(1))){ /* loaded */ }
-  else applyPreset('assistant','expert_copilot');
-  render();
-  if(new URLSearchParams(location.search).has('test')) selfTest();
-}
-init();
-window.__designer={state,computeMetrics,deriveOverrides,selfTest};
-</script>
+    /* ===================== Init ===================== */
+    function init() {
+      if (location.hash.length > 1 && decodeState(location.hash.slice(1))) { /* loaded */ }
+      else applyPreset('assistant', 'expert_copilot');
+      render();
+      if (new URLSearchParams(location.search).has('test')) selfTest();
+    }
+    init();
+    window.__designer = { state, computeMetrics, deriveOverrides, selfTest };
+  </script>
 </body>
+
 </html>
