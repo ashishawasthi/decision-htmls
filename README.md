@@ -17,3 +17,25 @@ HTML file that opens straight from disk.
 
 - Every estimate is deterministic. No model is called at runtime.
 - Pricing and heuristics reflect roughly May 2026 and are meant for planning, not billing.
+
+## Disclaimer
+
+These tools produce rough estimates for planning and learning, not exact
+figures. Pricing, model catalogs, and memory heuristics reflect roughly May
+2026 and will go out of date. Always verify against official sources before
+making a purchasing, capacity, or design decision. The project is provided
+"as is", with no warranty and no liability for any loss arising from its use.
+
+This is a personal project. It is not affiliated with, sponsored by, or
+endorsed by Google or any other company, and it does not represent the views
+or official guidance of any employer or vendor. All product names and
+trademarks belong to their respective owners.
+
+See [DISCLAIMER.md](DISCLAIMER.md) for the full text.
+
+## License
+
+Licensed under the Apache License 2.0. See [LICENSE](LICENSE). The license
+carries an explicit warranty disclaimer and limitation of liability (Sections
+7 and 8) and grants no trademark rights (Section 6). Third-party attribution
+and trademark notices are in [NOTICE](NOTICE).
