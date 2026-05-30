@@ -1368,6 +1368,31 @@
     const roleList = (p, n) => { const r = AGENT_ROLES[p]; return n <= r.length ? r.slice(0, n).join(' · ') : r.join(' · ') + ` +${n - r.length}`; };
     const srcList = arr => arr.map(s => SRC_LABEL[s] || s).join(' · ');
     const DRILLABLE = { gateway: 'LLM Gateway', ingestion: 'Ingestion', funnel: 'Retrieval', sandbox: 'Sandbox' };
+    // One-line purpose per box, keyed by the node id used in buildMainDiagram. Shown on
+    // hover (native SVG <title>) and reused as the drill-down modal subtitle.
+    const NODE_PURPOSE = {
+      // assistant + shared
+      Client: 'The user-facing app (web or chat) that sends queries and renders grounded, cited answers.',
+      GW: 'A single controlled choke point for all LLM traffic (auth, PII redaction, model routing, rate-limiting, semantic cache and audit), so governance and cost are enforced in one place.',
+      Orch: 'Plans each request, calls tools and retrieval, and composes the final answer. Single agent or a multi-agent team depending on the pattern.',
+      Guard: 'Screens inputs and outputs for prompt injection, jailbreaks, and unsafe or leaking content, before and after the model.',
+      Retr: 'Narrows candidates in stages (metadata pre-filter → dense + BM25 → rerank) so the model is grounded on only the most relevant passages.',
+      Sand: 'Runs PII-sensitive or untrusted tool execution in an ephemeral, isolated instance that is wiped after each use, so sensitive data and side-effects never persist.',
+      LLM: 'The reasoning and fast models. Smart routing sends easy lookups to the cheap model and hard queries to the reasoning model.',
+      Data: 'The grounding sources (vector store, BigQuery, document corpus, and so on) that retrieval and the orchestrator read from.',
+      Ingest: 'Turns source documents into searchable chunks and embeddings (parse → chunk → embed → index). Run separately so re-indexing and backfills do not disturb live serving.',
+      Obs: 'Traces, logs, and evals for every step, so quality, latency, and cost stay measurable and regressions get caught.',
+      Appr: 'A human review step (maker-checker or dual-control) before a high-stakes action is committed.',
+      Fb: 'Captures thumbs and reasons from users and feeds them into the eval set, so quality does not silently decay.',
+      // automation
+      Trig: 'The event that starts a run: a ticket, a webhook, or a scheduled job.',
+      Req: 'Reads the trigger and turns it into a clear, structured task specification for the planner.',
+      Plan: 'Breaks the task into ordered steps and assigns them to the executor agents.',
+      Exec: 'The specialist agents that do the work (code-gen, review, test, docs, migrate), running in parallel where possible.',
+      QG: 'Automated checks (tests, linters, policy rules) that must pass before the result moves to approval.',
+      State: 'Durable run state and history, so long workflows can resume and stay auditable.',
+    };
+    const nodeIdFromSvg = el => { const m = (el.id || '').match(/flowchart-([A-Za-z0-9]+)-\d+$/); return m ? m[1] : null; };
     function buildMainDiagram() {
       const i = state.inputs, o = state.overrides; const L = []; L.push('flowchart TD');
       const cls = [];
@@ -1510,15 +1535,15 @@
       const rows = [];
       const apiActive = o.deployment !== 'onprem';            // onprem locks model to open weights → no token-metered API
       if (apiActive) {
-        rows.push(grp('GenAI — managed inference <small>($ / yr)</small>'));
-        rows.push(row('Input — fresh', money(cp.fresh)));
-        rows.push(row('Input — cached', money(cp.cached), 'billed at model cache-read rate'));
+        rows.push(grp('GenAI · managed inference <small>($ / yr)</small>'));
+        rows.push(row('Input · fresh', money(cp.fresh)));
+        rows.push(row('Input · cached', money(cp.cached), 'billed at model cache-read rate'));
         rows.push(row('Output', money(cp.output)));
         if (cp.grounding > 0) rows.push(row('Grounding', money(cp.grounding), 'live web search · $/1k calls'));
         rows.push(row('GenAI $/yr', money(m.costOpt), '', true));
       }
       if (m.gpuYr) {
-        rows.push(grp('GenAI — self-host on GPUs <small>($ / yr)</small>'));
+        rows.push(grp('GenAI · self-host on GPUs <small>($ / yr)</small>'));
         rows.push(row('GPU fleet', `${money(m.gpuMo)}/mo`, `${m.gpuNodes}×8 ${(o.accelerator || 'h100').toUpperCase()} · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util`));
         rows.push(row('Inference $/yr', money(m.gpuYr), '', true));
       }
@@ -1527,7 +1552,7 @@
       const costInput = (name, val, red) => `<input class="cost-in${red ? ' red' : ''}" data-cost="${name.replace(/"/g, '&quot;')}" type="number" min="0" step="1" value="${val != null ? Math.round(val) : ''}" placeholder="enter" aria-label="${name} monthly cost"><span class="permo">/mo</span>`;
       rows.push(grp('Platform &amp; infrastructure <small>($ / mo · editable)</small>'));
       s.priced.forEach(x => rows.push(`<div class="cost-row"><span class="cl">${x.name} <small>${x.src === 'manual' ? 'manual' : 'est.'}</small></span><span class="cn">${costInput(x.name, x.mo, false)}</span></div>`));
-      s.red.forEach(x => rows.push(`<div class="cost-row red"><span class="cl">${x.name} <small>no public price — enter cost</small></span><span class="cn">${costInput(x.name, null, true)}</span></div>`));
+      s.red.forEach(x => rows.push(`<div class="cost-row red"><span class="cl" title="${(x.why || '').replace(/"/g, '&quot;')}">${x.name} <small>${x.short} · enter $/mo</small></span><span class="cn">${costInput(x.name, null, true)}</span></div>`));
       if (s.free.length) rows.push(`<div class="cost-row"><span class="cl">Included at no charge <small>${s.free.join(' · ')}</small></span><span class="cn">$0</span></div>`);
       rows.push(row('Platform $/mo', money(s.platMo) + (s.red.length ? ` <span class="cred">+${s.red.length} unpriced</span>` : ''), s.priced.length + ' priced', true));
       // ---- combined run-rate ----
@@ -1589,8 +1614,13 @@
     }
 
     /* ===================== Platform cost model (illustrative ~May 2026, $/mo) ===================== */
+    // Why a component is left for manual entry: it's usage-dependent, NOT lack of a public price.
+    const BOM_UNPRICED = {
+      'BigQuery': { short: 'usage-based, volume not modeled', why: 'BigQuery is priced publicly (~$6.25/TB scanned on-demand + ~$0.02/GB-mo storage), but the bytes your queries scan and the data you store aren\'t modeled here. Enter your own $/mo.' },
+    };
+    const unpricedReason = name => BOM_UNPRICED[name] || { short: 'usage not modeled', why: 'Spend is usage-dependent and not modeled here. Enter your own $/mo estimate.' };
     // Returns an estimated monthly $ for a BOM component, 0 if bundled/free, or
-    // null if the tool can't size its spend (→ shown red for manual entry).
+    // null if the tool can't size its spend (→ shown red for manual entry; see BOM_UNPRICED).
     function bomMonthlyCost(name, m) {
       const i = state.inputs;
       const R = i.actors * i.actionsPerDay * 30.4;              // requests / month
@@ -1639,7 +1669,7 @@
         const ov = state.costOverrides[name];
         const est = bomMonthlyCost(name, m);
         if (ov != null) priced.push({ name, mo: ov, src: 'manual' });
-        else if (est == null) red.push({ name });
+        else if (est == null) red.push({ name, ...unpricedReason(name) });
         else if (est === 0) free.push(name);
         else priced.push({ name, mo: est, src: 'est' });
       });
@@ -1659,6 +1689,19 @@
     function bindDrill(host) {
       $$('.node', host).forEach(n => {
         const t = (n.textContent || '');
+        // purpose tooltip on hover. Cover both the SVG shape (native <title> on the <g>)
+        // and the HTML label area (title attr on the foreignObject content, since htmlLabels
+        // means the cursor sits over an HTML <div>/<span>, not the SVG shape).
+        const purpose = NODE_PURPOSE[nodeIdFromSvg(n)];
+        if (purpose) {
+          if (!n.querySelector(':scope > title')) {
+            const ttl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            ttl.textContent = purpose;
+            n.insertBefore(ttl, n.firstChild);
+          }
+          n.querySelectorAll('foreignObject div, .nodeLabel').forEach(el => el.setAttribute('title', purpose));
+        }
+        // drill-down on click (subset of boxes)
         let key = null;
         if (/Gateway/.test(t)) key = 'gateway'; else if (/Ingestion/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
         if (key) { n.classList.add('drill'); n.style.cursor = 'pointer'; n.addEventListener('click', () => openModal(key)); }
@@ -1669,10 +1712,11 @@
     async function openModal(key) {
       state.ui.openModal = key;
       const titles = { gateway: 'LLM Gateway', ingestion: 'Ingestion pipeline', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
+      const purposeId = { gateway: 'GW', ingestion: 'Ingest', sandbox: 'Sand', funnel: 'Retr' };   // map modal key → node id in NODE_PURPOSE
       const subcalc = key === 'gateway' || key === 'ingestion';
       const root = $('#modal-root'), box = $('#modal');
       let inner = `<span class="close" id="modalClose">×</span><h2>${titles[key]} ${subcalc ? '· sub-calculator' : '· detail'}</h2>`;
-      inner += `<div class="sub">${subcalc ? 'Has its own sizing axis - independent of the main app.' : 'Read-only detail view.'}</div>`;
+      inner += `<div class="sub">${NODE_PURPOSE[purposeId[key]] || ''}${subcalc ? ' <em>Has its own sizing axis, independent of the main app.</em>' : ''}</div>`;
       inner += `<div class="mdiagram" id="mdiagram">rendering...</div>`;
       if (key === 'gateway') {
         const g = state.componentInputs.gateway; const agg = g.aggregateQPS ?? Math.max(1, Math.round(lastMetrics.volPeak));
