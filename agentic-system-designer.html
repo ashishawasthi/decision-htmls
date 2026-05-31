@@ -499,6 +499,21 @@
       font-variant-numeric: tabular-nums
     }
 
+    .metric.warn {
+      border-left-color: var(--err)
+    }
+
+    .metric.warn .v {
+      color: var(--err)
+    }
+
+    .metric .over {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--err);
+      margin-left: 4px
+    }
+
     .metric .v small {
       font-size: 11px;
       font-weight: 400;
@@ -1174,7 +1189,7 @@
       },
       storageBQ: 0.02, storageGCS: 0.02, egress: 0.10, vsNodeHr: 0.6,
       hnsw: { a: 0.5, b: 120, baseMs: 8 },
-      lat: { gateway: 40, retrieval: 70, rerank: 80, ttft: 400, perOutTokMs: 5, bigqueryScan: 1200, webGround: 600 },
+      lat: { gateway: 40, retrieval: 70, rerank: 80, ttft: 400, perOutTokMs: 5, bigqueryScan: 1200, webGround: 600, onpremCall: 400 },
     };
     const modelById = id => MODELS.find(m => m.id === id) || MODELS[0];
 
@@ -1329,8 +1344,12 @@
       if (state.purpose === 'assistant') {
         if (i.dataSources.includes('bigquery')) lat += L.bigqueryScan;   // OLAP scan, seconds-scale
         if (i.dataSources.includes('web')) lat += L.webGround;           // live search round-trip
+        if (i.dataSources.includes('onprem')) lat += L.onpremCall;       // private-link round trip
       }
       m.latencyP95 = lat;
+      // measure against the SLO budget for the chosen latency preset
+      m.latencyBudget = (state.purpose === 'assistant') ? (LATENCY_BUDGET[i.latencyPreset] ?? Infinity) : Infinity;
+      m.latencyOverBudget = m.latencyP95 > m.latencyBudget;
       // vector index + HNSW
       const chunks = (i.corpusSize || 0) * K.chunksPerDoc;
       m.indexBytes = chunks * K.dim * K.bytesPerFloat;
@@ -1390,12 +1409,15 @@
       if (i.dataSources.includes('web') && (modelById(o.reasoningModel).grounding || 0) > 0 && !o.autocomplete) add('cost', 'Live web grounding is billed per search - autocomplete + response cache cut repeat grounded calls on the popular head.', 'grounding↓', 'autocomplete');
       if (!o.smartRouting) add('cost', 'Route lookups to the fast model; reserve the reasoning model for hard queries.', '', 'smartRouting');
       if (o.reactMaxIter >= 8 && !o.costKillSwitch) add('cost', 'High ReAct iterations with no budget kill-switch - add a circuit-breaker.', '', 'costKillSwitch');
-      // latency-incompatible data sources on a sub-second assistant (soft warning, not removed)
-      latencyIncompatibleSources().forEach(v => {
-        if (!i.dataSources.includes(v)) return;
-        if (v === 'bigquery') add('conflict', 'BigQuery on a sub-second path: it is an analytical (OLAP) store with second-plus query latency. Move it off the hot path (raise the SLO to agentic) or ground via a vector store.', 'latency↓', 'bigquery');
-        if (v === 'web') add('conflict', 'Live Web/OSINT grounding on a sub-second path: network round-trips blow the budget. Cache grounded results or raise the SLO.', 'latency↓', 'web');
-      });
+      // latency budget: warn when measured p95 exceeds the SLO for the chosen preset, for example
+      // when a slow source (BigQuery, Web/OSINT, on-prem) is forced back onto the request path
+      if (m.latencyOverBudget) {
+        const slow = i.dataSources.filter(s => LATENCY_HEAVY.includes(s)).map(s => SRC_LABEL[s] || s);
+        const budget = m.latencyBudget >= 1000 ? (m.latencyBudget / 1000) + 's' : m.latencyBudget + 'ms';
+        add('conflict', `Latency p95 (${Math.round(m.latencyP95)}ms) exceeds the ${i.latencyPreset === 'subsecond' ? 'sub-second' : i.latencyPreset} SLO (${budget})${slow.length ? ', driven by ' + slow.join(', ') + ' on the hot path' : ''}. Remove the slow source or raise the SLO.`, 'latency↓', 'latencyPreset');
+      }
+      // sub-second p95 realistically depends on cache hits
+      if (state.purpose === 'assistant' && i.latencyPreset === 'subsecond' && !o.autocomplete && (m.cacheHitEff || 0) < 0.3) add('caching', 'Sub-second p95 depends on cache hits - enable query autocomplete plus exact or semantic cache so the popular head returns without full inference.', 'latency↓', 'autocomplete');
       return out;
     }
 
@@ -1452,9 +1474,18 @@
       if (subsec && v === 'web') t += ' Off the sub-second hot path: cache grounded results or raise the SLO.';
       return t;
     }
-    // Sources whose latency is incompatible with a sub-second interactive assistant.
-    function latencyIncompatibleSources() {
-      return (state.purpose === 'assistant' && state.inputs.latencyPreset === 'subsecond') ? ['bigquery', 'web'] : [];
+    // Synchronous sources too slow for a sub-second interactive assistant. Selecting sub-second
+    // auto-unchecks these once; the user can force them back on, and then the Latency p95 metric
+    // flags the SLO miss rather than the source itself.
+    const LATENCY_HEAVY = ['bigquery', 'web', 'onprem'];
+    // p95 budget (ms) per latency preset on the assistant path. Exceeding it warns on the metric.
+    const LATENCY_BUDGET = { subsecond: 1000, agentic: 6000, minutes: Infinity };
+    // One-time adjustments when the SLO is changed to sub-second (all overridable afterward).
+    function applySubSecondAdjust() {
+      state.inputs.dataSources = state.inputs.dataSources.filter(s => !LATENCY_HEAVY.includes(s));
+      if (!state.inputs.dataSources.some(s => ['vector', 'doc_corpus'].includes(s))) state.inputs.dataSources.push('vector');
+      state.overrides.smartRouting = true;
+      state.overrides.routingSplit = Math.max(state.overrides.routingSplit || 0, 85);
     }
     // Google Cloud component explainers (separate pages, opened in a new tab). Keyed by the exact
     // BOM chip / display name. Add a file under components/ and a line here to light up its info icon.
@@ -1555,12 +1586,12 @@
       $$('.ctl[data-vis]').forEach(el => { total++; const key = el.dataset.vis; const ok = vis[key] !== false; el.classList.toggle('hidden', !ok); if (ok) shown++; });
       $$('fieldset[data-vis]').forEach(el => { const key = el.dataset.vis; el.style.display = vis[key] === false ? 'none' : ''; });
       $('#visCount').textContent = `(${shown}/${total} shown)`;
-      // data-source role tooltips (purpose-aware) + warn flag for latency-incompatible picks
-      const flagged = new Set(latencyIncompatibleSources());
+      // data-source role tooltips (purpose-aware) + info icons. No per-source warning flag: a slow
+      // source forced onto a sub-second path is flagged on the Latency p95 metric instead.
       $$('#dataSources label').forEach(lab => {
         const cb = lab.querySelector('input'); if (!cb) return;
         lab.setAttribute('title', dataSourceRoleText(cb.value));
-        lab.classList.toggle('flag', flagged.has(cb.value) && cb.checked);
+        lab.classList.remove('flag');
         // info icon for GCP-backed sources that have an explainer (clicking the <a> does not toggle the checkbox)
         const comp = DS_COMPONENT[cb.value]; const doc = comp && COMPONENT_DOC[comp];
         if (doc && !lab.querySelector('.info-i')) lab.insertAdjacentHTML('beforeend', ' ' + infoIcon(doc, comp));
@@ -1625,12 +1656,13 @@
 
     function metricCards(m) {
       const o = state.overrides;
-      const card = (k, v, t) => `<div class="metric" title="${(t || '').replace(/"/g, '&quot;')}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+      const card = (k, v, t, cls) => `<div class="metric${cls ? ' ' + cls : ''}" title="${(t || '').replace(/"/g, '&quot;')}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
       const cards = [];
       cards.push(card(m.volLabel + ' avg / peak', `${fmt(m.volAvg, 2)} <small>/ ${fmt(m.volPeak, 2)}</small>`, 'actors × actions/day over the active window, × burst'));
       cards.push(card('Tokens / day', fmt(m.tokensDay, 1), 'daily actions × (in+out)'));
       cards.push(card('Cache hit (eff.)', (m.cacheHitEff * 100).toFixed(0) + '%', 'response cache: slider + autocomplete + warming, capped 80%'));
-      cards.push(card('Latency p95', fmt(m.latencyP95, 0) + ' <small>ms</small>', 'gateway+retrieval+rerank+TTFT+generation; ×ReAct loop; +sync BigQuery scan / web grounding on the assistant path'));
+      const budgetLabel = m.latencyBudget >= 1000 ? (m.latencyBudget / 1000) + 's' : m.latencyBudget + 'ms';
+      cards.push(card('Latency p95', fmt(m.latencyP95, 0) + ' <small>ms</small>' + (m.latencyOverBudget ? ` <span class="over">over ${budgetLabel} SLO</span>` : ''), 'gateway+retrieval+rerank+TTFT+generation; ×ReAct loop; +sync BigQuery/web/on-prem on the assistant path; flagged when over the SLO budget', m.latencyOverBudget ? 'warn' : ''));
       if (m.indexGB > 0) cards.push(card('Vector index', fmt(m.indexGB, 1) + ' <small>GB · ' + m.shards + ' shard(s)</small>', 'chunks × dim × 4 bytes'));
       if (m.indexGB > 0) cards.push(card('HNSW recall / ANN p95', (m.hnswRecall * 100).toFixed(1) + '% <small>/ ' + fmt(m.annP95, 0) + 'ms</small>', 'efSearch/M trade recall vs latency'));
       if (m.gpuNodes) cards.push(card('Self-host fleet', `${m.gpuNodes}×8 ${(o.accelerator || 'h100').toUpperCase()} <small>· ${money(m.gpuMo)}/mo</small>`, `${fmt(m.nodeTPS, 0)} tok/s/node · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util · sized by peak decode tok/s (peak QPS × out-tokens)`));
@@ -1897,7 +1929,14 @@
     function decodeState(h) { try { const d = JSON.parse(decodeURIComponent(escape(atob(h)))); if (d.p) { state.purpose = d.p; state.preset = d.pr; state.inputs = d.i; state.overrides = d.o; state.costOverrides = d.co || {}; return true; } } catch (e) { } return false; }
 
     /* ===================== Wiring ===================== */
-    function onInput() { readControls(); render(); }
+    function onInput() {
+      const prevLatency = state.inputs.latencyPreset;
+      readControls();
+      // entering sub-second (interactive assistant): drop slow sources, ensure a vector store, and
+      // bias routing to the fast model. One time, so the user can force any of it back on afterward.
+      if (state.purpose === 'assistant' && state.inputs.latencyPreset === 'subsecond' && prevLatency !== 'subsecond') applySubSecondAdjust();
+      render();
+    }
     $('#purpose').addEventListener('change', e => { const pur = e.target.value; const first = Object.keys(PRESETS[pur])[0]; applyPreset(pur, first); render(); });
     $('#presetChips').addEventListener('click', e => { const c = e.target.closest('.chip'); if (c) { applyPreset(state.purpose, c.dataset.preset); render(); } });
     $('#resetBtn').addEventListener('click', () => { applyPreset(state.purpose, state.preset); render(); });
@@ -1951,12 +1990,17 @@
       assert('BigQuery unpriced by default', cs0.red.some(x => x.name === 'BigQuery'));
       state.costOverrides['BigQuery'] = 1000; const cs1 = costSummary(computeMetrics());
       assert('cost override lifts total + clears red', cs1.totalYr > cs0.totalYr && !cs1.red.some(x => x.name === 'BigQuery'));
-      // data-source vs latency: sub-second assistant + BigQuery warns and is charged scan latency
+      // sub-second adjust: prunes slow sources, ensures a vector store, biases routing to the fast model
+      applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['bigquery', 'onprem']; state.overrides.routingSplit = 50; applySubSecondAdjust();
+      assert('sub-second prunes slow sources + ensures vector', !state.inputs.dataSources.includes('bigquery') && !state.inputs.dataSources.includes('onprem') && state.inputs.dataSources.includes('vector') && state.overrides.routingSplit >= 85);
+      // forcing a slow source back exceeds the SLO budget and warns on Latency p95 (not the source)
       applyPreset('assistant', 'expert_copilot'); state.inputs.latencyPreset = 'subsecond'; state.inputs.dataSources = ['vector', 'bigquery']; deriveOverrides();
-      const mBq = computeMetrics(); const issBq = runLinter(mBq);
-      assert('sub-second + BigQuery warns', issBq.some(x => x.src === 'bigquery'));
-      const latBq = mBq.latencyP95; state.inputs.dataSources = ['vector']; const latNoBq = computeMetrics().latencyP95;
-      assert('BigQuery adds scan latency on assistant', latBq > latNoBq);
+      const mBq = computeMetrics();
+      assert('forced BigQuery exceeds sub-second budget', mBq.latencyOverBudget === true);
+      assert('over-budget raises a latency issue', runLinter(mBq).some(x => x.src === 'latencyPreset'));
+      const latBq = mBq.latencyP95; state.inputs.dataSources = ['vector']; const mClean = computeMetrics();
+      assert('BigQuery adds scan latency on assistant', latBq > mClean.latencyP95);
+      assert('clean sub-second is within budget', mClean.latencyOverBudget === false);
       // automation diagram now includes a Data layer node for selected sources
       applyPreset('automation', 'regulated'); deriveOverrides();
       assert('automation diagram shows data sources', /Data layer/.test(buildMainDiagram()));
