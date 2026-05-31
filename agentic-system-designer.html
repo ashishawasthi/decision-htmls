@@ -597,6 +597,9 @@
       flex: 1
     }
 
+    /* panel-level header for the left config column; muted like Architecture, a level above the fieldset legends */
+    .config-head { margin: 0 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted) }
+
     .metrics {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -1038,6 +1041,7 @@
   <main>
     <!-- LEFT: configuration -->
     <section class="config">
+      <h3 class="config-head">Design inputs</h3>
       <div class="selector">
         <div class="row">
           <label for="purpose">Purpose</label>
