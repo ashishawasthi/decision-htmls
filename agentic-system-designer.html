@@ -244,6 +244,14 @@
       background: #1d2b44
     }
 
+    .chip.custom {
+      border-style: dashed;
+      border-color: var(--warn);
+      color: var(--warn);
+      background: transparent;
+      cursor: default
+    }
+
     button.mini {
       font: inherit;
       font-size: 12px;
@@ -790,6 +798,82 @@
       border-top: none
     }
 
+    .gov-cap {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
+      margin: 0 0 9px
+    }
+
+    .gov-grp {
+      margin: 0 0 10px
+    }
+
+    .gov-grp:last-child {
+      margin-bottom: 0
+    }
+
+    .gov-cat {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+      margin: 0 0 2px
+    }
+
+    .gov-row {
+      display: flex;
+      align-items: baseline;
+      gap: 7px;
+      flex-wrap: wrap;
+      padding: 4px 0;
+      border-top: 1px dashed var(--border);
+      font-size: 12.5px
+    }
+
+    .gov-row:first-of-type {
+      border-top: none
+    }
+
+    .gov-dot {
+      flex: none;
+      align-self: center;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border)
+    }
+
+    .gov-row.on .gov-dot {
+      background: var(--ok)
+    }
+
+    .gov-name {
+      flex: 1 1 auto
+    }
+
+    .gov-row.off .gov-name {
+      color: var(--muted)
+    }
+
+    .gov-state {
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+      color: var(--muted)
+    }
+
+    .gov-row.on .gov-state {
+      color: var(--ok)
+    }
+
+    .gov-why {
+      flex-basis: 100%;
+      padding-left: 15px;
+      font-size: 10.5px;
+      color: var(--muted)
+    }
+
     .tag {
       font-size: 10px;
       color: var(--accent);
@@ -1134,22 +1218,6 @@
         </div>
       </fieldset>
 
-      <fieldset data-grp="3e">
-        <legend>Gateway &amp; governance</legend>
-        <div class="ctl" data-ov="gateway"><label>LLM Gateway (Apigee)</label>
-          <input type="checkbox" data-bind="overrides.gateway">
-        </div>
-        <div class="ctl" data-ov="auditLog" data-vis="gw"><label>Immutable audit log</label>
-          <input type="checkbox" data-bind="overrides.auditLog">
-        </div>
-        <div class="ctl" data-ov="rulesEngine"><label>Deterministic rules engine</label>
-          <input type="checkbox" data-bind="overrides.rulesEngine">
-        </div>
-        <div class="ctl" data-ov="sandbox"><label>Transient sandbox</label>
-          <input type="checkbox" data-bind="overrides.sandbox">
-        </div>
-      </fieldset>
-
       <fieldset data-grp="3f">
         <legend>State &amp; context cache</legend>
         <div class="ctl" data-ov="stateStore"><label>State store</label>
@@ -1217,30 +1285,6 @@
         </div>
       </fieldset>
 
-      <fieldset data-grp="3i">
-        <legend>Trust &amp; governance</legend>
-        <div class="ctl" data-ov="guardrails"><label>Safety guardrails (injection / output)</label><input
-            type="checkbox" data-bind="overrides.guardrails"></div>
-        <div class="ctl" data-ov="toolAuthz"><label>Agent identity &amp; tool authz</label><input type="checkbox"
-            data-bind="overrides.toolAuthz"></div>
-        <div class="ctl" data-ov="costKillSwitch"><label>Cost guardrails / kill-switch</label><input type="checkbox"
-            data-bind="overrides.costKillSwitch"></div>
-        <div class="ctl" data-ov="residencyPin"><label>Data residency pin + VPC-SC</label><input type="checkbox"
-            data-bind="overrides.residencyPin"></div>
-        <div class="ctl" data-ov="hitlApproval"><label>Human approval</label>
-          <select data-bind="overrides.hitlApproval">
-            <option value="none">None</option>
-            <option value="maker_checker">Maker-checker</option>
-            <option value="dual">Dual-control</option>
-          </select>
-        </div>
-        <div class="ctl" data-ov="feedbackLoop"><label>Human feedback loop</label><input type="checkbox"
-            data-bind="overrides.feedbackLoop"></div>
-        <div class="ctl" data-ov="modelRiskGov"><label>Model risk governance</label><input type="checkbox"
-            data-bind="overrides.modelRiskGov"></div>
-        <div class="ctl" data-ov="safeRollout"><label>Safe rollout + eval gates</label><input type="checkbox"
-            data-bind="overrides.safeRollout"></div>
-      </fieldset>
     </section>
 
     <!-- RIGHT: output -->
@@ -1281,6 +1325,10 @@
       <div class="panel">
         <h3>Risk &amp; failure</h3>
         <div id="risk"></div>
+      </div>
+      <div class="panel">
+        <h3>Governance &amp; controls</h3>
+        <div id="governance"></div>
       </div>
       <div class="panel">
         <h3>Bill of materials</h3>
@@ -1373,8 +1421,8 @@
 
     /* ===================== State ===================== */
     const state = {
-      purpose: 'assistant', preset: 'expert_copilot',
-      inputs: {}, overrides: {}, locks: {}, baseline: null,
+      purpose: 'assistant', preset: 'expert_copilot', custom: false,
+      inputs: {}, overrides: {}, locks: {}, governance: [], baseline: null,
       componentInputs: { gateway: { aggregateQPS: null, tenantApps: 1, providers: 1 }, ingestion: { docsPerDay: null, backfillDocs: 0, docPages: 40, reindexSLOmin: 5 } },
       costOverrides: {},   // BOM component name → user-entered $/mo (overrides any estimate)
       ui: { openModal: null },
@@ -1391,41 +1439,30 @@
 
     /* ===================== Preset application ===================== */
     function applyPreset(purpose, preset) {
-      state.purpose = purpose; state.preset = preset;
+      state.purpose = purpose; state.preset = preset; state.custom = false;
       const p = PRESETS[purpose][preset];
       state.inputs = structuredClone(p.inputs);
       state.overrides = DEFAULT_OVERRIDES();
+      // Purpose-level override defaults (automation runs a parallel executor pool over a
+      // transactional state store with no semantic retrieval). These stay user-editable; a
+      // preset itself carries only first-level inputs. Governance is never seeded here - it is
+      // derived purely from the inputs in deriveGovernance() and shown as a read-only output.
+      if (purpose === 'automation') { state.overrides.retrieval = 'none'; state.overrides.pattern = 'multi'; state.overrides.numAgents = 5; state.overrides.stateStore = 'spanner'; }
+      // A sub-second assistant drops slow grounding sources the same way a manual switch does,
+      // so both routes to a sub-second design land in the same place.
+      if (purpose === 'assistant' && state.inputs.latencyPreset === 'subsecond') applySubSecondAdjust();
       state.costOverrides = {};
-      // automation tweaks
-      if (purpose === 'automation') {
-        state.overrides.retrieval = 'none'; state.overrides.pattern = 'multi'; state.overrides.numAgents = 5; state.overrides.stateStore = 'spanner';
-        // Seed governance from the preset's trust tier (assistant keeps the secure-by-default
-        // overrides; deriveOverrides then locks the mandated subset so it can't be removed).
-        const { aud, lvl } = sens(state.inputs.audienceSensitivity);
-        state.overrides.gateway = lvl >= 2;
-        state.overrides.auditLog = lvl >= 2;
-        state.overrides.sandbox = lvl >= 3;
-        state.overrides.residencyPin = lvl >= 3;
-        state.overrides.guardrails = aud !== 'internal';
-      }
     }
 
     /* ===================== Rules engine: derive overrides + locks ===================== */
     function deriveOverrides() {
       const o = state.overrides, i = state.inputs, locks = {};
-      const { aud, lvl } = sens(i.audienceSensitivity);
       const lock = (k, v, reason, cause) => { o[k] = v; locks[k] = { reason, cause }; };
-      // compliance / privacy locks
-      if (lvl >= 2) { lock('gateway', true, 'Regulated+ → gateway required', 'regulated'); lock('auditLog', true, 'Regulated+ → immutable audit log', 'regulated'); }
-      if (lvl >= 3) { lock('sandbox', true, 'Strict-PII → transient sandbox', 'strict-PII'); lock('residencyPin', true, 'Strict-PII → region pin + VPC-SC', 'strict-PII'); }
-      if (aud !== 'internal') { lock('guardrails', true, 'External/public → safety guardrails', aud === 'public' ? 'public' : 'external'); }
       // performance locks
       if (i.latencyPreset === 'subsecond') { lock('pattern', 'single', 'Sub-second → single-agent path', 'sub-second'); lock('retrieval', o.retrieval === 'rerank' ? 'hybrid' : o.retrieval, 'Sub-second → drop reranker', 'sub-second'); }
       // scale locks
       const heavyCorpus = (i.corpusSize || 0) >= 5e6;
       if (heavyCorpus && i.dataSources.includes('doc_corpus')) { lock('ingestionSep', true, 'Large corpus → separate ingestion', 'large corpus'); }
-      // governance
-      if (state.purpose === 'automation') { lock('hitlApproval', o.hitlApproval === 'none' ? 'maker_checker' : o.hitlApproval, 'Automation merge → human approval', 'automation'); }
       // topology
       if (o.deployment === 'onprem') {
         lock('reasoningModel', 'llama4-selfhost', 'On-prem → open-weight self-hosted model (no token-metered API)', 'on-prem');
@@ -1439,6 +1476,58 @@
         if (o.fastModel === 'llama4-selfhost') o.fastModel = 'gemini-3-flash';
       }
       state.locks = locks;
+      // Governance is a pure, read-only function of the first-level inputs. Computed last so it
+      // sees the resolved topology, then rendered in the Governance & controls output panel.
+      deriveGovernance();
+    }
+
+    /* ===================== Governance: derived purely from inputs ===================== */
+    // The governance posture is a consequence of the trust tier (audience & sensitivity), the
+    // purpose, the data sources in play, and scale - not a set of independent toggles. Each
+    // control records whether it is enforced and which input drives it. The booleans still live
+    // on state.overrides so the diagram, latency, BOM, and cost read them unchanged; the panel
+    // renders from state.governance. Lowering the trust tier turns a control back off, so the
+    // posture always matches the inputs (no stuck-on controls, nothing for a preset to seed).
+    const GOV_KEYS = new Set(['gateway', 'auditLog', 'toolAuthz', 'residencyPin', 'sandbox', 'guardrails', 'rulesEngine', 'costKillSwitch', 'hitlApproval', 'modelRiskGov', 'safeRollout', 'feedbackLoop']);
+    function deriveGovernance() {
+      const o = state.overrides, i = state.inputs;
+      const { aud, lvl } = sens(i.audienceSensitivity);
+      const auto = state.purpose === 'automation';
+      const ext = aud !== 'internal';                       // external or public facing
+      const hasWeb = i.dataSources.includes('web');
+      const tools = auto || i.dataSources.some(s => ['onprem', 'bigquery', 'web', 'kg', 'stream'].includes(s));
+      const highVol = (i.actors || 0) * (i.actionsPerDay || 0) >= 1e5;
+      const G = [];
+      const set = (key, label, on, why, cat) => { o[key] = on; G.push({ key, label, on, why, cat }); };
+      // Access & gateway
+      set('gateway', 'LLM Gateway (Apigee)', lvl >= 2 || ext,
+        lvl >= 2 ? 'regulated+' : ext ? (aud === 'public' ? 'public' : 'external') : 'not required', 'access');
+      set('auditLog', 'Immutable audit log', lvl >= 2 || ext,
+        lvl >= 2 ? 'regulated+' : ext ? 'external' : 'not required', 'access');
+      set('toolAuthz', 'Agent identity & tool authz', tools && (auto || ext || lvl >= 2),
+        !tools ? 'no privileged tools' : auto ? 'automation tools' : ext ? 'external + tools' : lvl >= 2 ? 'regulated + tools' : 'internal low-stakes', 'access');
+      // Data protection
+      set('residencyPin', 'Data residency pin + VPC-SC', lvl >= 2,
+        lvl >= 3 ? 'strict-PII' : lvl >= 2 ? 'regulated+' : 'not required', 'data');
+      set('sandbox', 'Transient sandbox', lvl >= 3 || (auto && ext),
+        lvl >= 3 ? 'strict-PII' : (auto && ext) ? 'external automation' : 'not required', 'data');
+      // Safety
+      set('guardrails', 'Safety guardrails (injection / output)', ext || hasWeb || lvl >= 3,
+        lvl >= 3 ? 'strict-PII' : ext ? (aud === 'public' ? 'public' : 'external') : hasWeb ? 'web-sourced content' : 'internal trusted', 'safety');
+      set('rulesEngine', 'Deterministic rules engine', auto, auto ? 'automation actions' : 'not required', 'safety');
+      set('costKillSwitch', 'Cost guardrails / kill-switch', highVol || ext || auto,
+        highVol ? 'high volume' : ext ? 'external exposure' : auto ? 'automation' : 'low-volume internal', 'safety');
+      // Operations & approval
+      const hitl = auto ? (lvl >= 3 ? 'dual' : 'maker_checker') : 'none';
+      o.hitlApproval = hitl;
+      G.push({ key: 'hitlApproval', label: 'Human approval', on: hitl !== 'none', value: hitl, cat: 'ops',
+        why: hitl === 'dual' ? 'strict-PII automation' : hitl === 'maker_checker' ? 'automation merge' : 'assistant (no auto-action)' });
+      set('modelRiskGov', 'Model risk governance', lvl >= 2, lvl >= 2 ? 'regulated+' : 'not required', 'ops');
+      set('safeRollout', 'Safe rollout + eval gates', lvl >= 2 || ext || highVol,
+        lvl >= 2 ? 'regulated+' : ext ? 'external' : highVol ? 'high volume' : 'low blast radius', 'ops');
+      set('feedbackLoop', 'Human feedback loop', !auto || ext,
+        !auto ? 'assistant quality' : ext ? 'external product' : 'internal batch', 'ops');
+      state.governance = G;
     }
 
     /* ===================== Metrics ===================== */
@@ -1553,12 +1642,9 @@
       if (i.freshness === 'realtime' && (o.exactCache || o.semanticCache)) add('conflict', 'Caching contradicts real-time freshness - scope to freshness-tolerant intents or shorten TTL.', '', 'exactCache');
       // privacy / safety / residency
       if (lvl >= 3 && o.semanticCache) add('privacy', 'Semantic cache stores query embeddings - isolate per tenant + short TTL, or disable under strict-PII.', '', 'semanticCache');
-      if (aud !== 'internal' && !o.guardrails && !L.guardrails) add('safety', 'Add injection/jailbreak + output filtering - PII redaction alone won\'t stop a poisoned doc or exfiltration.', '', 'guardrails');
-      // access / governance
-      if (o.pattern === 'multi' && !o.toolAuthz) add('access', 'Scope agent identity (workload identity + OBO) and allow-list tools - least privilege.', '', 'toolAuthz');
-      if (o.hitlApproval === 'none' && (state.purpose === 'automation' || aud !== 'internal')) add('governance', 'High-stakes path with no approval - add a maker-checker (4-eyes) gate.', '', 'hitlApproval');
-      if (!o.feedbackLoop) add('governance', 'Capture thumbs + reason - without it the eval set decays from week one.', '', 'feedbackLoop');
-      if (!o.modelRiskGov) add('governance', 'Pin model/prompt version + champion-challenger (model-risk regimes).', '', 'modelRiskGov');
+      // Governance controls are derived from the inputs and shown read-only in the Governance &
+      // controls panel, so the linter no longer nags about an individual control being off - the
+      // panel already states what is enforced and why.
       // scaling
       const chunks = (i.corpusSize || 0) * K.chunksPerDoc;
       if (chunks > 1e8 && !o.metadataPrefilter) add('scaling', 'Pure ANN recall degrades past ~100M chunks - add a metadata pre-filter + shard.', '', 'metadataPrefilter');
@@ -1568,7 +1654,6 @@
       if (o.contextCache && i.tokensIn >= 3000 && (o.reuseInputPct || 0) < 40) add('cost', 'Context cache on but low reuse % - set reusable-input toward your real shared-prompt/retrieved fraction to capture the discount.', 'input cost↓', 'reuseInputPct');
       if (i.dataSources.includes('web') && (modelById(o.reasoningModel).grounding || 0) > 0 && !o.autocomplete) add('cost', 'Live web grounding is billed per search - autocomplete + response cache cut repeat grounded calls on the popular head.', 'grounding↓', 'autocomplete');
       if (!o.smartRouting) add('cost', 'Route lookups to the fast model; reserve the reasoning model for hard queries.', '', 'smartRouting');
-      if (o.reactMaxIter >= 8 && !o.costKillSwitch) add('cost', 'High ReAct iterations with no budget kill-switch - add a circuit-breaker.', '', 'costKillSwitch');
       // latency budget: warn when measured p95 exceeds the SLO for the chosen preset, for example
       // when a slow source (BigQuery, Web/OSINT, on-prem) is forced back onto the request path
       if (m.latencyOverBudget) {
@@ -1813,6 +1898,7 @@
       // observability / risk / bom
       $('#observability').innerHTML = obsHtml(m);
       $('#risk').innerHTML = riskHtml(m);
+      $('#governance').innerHTML = governancePanelHtml();
       $('#bom').innerHTML = bomHtml().map(s => `<span>${s}${COMPONENT_DOC[s] ? ' ' + infoIcon(COMPONENT_DOC[s], s) : ''}</span>`).join('');
       // baseline comparison ("what changed")
       renderDiffStrip();
@@ -1907,15 +1993,28 @@
       else if (o.stateStore.includes('spanner') && m.volPeak > 50) { bottleneck = 'Spanner write path (partition by key)'; bdrv = ['state store', 'volume']; }
       else if (o.gateway && m.volPeak > 20) { bottleneck = 'gateway shard (per-region quota)'; bdrv = ['gateway', 'volume']; }
       const spofs = ['orchestrator → stateless autoscaled', o.retrieval !== 'none' && 'vector index → multi-region read failover', 'model → reasoning→fast→cached failover'].filter(Boolean);
-      const gaps = [!o.guardrails && 'safety guardrails', o.hitlApproval === 'none' && 'approval gate', !o.modelRiskGov && 'version-pinning', !o.residencyPin && sens(i.audienceSensitivity).lvl >= 2 && 'residency pin'].filter(Boolean);
-      const govDrv = ['sensitivity']; if (!o.guardrails) govDrv.push('guardrails'); if (o.hitlApproval === 'none') govDrv.push('approval');
       const rows = [
         ['What breaks at 10×', bottleneck, bdrv],
         ['SPOFs', spofs.join('; '), ['retrieval', 'model']],
-        gaps.length ? ['Governance gaps', gaps.join(', '), govDrv.slice(0, 3)] : null,
         ['Alerting', 'P1 auto-rollback / P2 page / P3 dashboard · non-blocking fallback', null],
       ].filter(Boolean);
       return rows.map(([k, v, drv]) => `<div class="risk-row"><b>${k}</b> ${driverTags(drv)}<br>${v}</div>`).join('');
+    }
+    function governancePanelHtml() {
+      const G = state.governance || [];
+      const cats = [['access', 'Access & gateway'], ['data', 'Data protection'], ['safety', 'Safety'], ['ops', 'Operations & approval']];
+      const valLabel = { dual: 'dual-control', maker_checker: 'maker-checker' };
+      const cap = '<div class="gov-cap">Enforced by your inputs: audience &amp; sensitivity, purpose, data sources, and scale. Read-only - change those above to change the posture.</div>';
+      const groups = cats.map(([c, title]) => {
+        const items = G.filter(g => g.cat === c);
+        if (!items.length) return '';
+        const rows = items.map(g => {
+          const st = g.on ? (g.value ? (valLabel[g.value] || 'on') : 'on') : 'off';
+          return `<div class="gov-row ${g.on ? 'on' : 'off'}"><span class="gov-dot"></span><span class="gov-name">${g.label}</span><span class="gov-state">${st}</span><span class="gov-why">${g.why}</span></div>`;
+        }).join('');
+        return `<div class="gov-grp"><div class="gov-cat">${title}</div>${rows}</div>`;
+      }).join('');
+      return cap + groups;
     }
     function bomHtml() {
       const o = state.overrides, i = state.inputs, b = new Set();
@@ -2099,26 +2198,33 @@
     }
     function renderChips() {
       const chips = PRESETS[state.purpose];
-      $('#presetChips').innerHTML = Object.entries(chips).map(([k, v]) => `<span class="chip ${state.preset === k ? 'active' : ''}" data-preset="${k}">${v.label}</span>`).join('');
+      const active = state.preset && !state.custom;
+      const pills = Object.entries(chips).map(([k, v]) => `<span class="chip ${active && state.preset === k ? 'active' : ''}" data-preset="${k}">${v.label}</span>`).join('');
+      const fromLabel = state.preset ? (PRESETS[state.purpose]?.[state.preset]?.label || '') : '';
+      const custom = state.custom ? `<span class="chip custom" title="Edited${fromLabel ? ' from ' + fromLabel : ''}. Click a preset to reload it.">Custom${fromLabel ? ' (from ' + fromLabel + ')' : ''}</span>` : '';
+      $('#presetChips').innerHTML = pills + custom;
     }
 
     /* ===================== Permalink ===================== */
     let plTimer = null;
     function schedulePermalink() { clearTimeout(plTimer); plTimer = setTimeout(() => { try { location.replace('#' + encodeState()); } catch (e) { } }, 120); }
-    function encodeState() { return btoa(unescape(encodeURIComponent(JSON.stringify({ p: state.purpose, pr: state.preset, i: state.inputs, o: state.overrides, co: state.costOverrides })))); }
-    function decodeState(h) { try { const d = JSON.parse(decodeURIComponent(escape(atob(h)))); if (d.p) { state.purpose = d.p; state.preset = d.pr; state.inputs = d.i; state.overrides = d.o; state.costOverrides = d.co || {}; return true; } } catch (e) { } return false; }
+    function encodeState() { return btoa(unescape(encodeURIComponent(JSON.stringify({ p: state.purpose, pr: state.preset, c: state.custom, i: state.inputs, o: state.overrides, co: state.costOverrides })))); }
+    function decodeState(h) { try { const d = JSON.parse(decodeURIComponent(escape(atob(h)))); if (d.p) { state.purpose = d.p; state.preset = d.pr; state.custom = !!d.c; state.inputs = d.i; state.overrides = d.o; state.costOverrides = d.co || {}; return true; } } catch (e) { } return false; }
 
     /* ===================== Wiring ===================== */
     function onInput() {
       const prevLatency = state.inputs.latencyPreset;
       readControls();
+      // Any hand edit diverges from the named preset: drop the active-chip highlight and show a
+      // 'Custom' tag. The preset is remembered, so Reset or clicking a chip reloads it.
+      if (state.preset) state.custom = true;
       // entering sub-second (interactive assistant): drop slow sources, ensure a vector store, and
       // bias routing to the fast model. One time, so the user can force any of it back on afterward.
       if (state.purpose === 'assistant' && state.inputs.latencyPreset === 'subsecond' && prevLatency !== 'subsecond') applySubSecondAdjust();
       render();
     }
     $('#purpose').addEventListener('change', e => { const pur = e.target.value; const first = Object.keys(PRESETS[pur])[0]; applyPreset(pur, first); render(); });
-    $('#presetChips').addEventListener('click', e => { const c = e.target.closest('.chip'); if (c) { applyPreset(state.purpose, c.dataset.preset); render(); } });
+    $('#presetChips').addEventListener('click', e => { const c = e.target.closest('.chip'); if (c && c.dataset.preset) { applyPreset(state.purpose, c.dataset.preset); render(); } });
     $('#resetBtn').addEventListener('click', () => { applyPreset(state.purpose, state.preset); render(); });
 
     /* ===================== Baseline comparison ("what changed") ===================== */
@@ -2176,6 +2282,7 @@
       listDiff('Sources', b.dataSources, cur.dataSources, v => SRC_LABEL[v] || v);
       listDiff('Languages', b.languages, cur.languages || [], v => v.toUpperCase());
       for (const k of new Set([...Object.keys(b.overrides), ...Object.keys(co)])) {
+        if (GOV_KEYS.has(k)) continue;            // governance shifts show via the Inputs diff + Governance panel
         if (b.overrides[k] === co[k]) continue;
         const lock = state.locks[k], p = 'overrides.' + k;
         config.push(diffPill(pathLabel(p), pathValueLabel(p, b.overrides[k]), pathValueLabel(p, co[k]), lock ? ` <span class="dlock">🔒 ${lock.cause}</span>` : ''));
@@ -2219,13 +2326,16 @@
       // determinism
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); const a = JSON.stringify(computeMetrics()); deriveOverrides(); const b = JSON.stringify(computeMetrics());
       assert('determinism: same state → same metrics', a === b);
-      // lock: strict-PII → sandbox
-      applyPreset('assistant', 'strictpii_verify'); deriveOverrides(); assert('strict-PII locks sandbox on', state.overrides.sandbox === true && state.locks.sandbox);
-      assert('strict-PII locks residency pin', state.overrides.residencyPin === true);
-      // lock: subsecond → single agent
+      // governance derives from inputs (read-only), not from a lock and not seeded by the preset
+      applyPreset('assistant', 'strictpii_verify'); deriveOverrides();
+      assert('strict-PII derives sandbox on (no lock)', state.overrides.sandbox === true && !state.locks.sandbox);
+      assert('strict-PII derives residency pin', state.overrides.residencyPin === true);
+      state.inputs.audienceSensitivity = 'internal_low'; deriveOverrides();
+      assert('lowering the tier turns sandbox + residency back off', state.overrides.sandbox === false && state.overrides.residencyPin === false);
+      // lock: subsecond → single agent (performance lock stays)
       applyPreset('assistant', 'highvol_qa'); state.inputs.latencyPreset = 'subsecond'; deriveOverrides(); assert('sub-second locks single-agent', state.overrides.pattern === 'single');
-      // external locks guardrails
-      applyPreset('assistant', 'customer_support'); deriveOverrides(); assert('external locks guardrails on', state.overrides.guardrails === true);
+      // external derives guardrails
+      applyPreset('assistant', 'customer_support'); deriveOverrides(); assert('external derives guardrails on', state.overrides.guardrails === true);
       // metrics sanity
       applyPreset('assistant', 'expert_copilot'); const m = computeMetrics(); assert('cost opt ≤ naive', m.costOpt <= m.costNaive); assert('peak ≥ avg', m.volPeak >= m.volAvg);
       // permalink round-trip
@@ -2238,11 +2348,20 @@
       applyPreset('assistant', 'expert_copilot'); const w0 = computeMetrics().costNaive; state.inputs.dataSources = [...state.inputs.dataSources, 'web']; const w1 = computeMetrics().costNaive; assert('web grounding adds cost', w1 > w0);
       // self-host: int4 fleet ≤ bf16 fleet; on-prem collapses token cost to $0
       applyPreset('automation', 'regulated'); state.overrides.deployment = 'onprem'; deriveOverrides(); state.overrides.quant = 'bf16'; const nbf = computeMetrics().gpuNodes; state.overrides.quant = 'int4'; const ni4 = computeMetrics().gpuNodes; assert('int4 ≤ bf16 fleet', ni4 <= nbf); assert('on-prem zeroes token cost', computeMetrics().costOpt === 0);
-      // automation trust-tier presets yield distinct governance designs
+      // automation trust-tier presets yield distinct governance postures, all derived from inputs
       applyPreset('automation', 'internal_lowstakes'); deriveOverrides(); const low = { ...state.overrides };
       applyPreset('automation', 'strictpii'); deriveOverrides(); const sp = { ...state.overrides };
-      assert('low-stakes has no gateway', low.gateway === false && low.guardrails === false && low.sandbox === false);
-      assert('strict-PII mandates sandbox', sp.sandbox === true && sp.gateway === true && !!state.locks.sandbox);
+      assert('low-stakes automation: light governance', low.gateway === false && low.guardrails === false && low.sandbox === false && low.auditLog === false);
+      assert('low-stakes automation: action controls on', low.rulesEngine === true && low.toolAuthz === true && low.costKillSwitch === true && low.hitlApproval === 'maker_checker');
+      assert('strict-PII automation mandates sandbox + gateway + residency', sp.sandbox === true && sp.gateway === true && sp.residencyPin === true && sp.hitlApproval === 'dual');
+      assert('governance is derived, never a lock', GOV_KEYS.size === 12 && [...GOV_KEYS].every(k => !state.locks[k]));
+      // the six formerly-undriven controls now derive from inputs
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides();
+      assert('regulated assistant derives model-risk gov + safe rollout + feedback', state.overrides.modelRiskGov === true && state.overrides.safeRollout === true && state.overrides.feedbackLoop === true);
+      assert('internal assistant has no rules engine', state.overrides.rulesEngine === false);
+      assert('governance descriptor populated with reasons', Array.isArray(state.governance) && state.governance.length === 12 && state.governance.every(g => g.why));
+      // editing diverges from the preset → Custom; applying a preset clears it
+      state.custom = true; applyPreset('assistant', 'expert_copilot'); assert('applying a preset clears Custom', state.custom === false);
       // BOM costing: platform adds to GenAI; BigQuery is unpriced until entered; override lifts total + clears red
       applyPreset('assistant', 'expert_copilot'); state.costOverrides = {}; const cs0 = costSummary(computeMetrics());
       assert('platform cost > 0', cs0.platMo > 0 && cs0.totalYr > computeMetrics().costOpt);
@@ -2274,8 +2393,9 @@
       assert('BigQuery doc registered', COMPONENT_DOC['BigQuery'] === 'components/bigquery.html');
       assert('info icon opens doc in new tab', /href="components\/bigquery\.html"/.test(infoIcon(COMPONENT_DOC['BigQuery'], 'BigQuery')) && /target="_blank"/.test(infoIcon('x', 'y')));
       // baseline diff: pinning then editing an input reports the ripple, incl. locked side-effects
-      applyPreset('assistant', 'expert_copilot'); state.inputs.audienceSensitivity = 'internal_low'; deriveOverrides(); lastMetrics = computeMetrics(); pinBaseline();
-      state.inputs.audienceSensitivity = 'internal_strictpii'; deriveOverrides(); lastMetrics = computeMetrics();
+      // (governance is read-only now, so the ripple comes from a performance lock: sub-second → single-agent)
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides(); lastMetrics = computeMetrics(); pinBaseline();
+      state.inputs.latencyPreset = 'subsecond'; deriveOverrides(); lastMetrics = computeMetrics();
       const bdiff = computeDiff();
       assert('baseline diff captures the edited input', !!bdiff && bdiff.inputs.length > 0);
       assert('baseline diff surfaces a locked ripple', bdiff.config.some(s => /🔒/.test(s)));
