@@ -383,26 +383,24 @@
       color: var(--muted)
     }
 
-    /* issues panel sits under the diagram (architecture leads) */
-    .issue {
-      display: flex;
-      gap: 8px;
-      align-items: baseline;
-      padding: 5px 0;
-      border-top: 1px dashed var(--border);
-      font-size: 12.5px
+    /* issues panel: grouped by category - a colored tag heading over a bulleted
+       list of that category's items. Flows as a column-width panel on wide screens. */
+    .igroup {
+      padding: 7px 0;
+      border-top: 1px dashed var(--border)
     }
 
-    .issue:first-of-type {
-      border-top: none
+    .igroup:first-child {
+      border-top: none;
+      padding-top: 0
     }
 
-    .issue .sev {
+    .sev {
+      display: inline-block;
       font-size: 10px;
       font-weight: 700;
       border-radius: 4px;
-      padding: 1px 5px;
-      flex: none
+      padding: 1px 5px
     }
 
     .sev.conflict,
@@ -430,10 +428,19 @@
       border: 1px solid var(--retr)
     }
 
-    .issue .save {
+    .ilist {
+      margin: 6px 0 0;
+      padding-left: 18px
+    }
+
+    .ilist li {
+      font-size: 12.5px;
+      margin: 3px 0
+    }
+
+    .ilist .save {
       color: var(--muted);
-      font-size: 11px;
-      white-space: nowrap
+      font-size: 11px
     }
 
     .empty {
@@ -795,6 +802,27 @@
         position: static
       }
     }
+
+    /* Wide screens: flow the analytical panels (including issues & levers) into
+       balanced columns so the metrics, cost, and sibling blocks sit side by side
+       instead of leaving a wide empty gutter. Only the architecture diagram
+       spans full width. */
+    @media (min-width:1100px) {
+      section.output {
+        display: block;
+        column-width: 380px;
+        column-gap: 14px
+      }
+
+      section.output > * {
+        break-inside: avoid;
+        margin-bottom: 14px
+      }
+
+      section.output > .arch-wrap {
+        column-span: all
+      }
+    }
   </style>
 </head>
 
@@ -1119,7 +1147,7 @@
 
     <!-- RIGHT: output -->
     <section class="output">
-      <div>
+      <div class="arch-wrap">
         <div class="diagram-head">
           <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Architecture</h3>
           <button class="mini icon" id="copyMermaid" title="Copy Mermaid source" aria-label="Copy Mermaid source"><svg
@@ -1671,7 +1699,12 @@
       $('#actorLabel').textContent = state.purpose === 'automation' ? 'engineers' : 'seats';
       // issues
       $('#issueCount').textContent = issues.length ? `(${issues.length})` : '';
-      $('#issues').innerHTML = issues.length ? issues.map(x => `<div class="issue"><span class="sev ${x.sev}">${x.sev}</span><span>${x.msg}</span>${x.save ? `<span class="save">${x.save}</span>` : ''}</div>`).join('') : '<div class="empty">No conflicts - clean config.</div>';
+      $('#issues').innerHTML = (() => {
+        if (!issues.length) return '<div class="empty">No conflicts - clean config.</div>';
+        const order = [], groups = {};
+        for (const x of issues) { if (!groups[x.sev]) { groups[x.sev] = []; order.push(x.sev); } groups[x.sev].push(x); }
+        return order.map(sev => `<div class="igroup"><span class="sev ${sev}">${sev}</span><ul class="ilist">${groups[sev].map(x => `<li>${x.msg}${x.save ? ` <span class="save">${x.save}</span>` : ''}</li>`).join('')}</ul></div>`).join('');
+      })();
       // metrics
       $('#metrics').innerHTML = metricCards(m);
       // cost breakdown
