@@ -331,8 +331,34 @@
       align-items: center;
       gap: 5px;
       color: var(--text);
-      font-size: 12.5px
+      font-size: 12.5px;
+      cursor: help
     }
+
+    .checks label.flag {
+      color: var(--warn)
+    }
+
+    .checks label.flag::after {
+      content: '\26A0';
+      font-size: 10px
+    }
+
+    a.info-i {
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      vertical-align: middle;
+      opacity: .6;
+      text-decoration: none
+    }
+
+    a.info-i:hover {
+      color: var(--accent);
+      opacity: 1
+    }
+
+    .bomlist a.info-i { margin-left: 1px; }
 
 
     .vis-count {
@@ -777,8 +803,8 @@
         <div class="row">
           <label for="purpose">Purpose</label>
           <select id="purpose" data-bind="purpose">
-            <option value="assistant">Agentic assistant / RAG</option>
-            <option value="automation">Multi-agent workflow automation</option>
+            <option value="assistant">Interactive assistant</option>
+            <option value="automation">Task automation</option>
           </select>
         </div>
         <div class="chips" id="presetChips"></div>
@@ -1148,7 +1174,7 @@
       },
       storageBQ: 0.02, storageGCS: 0.02, egress: 0.10, vsNodeHr: 0.6,
       hnsw: { a: 0.5, b: 120, baseMs: 8 },
-      lat: { gateway: 40, retrieval: 70, rerank: 80, ttft: 400, perOutTokMs: 5 },
+      lat: { gateway: 40, retrieval: 70, rerank: 80, ttft: 400, perOutTokMs: 5, bigqueryScan: 1200, webGround: 600 },
     };
     const modelById = id => MODELS.find(m => m.id === id) || MODELS[0];
 
@@ -1299,6 +1325,11 @@
       if (['hybrid', 'dense', 'rerank'].includes(o.retrieval)) lat += L.retrieval;
       if (o.retrieval === 'rerank') lat += L.rerank;
       if (o.pattern === 'multi') lat *= (1 + o.reactMaxIter * 0.12);
+      // synchronous data-source calls on the assistant request path (automation is async, no charge)
+      if (state.purpose === 'assistant') {
+        if (i.dataSources.includes('bigquery')) lat += L.bigqueryScan;   // OLAP scan, seconds-scale
+        if (i.dataSources.includes('web')) lat += L.webGround;           // live search round-trip
+      }
       m.latencyP95 = lat;
       // vector index + HNSW
       const chunks = (i.corpusSize || 0) * K.chunksPerDoc;
@@ -1359,6 +1390,12 @@
       if (i.dataSources.includes('web') && (modelById(o.reasoningModel).grounding || 0) > 0 && !o.autocomplete) add('cost', 'Live web grounding is billed per search - autocomplete + response cache cut repeat grounded calls on the popular head.', 'grounding↓', 'autocomplete');
       if (!o.smartRouting) add('cost', 'Route lookups to the fast model; reserve the reasoning model for hard queries.', '', 'smartRouting');
       if (o.reactMaxIter >= 8 && !o.costKillSwitch) add('cost', 'High ReAct iterations with no budget kill-switch - add a circuit-breaker.', '', 'costKillSwitch');
+      // latency-incompatible data sources on a sub-second assistant (soft warning, not removed)
+      latencyIncompatibleSources().forEach(v => {
+        if (!i.dataSources.includes(v)) return;
+        if (v === 'bigquery') add('conflict', 'BigQuery on a sub-second path: it is an analytical (OLAP) store with second-plus query latency. Move it off the hot path (raise the SLO to agentic) or ground via a vector store.', 'latency↓', 'bigquery');
+        if (v === 'web') add('conflict', 'Live Web/OSINT grounding on a sub-second path: network round-trips blow the budget. Cache grounded results or raise the SLO.', 'latency↓', 'web');
+      });
       return out;
     }
 
@@ -1393,6 +1430,44 @@
       State: 'Durable run state and history, so long workflows can resume and stay auditable.',
     };
     const nodeIdFromSvg = el => { const m = (el.id || '').match(/flowchart-([A-Za-z0-9]+)-\d+$/); return m ? m[1] : null; };
+    // Role of each data source, shown as a hover tooltip on the checkbox. BigQuery's role
+    // changes with the top-level purpose (analytical/conditional for an assistant, primary for automation).
+    const DATA_SOURCE_ROLE = {
+      vector: 'Low-latency semantic retrieval (Vertex AI Vector Search, around 12 ms). The default RAG grounding source on the hot path.',
+      doc_corpus: 'Document corpus parsed, chunked, and embedded for RAG (Document AI ingestion), then served from the vector store.',
+      onprem: 'On-prem or legacy system of record reached over a private link. Latency varies, so validate it fits the SLO.',
+      stream: 'Streaming or event source (Pub/Sub, Kafka) for fresh, near-real-time context.',
+      kg: 'Knowledge graph for entity and relationship lookups and multi-hop reasoning.',
+      web: 'Live Web or OSINT grounding via search. Adds a network round-trip and is billed per search.',
+    };
+    function dataSourceRoleText(v) {
+      const subsec = state.purpose === 'assistant' && state.inputs.latencyPreset === 'subsecond';
+      if (v === 'bigquery') {
+        if (state.purpose === 'automation') return 'Primary grounding and data-processing source. Async minute-scale runs absorb its query latency, so large scans and joins are fine.';
+        let t = 'Analytical / structured grounding via text-to-SQL. Conditional fit: keep it off the sub-second hot path and pair it with a vector store for RAG.';
+        if (subsec) t += ' At a sub-second SLO this scan will exceed the budget; raise the SLO to agentic.';
+        return t;
+      }
+      let t = DATA_SOURCE_ROLE[v] || '';
+      if (subsec && v === 'web') t += ' Off the sub-second hot path: cache grounded results or raise the SLO.';
+      return t;
+    }
+    // Sources whose latency is incompatible with a sub-second interactive assistant.
+    function latencyIncompatibleSources() {
+      return (state.purpose === 'assistant' && state.inputs.latencyPreset === 'subsecond') ? ['bigquery', 'web'] : [];
+    }
+    // Google Cloud component explainers (separate pages, opened in a new tab). Keyed by the exact
+    // BOM chip / display name. Add a file under components/ and a line here to light up its info icon.
+    const COMPONENT_DOC = {
+      'BigQuery': 'components/bigquery.html',
+      // 'Vertex AI Vector Search': 'components/vertex-vector-search.html',
+      // 'Spanner': 'components/spanner.html',  (see components/_TEMPLATE.html)
+    };
+    // Map a data-source checkbox value to its component name, so the icon can appear on the source too.
+    const DS_COMPONENT = { bigquery: 'BigQuery', vector: 'Vertex AI Vector Search', doc_corpus: 'Document AI', stream: 'Pub/Sub', onprem: 'On-prem DB' };
+    const INFO_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>';
+    // Opens the explainer in a new tab. A relative href works over HTTP (GCS) and from a file:// open.
+    const infoIcon = (doc, name) => `<a class="info-i" href="${doc}" target="_blank" rel="noopener" title="About ${name} (opens in new tab)" aria-label="About ${name}">${INFO_SVG}</a>`;
     function buildMainDiagram() {
       const i = state.inputs, o = state.overrides; const L = []; L.push('flowchart TD');
       const cls = [];
@@ -1424,6 +1499,7 @@
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Exec --> Sand'); }
         L.push(node('QG', 'Quality gate', 'retr')); L.push('Exec --> QG');
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human approval', 'gov')); L.push('QG --> Appr'); }
+        if (i.dataSources.length) { L.push(node('Data', `Data layer<br/>${srcList(i.dataSources)}`, 'data')); L.push('Exec --> Data'); }
         L.push(node('State', 'State store (Spanner)', 'data')); L.push('Exec --> State');
         L.push(node('Obs', 'Observability', 'obs')); L.push('Exec --> Obs');
       }
@@ -1456,6 +1532,16 @@
       $$('.ctl[data-vis]').forEach(el => { total++; const key = el.dataset.vis; const ok = vis[key] !== false; el.classList.toggle('hidden', !ok); if (ok) shown++; });
       $$('fieldset[data-vis]').forEach(el => { const key = el.dataset.vis; el.style.display = vis[key] === false ? 'none' : ''; });
       $('#visCount').textContent = `(${shown}/${total} shown)`;
+      // data-source role tooltips (purpose-aware) + warn flag for latency-incompatible picks
+      const flagged = new Set(latencyIncompatibleSources());
+      $$('#dataSources label').forEach(lab => {
+        const cb = lab.querySelector('input'); if (!cb) return;
+        lab.setAttribute('title', dataSourceRoleText(cb.value));
+        lab.classList.toggle('flag', flagged.has(cb.value) && cb.checked);
+        // info icon for GCP-backed sources that have an explainer (clicking the <a> does not toggle the checkbox)
+        const comp = DS_COMPONENT[cb.value]; const doc = comp && COMPONENT_DOC[comp];
+        if (doc && !lab.querySelector('.info-i')) lab.insertAdjacentHTML('beforeend', ' ' + infoIcon(doc, comp));
+      });
       // locks + warn marks
       const issues = lastIssues || [];
       $$('.ctl[data-ov]').forEach(el => {
@@ -1507,7 +1593,7 @@
       // observability / risk / bom
       $('#observability').innerHTML = obsHtml(m);
       $('#risk').innerHTML = riskHtml(m);
-      $('#bom').innerHTML = bomHtml().map(s => `<span>${s}</span>`).join('');
+      $('#bom').innerHTML = bomHtml().map(s => `<span>${s}${COMPONENT_DOC[s] ? ' ' + infoIcon(COMPONENT_DOC[s], s) : ''}</span>`).join('');
       // diagram
       renderDiagram();
       // permalink
@@ -1521,7 +1607,7 @@
       cards.push(card(m.volLabel + ' avg / peak', `${fmt(m.volAvg, 2)} <small>/ ${fmt(m.volPeak, 2)}</small>`, 'actors × actions/day over the active window, × burst'));
       cards.push(card('Tokens / day', fmt(m.tokensDay, 1), 'daily actions × (in+out)'));
       cards.push(card('Cache hit (eff.)', (m.cacheHitEff * 100).toFixed(0) + '%', 'response cache: slider + autocomplete + warming, capped 80%'));
-      cards.push(card('Latency p95', fmt(m.latencyP95, 0) + ' <small>ms</small>', 'gateway+retrieval+rerank+TTFT+generation; ×ReAct loop'));
+      cards.push(card('Latency p95', fmt(m.latencyP95, 0) + ' <small>ms</small>', 'gateway+retrieval+rerank+TTFT+generation; ×ReAct loop; +sync BigQuery scan / web grounding on the assistant path'));
       if (m.indexGB > 0) cards.push(card('Vector index', fmt(m.indexGB, 1) + ' <small>GB · ' + m.shards + ' shard(s)</small>', 'chunks × dim × 4 bytes'));
       if (m.indexGB > 0) cards.push(card('HNSW recall / ANN p95', (m.hnswRecall * 100).toFixed(1) + '% <small>/ ' + fmt(m.annP95, 0) + 'ms</small>', 'efSearch/M trade recall vs latency'));
       if (m.gpuNodes) cards.push(card('Self-host fleet', `${m.gpuNodes}×8 ${(o.accelerator || 'h100').toUpperCase()} <small>· ${money(m.gpuMo)}/mo</small>`, `${fmt(m.nodeTPS, 0)} tok/s/node · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util · sized by peak decode tok/s (peak QPS × out-tokens)`));
@@ -1842,6 +1928,18 @@
       assert('BigQuery unpriced by default', cs0.red.some(x => x.name === 'BigQuery'));
       state.costOverrides['BigQuery'] = 1000; const cs1 = costSummary(computeMetrics());
       assert('cost override lifts total + clears red', cs1.totalYr > cs0.totalYr && !cs1.red.some(x => x.name === 'BigQuery'));
+      // data-source vs latency: sub-second assistant + BigQuery warns and is charged scan latency
+      applyPreset('assistant', 'expert_copilot'); state.inputs.latencyPreset = 'subsecond'; state.inputs.dataSources = ['vector', 'bigquery']; deriveOverrides();
+      const mBq = computeMetrics(); const issBq = runLinter(mBq);
+      assert('sub-second + BigQuery warns', issBq.some(x => x.src === 'bigquery'));
+      const latBq = mBq.latencyP95; state.inputs.dataSources = ['vector']; const latNoBq = computeMetrics().latencyP95;
+      assert('BigQuery adds scan latency on assistant', latBq > latNoBq);
+      // automation diagram now includes a Data layer node for selected sources
+      applyPreset('automation', 'regulated'); deriveOverrides();
+      assert('automation diagram shows data sources', /Data layer/.test(buildMainDiagram()));
+      // component explainer: BigQuery is registered and its info icon opens the doc in a new tab
+      assert('BigQuery doc registered', COMPONENT_DOC['BigQuery'] === 'components/bigquery.html');
+      assert('info icon opens doc in new tab', /href="components\/bigquery\.html"/.test(infoIcon(COMPONENT_DOC['BigQuery'], 'BigQuery')) && /target="_blank"/.test(infoIcon('x', 'y')));
       const pass = results.every(r => r[1]);
       const bar = $('#testbar'); bar.style.display = 'block'; bar.className = pass ? 'pass' : 'fail';
       bar.innerHTML = (pass ? '✓ all self-tests pass - ' : '✗ FAILURES - ') + results.map(r => `${r[1] ? '✓' : '✗'} ${r[0]}`).join(' · ');

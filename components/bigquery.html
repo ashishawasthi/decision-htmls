@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BigQuery in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / BigQuery</div>
+    <span class="tag">Analytical OLAP warehouse</span>
+    <h1>BigQuery in agentic systems</h1>
+    <p class="lead">BigQuery is a serverless, columnar data warehouse built for <b>large scans and aggregation</b>, with
+      high and variable per-query latency. It is a place to run analytical SQL, <b>not</b> a low-latency lookup store.
+      The design rule that follows: use it for text-to-SQL analytical grounding and for asynchronous data processing,
+      and keep it off any sub-second request path. Reflects Google Cloud guidance as of May 2026.</p>
+
+    <h2>Role by purpose</h2>
+    <p>The right place for BigQuery flips with the top-level purpose you pick in the tool.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Purpose</th>
+          <th>Recommended role</th>
+          <th>Fit</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Interactive assistant</td>
+          <td>Analytical / structured grounding only (text-to-SQL), kept off the hot path</td>
+          <td class="fit-cond">Conditional</td>
+        </tr>
+        <tr>
+          <td>Task automation</td>
+          <td>Primary grounding and data-processing source</td>
+          <td class="fit-strong">Strong</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Questions that map to SQL over large tables: aggregates, trends, joins across structured enterprise data,
+            with the agent running text-to-SQL inside an agentic budget of a few seconds.</li>
+          <li>Asynchronous automation runs with minute-scale budgets that absorb per-query latency.</li>
+          <li>Heavy scans, joins, and aggregations that would break a real-time SLO but are fine when nothing waits on a
+            sub-second response.</li>
+          <li>Cost-sensitive or batch similarity work via BigQuery vector search.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Any sub-second interactive path: an analytical scan will exceed the budget.</li>
+          <li>Per-request point lookups (profile, session, feature flags). Use Bigtable, AlloyDB, or Spanner.</li>
+          <li>Synchronous RAG retrieval over a corpus. Use a dedicated vector store.</li>
+          <li>Relying on BI Engine to speed up vector or <code>SEARCH</code> retrieval. It does not.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Point lookup by key (profile, session, flags)</td>
+          <td>Bigtable, AlloyDB, or Spanner</td>
+          <td>single-digit ms</td>
+        </tr>
+        <tr>
+          <td>Semantic retrieval for RAG</td>
+          <td>Vertex AI Vector Search</td>
+          <td>around 12 ms</td>
+        </tr>
+        <tr>
+          <td>Transactional reads and writes</td>
+          <td>Spanner, AlloyDB, or Cloud SQL</td>
+          <td>low ms</td>
+        </tr>
+        <tr>
+          <td>Large analytical scans and aggregation</td>
+          <td>BigQuery</td>
+          <td>hundreds of ms to seconds</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> high and variable per query, often a second or more. It is built for throughput on large data,
+        not for tail-latency SLOs.</li>
+      <li><b>Cost:</b> on-demand at roughly $6.25 per TB scanned, plus storage at roughly $0.02 per GB-month, or
+        capacity (slots / editions) pricing. Spend tracks bytes scanned, so it is usage-dependent. That is why the
+        designer leaves BigQuery cost as a manual entry rather than guessing a number.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Text-to-SQL grounding:</b> the agent generates SQL, runs it on BigQuery, and grounds its answer on the
+        result. Keep this within an agentic budget of a few seconds, not a sub-second budget.</li>
+      <li><b>Off the hot path:</b> for an assistant, treat BigQuery as a secondary analytical source paired with a
+        vector store for the synchronous RAG path.</li>
+      <li><b>If it must sit in the request path,</b> tune to stay in budget: partition and cluster on the filter columns,
+        pre-aggregate with materialized views, reserve BI Engine capacity for the hot tables, and enable short query
+        mode (<code>jobCreationMode=JOB_CREATION_OPTIONAL</code>). BI Engine does not accelerate vector or
+        <code>SEARCH</code> retrieval, so it will not speed up RAG.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>The presets encode the split. On the assistant side BigQuery pairs only with the agentic copilot and is absent
+      from the sub-second Q&amp;A preset; on the automation side every preset includes BigQuery.</p>
+    <div class="note"><b>Latency now reflects this.</b> The designer charges an illustrative synchronous scan latency
+      (around 1.2s) when BigQuery is on an assistant request path, and flags BigQuery with a warning when it is selected
+      on a sub-second assistant SLO. So an assistant that reads BigQuery in the request path no longer looks faster in
+      the tool than it would run.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src"
+          href="https://cloud.google.com/blog/products/data-analytics/short-query-optimizations-in-bigquery-advanced-runtime">Short
+          query optimizations in BigQuery advanced runtime (Google Cloud Blog)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/bigquery/docs/bi-engine-intro">Introduction to BI Engine
+          (Google Cloud Docs)</a></li>
+      <li><a class="src"
+          href="https://cloud.google.com/blog/products/data-analytics/introducing-new-vector-search-capabilities-in-bigquery">BigQuery
+          vector search now in preview (Google Cloud Blog)</a></li>
+      <li><a class="src"
+          href="https://medium.com/google-cloud/the-gcp-rag-spectrum-vertex-ai-search-rag-engine-and-vector-search-which-one-should-you-use-f56d50720d5a">The
+          GCP RAG Spectrum: Vertex AI Search, RAG Engine, and Vector Search (Medium)</a></li>
+      <li><a class="src"
+          href="https://medium.com/google-cloud/which-database-should-i-choose-44be039179ea">Which database should I
+          choose? BigQuery vs Bigtable (Medium)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.</footer>
+  </main>
+</body>
+
+</html>

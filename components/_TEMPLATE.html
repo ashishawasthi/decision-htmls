@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  TEMPLATE for a Google Cloud component explainer in the Agentic System Designer.
+  To add a new component:
+    1. Copy this file to components/<slug>.html (e.g. components/spanner.html).
+    2. Fill in the title, category tag, lead, and each section. Drop sections that do not apply.
+    3. Register it in agentic-system-designer.html: add to COMPONENT_DOC, keyed by the exact
+       BOM chip / display name, e.g.  'Spanner': 'components/spanner.html'.
+       For a data-source icon, also map the data-source value in DS_COMPONENT.
+    4. The info icon then appears automatically next to that component in the BOM and (if mapped)
+       the data sources, and opens this file in a new tab.
+  Style rules: keep the CSS block below as-is for a consistent look. Never use the em-dash character.
+-->
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>COMPONENT in agentic systems</title>
+  <style>
+    :root { --bg:#0f1419; --panel:#161b22; --panel2:#1c2430; --border:#2a3441; --muted:#8b98a8; --text:#e6edf3; --accent:#4c9aff; --ok:#3fb950; --warn:#d29922; --err:#f85149; --data:#e6c84c; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; line-height:1.6; }
+    main { max-width:880px; margin:0 auto; padding:40px 24px 80px; }
+    .crumb { font-size:12px; color:var(--muted); margin-bottom:18px; }
+    .crumb a { color:var(--accent); text-decoration:none; }
+    .crumb a:hover { text-decoration:underline; }
+    .tag { display:inline-block; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--data); border:1px solid var(--border); border-radius:4px; padding:2px 8px; margin-bottom:12px; }
+    h1 { font-size:28px; margin:0 0 8px; }
+    h2 { font-size:18px; margin:34px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+    h3 { font-size:14px; margin:18px 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    p, li { font-size:14.5px; }
+    .lead { font-size:16px; }
+    .lead b { color:#fff; }
+    code { background:var(--panel2); border:1px solid var(--border); border-radius:4px; padding:1px 5px; font-size:12.5px; font-family:ui-monospace,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+    thead th { color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; }
+    td.fit-strong { color:var(--ok); font-weight:600; }
+    td.fit-cond { color:var(--warn); font-weight:600; }
+    .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media (max-width:680px) { .cols { grid-template-columns:1fr; } }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px 16px; }
+    .card.use { border-left:3px solid var(--ok); }
+    .card.avoid { border-left:3px solid var(--err); }
+    .card h3 { margin-top:0; }
+    ul { margin:6px 0; padding-left:20px; }
+    li { margin:3px 0; }
+    .note { background:rgba(76,154,255,.08); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:6px; padding:10px 14px; font-size:13.5px; color:var(--muted); margin:14px 0; }
+    .note b { color:var(--text); }
+    a.src { color:var(--accent); text-decoration:none; }
+    a.src:hover { text-decoration:underline; }
+    .sources { font-size:12.5px; color:var(--muted); }
+    footer { margin-top:40px; padding-top:16px; border-top:1px solid var(--border); font-size:12px; color:var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / COMPONENT</div>
+    <span class="tag">CATEGORY</span>
+    <h1>COMPONENT in agentic systems</h1>
+    <p class="lead">One or two sentences: what it is, the one fact that drives every design decision, and the rule that
+      follows.</p>
+
+    <h2>Role by purpose</h2>
+    <table>
+      <thead>
+        <tr><th>Purpose</th><th>Recommended role</th><th>Fit</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Interactive assistant</td><td>...</td><td class="fit-cond">Conditional</td></tr>
+        <tr><td>Task automation</td><td>...</td><td class="fit-strong">Strong</td></tr>
+      </tbody>
+    </table>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use"><h3>Good fit</h3>
+        <ul><li>...</li></ul>
+      </div>
+      <div class="card avoid"><h3>Avoid</h3>
+        <ul><li>...</li></ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead><tr><th>What you need</th><th>Use instead</th><th>Typical latency / cost</th></tr></thead>
+      <tbody><tr><td>...</td><td>...</td><td>...</td></tr></tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul><li><b>Latency:</b> ...</li><li><b>Cost:</b> ...</li></ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul><li>...</li></ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>...</p>
+
+    <h2>Sources</h2>
+    <ul class="sources"><li><a class="src" href="#">...</a></li></ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026;
+      verify against current Google Cloud docs for production decisions.</footer>
+  </main>
+</body>
+
+</html>
