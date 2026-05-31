@@ -226,7 +226,14 @@
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 4px 9px;
-      cursor: pointer
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px
+    }
+
+    button.mini > svg {
+      flex: none
     }
 
     button.mini:hover {
@@ -367,6 +374,78 @@
       font-weight: 400;
       margin-left: 6px
     }
+
+    button.mini.pinned {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+    /* "What changed" baseline comparison strip */
+    .diff-strip { border-left: 3px solid var(--accent) }
+
+    .diff-head {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 6px
+    }
+
+    .diff-head h3 { margin: 0 }
+
+    .diff-head .spacer { flex: 1 }
+
+    .diff-clear {
+      cursor: pointer;
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      background: none;
+      border: none;
+      padding: 2px 4px
+    }
+
+    .diff-clear:hover { color: var(--text) }
+
+    .diff-grp {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin: 5px 0
+    }
+
+    .diff-grp > .dlabel {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+      min-width: 64px
+    }
+
+    .dpill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 7px;
+      font-size: 12px
+    }
+
+    .dpill .dk { color: var(--muted) }
+
+    .dpill .dar { color: var(--muted) }
+
+    .dpill .dnew { font-weight: 600 }
+
+    .dpill.up { border-left: 2px solid var(--err) }
+
+    .dpill.down { border-left: 2px solid var(--ok) }
+
+    .dpill .dlock { color: var(--warn); font-size: 11px }
+
+    .diff-empty { color: var(--muted); font-size: 13px }
 
     .panel {
       background: var(--panel);
@@ -819,7 +898,8 @@
         margin-bottom: 14px
       }
 
-      section.output > .arch-wrap {
+      section.output > .arch-wrap,
+      section.output > #diffStrip {
         column-span: all
       }
     }
@@ -837,11 +917,7 @@
 
   <div class="banner" id="intro">
     <span class="x" id="introClose">×</span>
-    <b>How to read this:</b> left = the decisions (Clarify → Scale → Deep-dive); right = the resulting design, sizing,
-    and what breaks at scale.
-    Boxes marked <b>⊕</b> drill in. On panels, <span class="tag" style="margin:0">blue tags</span> name the <b>driving
-      input</b>, <span class="tag static" style="margin:0">grey</span> = fixed; a control an input forces shows a <span
-      class="lock" style="margin:0">🔒 cause</span> badge.
+    <b>How to read:</b> left → decisions · right → design · <b>⊕</b> → drill in · <span class="tag" style="margin:0">blue</span> → driving input · <span class="tag static" style="margin:0">grey</span> → fixed · <span class="lock" style="margin:0">🔒</span> → forced
     <div class="legend">
       <span><i style="background:var(--client)"></i>client</span>
       <span><i style="background:var(--gateway)"></i>gateway</span>
@@ -867,8 +943,9 @@
         </div>
         <div class="chips" id="presetChips"></div>
         <div class="row" style="margin-top:8px">
-          <button class="mini" id="resetBtn">Reset to preset defaults</button>
-          <button class="mini" id="permalinkBtn">Copy permalink</button>
+          <button class="mini" id="resetBtn"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>Reset to preset defaults</span></button>
+          <button class="mini" id="permalinkBtn"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy permalink</span></button>
+          <button class="mini" id="pinBtn" title="Snapshot the current design, then see what changes against it"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Pin baseline</span></button>
         </div>
       </div>
 
@@ -1147,6 +1224,7 @@
 
     <!-- RIGHT: output -->
     <section class="output">
+      <div class="panel diff-strip" id="diffStrip" hidden></div>
       <div class="arch-wrap">
         <div class="diagram-head">
           <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Architecture</h3>
@@ -1275,7 +1353,7 @@
     /* ===================== State ===================== */
     const state = {
       purpose: 'assistant', preset: 'expert_copilot',
-      inputs: {}, overrides: {}, locks: {},
+      inputs: {}, overrides: {}, locks: {}, baseline: null,
       componentInputs: { gateway: { aggregateQPS: null, tenantApps: 1, providers: 1 }, ingestion: { docsPerDay: null, backfillDocs: 0, docPages: 40, reindexSLOmin: 5 } },
       costOverrides: {},   // BOM component name → user-entered $/mo (overrides any estimate)
       ui: { openModal: null, introDismissed: false },
@@ -1715,6 +1793,8 @@
       $('#observability').innerHTML = obsHtml(m);
       $('#risk').innerHTML = riskHtml(m);
       $('#bom').innerHTML = bomHtml().map(s => `<span>${s}${COMPONENT_DOC[s] ? ' ' + infoIcon(COMPONENT_DOC[s], s) : ''}</span>`).join('');
+      // baseline comparison ("what changed")
+      renderDiffStrip();
       // diagram
       renderDiagram();
       // permalink
@@ -2019,6 +2099,86 @@
     $('#purpose').addEventListener('change', e => { const pur = e.target.value; const first = Object.keys(PRESETS[pur])[0]; applyPreset(pur, first); render(); });
     $('#presetChips').addEventListener('click', e => { const c = e.target.closest('.chip'); if (c) { applyPreset(state.purpose, c.dataset.preset); render(); } });
     $('#resetBtn').addEventListener('click', () => { applyPreset(state.purpose, state.preset); render(); });
+
+    /* ===================== Baseline comparison ("what changed") ===================== */
+    // Snapshot the current design; the strip then shows everything that differs from it,
+    // refreshed on every edit, until the baseline is re-pinned or cleared.
+    function pinBaseline() {
+      state.baseline = {
+        label: PRESETS[state.purpose]?.[state.preset]?.label || state.preset,
+        purpose: state.purpose,
+        inputs: structuredClone(state.inputs),
+        overrides: structuredClone(state.overrides),
+        dataSources: [...state.inputs.dataSources],
+        languages: [...(state.inputs.languages || [])],
+        metrics: structuredClone(lastMetrics),
+      };
+    }
+    // Curated metrics shown as before→after deltas (badUp: an increase is the worse direction → red).
+    const DIFF_METRICS = [
+      { k: 'costOpt', label: 'GenAI $/yr', fmt: money, badUp: true },
+      { k: 'latencyP95', label: 'Latency p95', fmt: v => v >= 1000 ? (v / 1000).toFixed(1) + 's' : Math.round(v) + 'ms', badUp: true },
+      { k: 'tokensDay', label: 'Tokens/day', fmt: v => fmt(v, 1), badUp: true },
+      { k: 'volPeak', label: 'Peak', fmt: v => fmt(v, 2), badUp: false },
+      { k: 'cacheHitEff', label: 'Cache hit', fmt: v => Math.round(v * 100) + '%', badUp: false },
+      { k: 'storageMo', label: 'Storage/mo', fmt: money, badUp: true },
+      { k: 'gpuMo', label: 'Fleet $/mo', fmt: money, badUp: true },
+    ];
+    const DIFF_INPUTS = ['actors', 'actionsPerDay', 'burst', 'activeHoursPerWeek', 'latencyPreset', 'tokensIn', 'tokensOut', 'audienceSensitivity', 'corpusSize', 'freshness'];
+    const PATH_LABEL_OVERRIDE = { 'inputs.tokensIn': 'Tokens in', 'inputs.tokensOut': 'Tokens out', 'purpose': 'Purpose' };
+    // Field labels and value labels are read from each control's own DOM, so they always match the UI.
+    function pathLabel(path) {
+      if (PATH_LABEL_OVERRIDE[path]) return PATH_LABEL_OVERRIDE[path];
+      const el = document.querySelector(`[data-bind="${path}"]`);
+      const lab = el && el.closest('.ctl') && el.closest('.ctl').querySelector('label');
+      return lab ? (lab.childNodes[0]?.textContent || lab.textContent).trim() : path.split('.').pop();
+    }
+    function pathValueLabel(path, v) {
+      const el = document.querySelector(`[data-bind="${path}"]`);
+      if (el && el.tagName === 'SELECT') { const opt = [...el.options].find(o => o.value === String(v)); if (opt) return opt.textContent.trim(); }
+      if (typeof v === 'boolean') return v ? 'on' : 'off';
+      if (typeof v === 'number' && /actors|corpusSize|tokensIn|tokensOut/.test(path)) return fmt(v, 0);
+      return String(v);
+    }
+    const diffPill = (label, from, to, extra = '', cls = '') => `<span class="dpill ${cls}"><span class="dk">${label}</span> ${from} <span class="dar">→</span> <span class="dnew">${to}</span>${extra}</span>`;
+    function computeDiff() {
+      const b = state.baseline; if (!b) return null;
+      const cur = state.inputs, co = state.overrides;
+      const inputs = [], config = [], data = [], metrics = [];
+      if (b.purpose !== state.purpose) inputs.push(diffPill('Purpose', pathValueLabel('purpose', b.purpose), pathValueLabel('purpose', state.purpose)));
+      for (const k of DIFF_INPUTS) { const p = 'inputs.' + k; if (b.inputs[k] !== cur[k]) inputs.push(diffPill(pathLabel(p), pathValueLabel(p, b.inputs[k]), pathValueLabel(p, cur[k]))); }
+      const listDiff = (label, was, now, vl) => {
+        const removed = was.filter(x => !now.includes(x)), added = now.filter(x => !was.includes(x));
+        if (added.length) data.push(`<span class="dpill down"><span class="dk">${label} +</span> ${added.map(vl).join(', ')}</span>`);
+        if (removed.length) data.push(`<span class="dpill up"><span class="dk">${label} −</span> ${removed.map(vl).join(', ')}</span>`);
+      };
+      listDiff('Sources', b.dataSources, cur.dataSources, v => SRC_LABEL[v] || v);
+      listDiff('Languages', b.languages, cur.languages || [], v => v.toUpperCase());
+      for (const k of new Set([...Object.keys(b.overrides), ...Object.keys(co)])) {
+        if (b.overrides[k] === co[k]) continue;
+        const lock = state.locks[k], p = 'overrides.' + k;
+        config.push(diffPill(pathLabel(p), pathValueLabel(p, b.overrides[k]), pathValueLabel(p, co[k]), lock ? ` <span class="dlock">🔒 ${lock.cause}</span>` : ''));
+      }
+      for (const dm of DIFF_METRICS) {
+        const a = b.metrics?.[dm.k] || 0, c = lastMetrics?.[dm.k] || 0;
+        if (Math.abs(a - c) < Math.max(1e-9, Math.abs(a) * 0.005)) continue;
+        metrics.push(diffPill(dm.label, dm.fmt(a), dm.fmt(c), '', (c > a) === dm.badUp ? 'up' : 'down'));
+      }
+      return { inputs, config, data, metrics, total: inputs.length + config.length + data.length + metrics.length };
+    }
+    function renderDiffStrip() {
+      const strip = $('#diffStrip'), pin = $('#pinBtn');
+      if (pin) { pin.classList.toggle('pinned', !!state.baseline); const s = pin.querySelector('span'); if (s) s.textContent = state.baseline ? 'Re-pin baseline' : 'Pin baseline'; }
+      if (!state.baseline) { strip.hidden = true; strip.innerHTML = ''; return; }
+      const d = computeDiff();
+      const grp = (label, pills) => pills.length ? `<div class="diff-grp"><span class="dlabel">${label}</span>${pills.join('')}</div>` : '';
+      const body = d.total ? grp('Inputs', d.inputs) + grp('Config', d.config) + grp('Data', d.data) + grp('Metrics', d.metrics)
+        : '<div class="diff-empty">Matches baseline - change an input or preset to see the impact.</div>';
+      strip.innerHTML = `<div class="diff-head"><h3>Changed since baseline <span class="vis-count">${state.baseline.label}</span></h3><span class="spacer"></span><button class="diff-clear" id="diffClear" title="Remove the pinned baseline">clear ×</button></div>${body}`;
+      strip.hidden = false;
+    }
+    $('#pinBtn').addEventListener('click', () => { pinBaseline(); render(); });
+    $('#diffStrip').addEventListener('click', e => { if (e.target.closest('#diffClear')) { state.baseline = null; render(); } });
     document.querySelector('main').addEventListener('input', e => { if (e.target.dataset.cost != null || e.target.closest('#modal')) return; onInput(); });
     document.querySelector('main').addEventListener('change', e => { if (e.target.dataset.cost != null || e.target.id === 'purpose' || e.target.closest('#modal')) return; onInput(); });
     // editable BOM cost line items (commit on blur/enter so typing doesn't rebuild the panel)
@@ -2031,7 +2191,7 @@
     $('#introClose').addEventListener('click', () => { $('#intro').style.display = 'none'; });
     const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
     $('#copyMermaid').addEventListener('click', () => { navigator.clipboard?.writeText(diagSrc); $('#copyMermaid').textContent = '✓'; setTimeout(() => $('#copyMermaid').innerHTML = COPY_ICON, 1200); });
-    $('#permalinkBtn').addEventListener('click', () => { navigator.clipboard?.writeText(location.href); $('#permalinkBtn').textContent = 'Copied'; setTimeout(() => $('#permalinkBtn').textContent = 'Copy permalink', 1200); });
+    $('#permalinkBtn').addEventListener('click', () => { navigator.clipboard?.writeText(location.href); const s = $('#permalinkBtn').querySelector('span'); s.textContent = 'Copied'; setTimeout(() => s.textContent = 'Copy permalink', 1200); });
 
     /* ===================== Self-test ===================== */
     function selfTest() {
@@ -2093,6 +2253,13 @@
       // component explainer: BigQuery is registered and its info icon opens the doc in a new tab
       assert('BigQuery doc registered', COMPONENT_DOC['BigQuery'] === 'components/bigquery.html');
       assert('info icon opens doc in new tab', /href="components\/bigquery\.html"/.test(infoIcon(COMPONENT_DOC['BigQuery'], 'BigQuery')) && /target="_blank"/.test(infoIcon('x', 'y')));
+      // baseline diff: pinning then editing an input reports the ripple, incl. locked side-effects
+      applyPreset('assistant', 'expert_copilot'); state.inputs.audienceSensitivity = 'internal_low'; deriveOverrides(); lastMetrics = computeMetrics(); pinBaseline();
+      state.inputs.audienceSensitivity = 'internal_strictpii'; deriveOverrides(); lastMetrics = computeMetrics();
+      const bdiff = computeDiff();
+      assert('baseline diff captures the edited input', !!bdiff && bdiff.inputs.length > 0);
+      assert('baseline diff surfaces a locked ripple', bdiff.config.some(s => /🔒/.test(s)));
+      state.baseline = null;
       const pass = results.every(r => r[1]);
       const bar = $('#testbar'); bar.style.display = 'block'; bar.className = pass ? 'pass' : 'fail';
       bar.innerHTML = (pass ? '✓ all self-tests pass - ' : '✗ FAILURES - ') + results.map(r => `${r[1] ? '✓' : '✗'} ${r[0]}`).join(' · ');
