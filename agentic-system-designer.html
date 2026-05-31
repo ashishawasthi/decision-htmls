@@ -556,6 +556,21 @@
       font-variant-numeric: tabular-nums
     }
 
+    .cost-row.sub {
+      padding: 0 0 1px 12px;
+      opacity: .65
+    }
+
+    .cost-row.sub .cl,
+    .cost-row.sub .cn {
+      font-size: 11px;
+      color: var(--muted)
+    }
+
+    .cost-row .cn.cred {
+      color: var(--err)
+    }
+
     .cost-row.tot {
       border-top: 1px solid var(--border);
       margin-top: 2px;
@@ -1125,6 +1140,10 @@
         <div class="metrics" id="metrics"></div>
       </div>
       <div class="panel">
+        <h3>Latency</h3>
+        <div id="latency"></div>
+      </div>
+      <div class="panel">
         <h3>Cost <span id="costHead" class="vis-count"></span></h3>
         <div id="cost"></div>
       </div>
@@ -1189,7 +1208,7 @@
       },
       storageBQ: 0.02, storageGCS: 0.02, egress: 0.10, vsNodeHr: 0.6,
       hnsw: { a: 0.5, b: 120, baseMs: 8 },
-      lat: { gateway: 40, retrieval: 70, rerank: 80, ttft: 400, perOutTokMs: 5, bigqueryScan: 1200, webGround: 600, onpremCall: 400 },
+      lat: { gateway: 40, retrieval: 70, rerank: 80, ttft: 400, perOutTokMs: 5, bigqueryScan: 1200, webGround: 600, onpremCall: 400, guardrails: 30, qualityGate: 80 },
     };
     const modelById = id => MODELS.find(m => m.id === id) || MODELS[0];
 
@@ -1335,18 +1354,32 @@
         grounding: billed * groundPerCall,
       };
       m.costOpt = m.costParts.fresh + m.costParts.cached + m.costParts.output + m.costParts.grounding;
-      // latency p95 (assistant path)
-      const L = K.lat; let lat = L.gateway + L.ttft + i.tokensOut * L.perOutTokMs / 10;
-      if (['hybrid', 'dense', 'rerank'].includes(o.retrieval)) lat += L.retrieval;
-      if (o.retrieval === 'rerank') lat += L.rerank;
-      if (o.pattern === 'multi') lat *= (1 + o.reactMaxIter * 0.12);
-      // synchronous data-source calls on the assistant request path (automation is async, no charge)
-      if (state.purpose === 'assistant') {
-        if (i.dataSources.includes('bigquery')) lat += L.bigqueryScan;   // OLAP scan, seconds-scale
-        if (i.dataSources.includes('web')) lat += L.webGround;           // live search round-trip
-        if (i.dataSources.includes('onprem')) lat += L.onpremCall;       // private-link round trip
+      // latency p95: critical-path line items. The grounding calls run concurrently, so that
+      // stage takes the slowest source (parallel fan-out, max), not the sum.
+      const L = K.lat;
+      const gen = L.ttft + i.tokensOut * L.perOutTokMs / 10;             // TTFT + output generation
+      const groundSubs = [];
+      if (['hybrid', 'dense', 'rerank'].includes(o.retrieval)) groundSubs.push({ label: 'Vector / hybrid retrieval', ms: L.retrieval });
+      if (i.dataSources.includes('bigquery')) groundSubs.push({ label: 'BigQuery scan', ms: L.bigqueryScan });
+      if (i.dataSources.includes('web')) groundSubs.push({ label: 'Web grounding', ms: L.webGround });
+      if (i.dataSources.includes('onprem')) groundSubs.push({ label: 'On-prem call', ms: L.onpremCall });
+      const grounding = groundSubs.length ? Math.max(...groundSubs.map(s => s.ms)) : 0;
+      const parts = [];
+      if (o.gateway) parts.push({ label: 'Gateway', ms: L.gateway });
+      if (o.guardrails) parts.push({ label: 'Safety guardrails', ms: L.guardrails });
+      if (state.purpose === 'automation') {
+        parts.push({ label: 'Planner', ms: L.ttft + i.tokensOut * L.perOutTokMs / 20 });
+        if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
+        parts.push({ label: `Executor pool (×${o.numAgents}, parallel)`, ms: gen, note: 'agents concurrent, slowest wins' });
+        parts.push({ label: 'Quality gate', ms: L.qualityGate });
+      } else {
+        if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
+        if (o.retrieval === 'rerank') parts.push({ label: 'Rerank', ms: L.rerank });
+        parts.push({ label: 'Generation (TTFT + output)', ms: gen });
+        if (o.pattern === 'multi') parts.push({ label: `ReAct loop (×${o.reactMaxIter} iter)`, ms: ((o.retrieval === 'rerank' ? L.rerank : 0) + gen) * o.reactMaxIter * 0.12, note: 'sequential iterations' });
       }
-      m.latencyP95 = lat;
+      m.latParts = parts;
+      m.latencyP95 = parts.reduce((a, p) => a + p.ms, 0);
       // measure against the SLO budget for the chosen latency preset
       m.latencyBudget = (state.purpose === 'assistant') ? (LATENCY_BUDGET[i.latencyPreset] ?? Infinity) : Infinity;
       m.latencyOverBudget = m.latencyP95 > m.latencyBudget;
@@ -1642,6 +1675,7 @@
       // metrics
       $('#metrics').innerHTML = metricCards(m);
       // cost breakdown
+      $('#latency').innerHTML = latencyPanelHtml(m);
       $('#cost').innerHTML = costPanelHtml(m);
       $('#costHead').textContent = state.overrides.deployment === 'onprem' ? '(self-host)' : (state.overrides.deployment === 'hybrid' ? '(API + self-host)' : '(managed API)');
       // observability / risk / bom
@@ -1662,12 +1696,24 @@
       cards.push(card('Tokens / day', fmt(m.tokensDay, 1), 'daily actions × (in+out)'));
       cards.push(card('Cache hit (eff.)', (m.cacheHitEff * 100).toFixed(0) + '%', 'response cache: slider + autocomplete + warming, capped 80%'));
       const budgetLabel = m.latencyBudget >= 1000 ? (m.latencyBudget / 1000) + 's' : m.latencyBudget + 'ms';
-      cards.push(card('Latency p95', fmt(m.latencyP95, 0) + ' <small>ms</small>' + (m.latencyOverBudget ? ` <span class="over">over ${budgetLabel} SLO</span>` : ''), 'gateway+retrieval+rerank+TTFT+generation; ×ReAct loop; +sync BigQuery/web/on-prem on the assistant path; flagged when over the SLO budget', m.latencyOverBudget ? 'warn' : ''));
+      cards.push(card('Latency p95', fmt(m.latencyP95, 0) + ' <small>ms</small>' + (m.latencyOverBudget ? ` <span class="over">over ${budgetLabel} SLO</span>` : ''), 'critical path; grounding sources run in parallel (slowest wins); see the Latency breakdown below for line items', m.latencyOverBudget ? 'warn' : ''));
       if (m.indexGB > 0) cards.push(card('Vector index', fmt(m.indexGB, 1) + ' <small>GB · ' + m.shards + ' shard(s)</small>', 'chunks × dim × 4 bytes'));
       if (m.indexGB > 0) cards.push(card('HNSW recall / ANN p95', (m.hnswRecall * 100).toFixed(1) + '% <small>/ ' + fmt(m.annP95, 0) + 'ms</small>', 'efSearch/M trade recall vs latency'));
       if (m.gpuNodes) cards.push(card('Self-host fleet', `${m.gpuNodes}×8 ${(o.accelerator || 'h100').toUpperCase()} <small>· ${money(m.gpuMo)}/mo</small>`, `${fmt(m.nodeTPS, 0)} tok/s/node · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util · sized by peak decode tok/s (peak QPS × out-tokens)`));
       cards.push(card('Storage / mo', money(m.storageMo), 'index + logs (illustrative)'));
       return cards.join('');
+    }
+    function latencyPanelHtml(m) {
+      const ms = v => v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1) + 's' : Math.round(v) + 'ms';
+      const rows = [`<div class="cost-grp">Latency p95 <small>(critical path)</small></div>`];
+      (m.latParts || []).forEach(p => {
+        rows.push(`<div class="cost-row"><span class="cl">${p.label}${p.note ? ` <small>${p.note}</small>` : ''}</span><span class="cn">${ms(p.ms)}</span></div>`);
+        if (p.parallel) p.parallel.forEach(s => rows.push(`<div class="cost-row sub"><span class="cl">${p.parallel.length > 1 ? '· ' : '· '}${s.label}</span><span class="cn">${ms(s.ms)}</span></div>`));
+      });
+      const budget = m.latencyBudget >= 1000 && m.latencyBudget < Infinity ? (m.latencyBudget / 1000) + 's' : (m.latencyBudget === Infinity ? null : m.latencyBudget + 'ms');
+      const over = m.latencyOverBudget;
+      rows.push(`<div class="cost-row tot"><span class="cl">Latency p95${over && budget ? ` <span class="cred">over ${budget} SLO</span>` : (budget ? ` <small>SLO ${budget}</small>` : '')}</span><span class="cn${over ? ' cred' : ''}">${ms(m.latencyP95)}</span></div>`);
+      return `<div class="costbox">${rows.join('')}</div>`;
     }
     function costPanelHtml(m) {
       const o = state.overrides, cp = m.costParts || {};
@@ -2001,6 +2047,13 @@
       const latBq = mBq.latencyP95; state.inputs.dataSources = ['vector']; const mClean = computeMetrics();
       assert('BigQuery adds scan latency on assistant', latBq > mClean.latencyP95);
       assert('clean sub-second is within budget', mClean.latencyOverBudget === false);
+      // latency line items sum to the p95 total
+      applyPreset('assistant', 'expert_copilot'); const mL = computeMetrics();
+      assert('latency parts sum to p95', Math.abs(mL.latParts.reduce((a, p) => a + p.ms, 0) - mL.latencyP95) < 1 && mL.latParts.length > 0);
+      // parallel grounding takes the max, not the sum: adding web + on-prem alongside BigQuery does not change p95
+      applyPreset('assistant', 'expert_copilot'); state.inputs.latencyPreset = 'agentic'; state.inputs.dataSources = ['vector', 'bigquery']; deriveOverrides(); const lp1 = computeMetrics().latencyP95;
+      state.inputs.dataSources = ['vector', 'bigquery', 'web', 'onprem']; const lp3 = computeMetrics().latencyP95;
+      assert('parallel grounding takes max not sum', lp3 === lp1);
       // automation diagram now includes a Data layer node for selected sources
       applyPreset('automation', 'regulated'); deriveOverrides();
       assert('automation diagram shows data sources', /Data layer/.test(buildMainDiagram()));
