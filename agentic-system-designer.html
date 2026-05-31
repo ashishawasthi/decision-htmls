@@ -1801,9 +1801,12 @@
     // Opens the explainer in a new tab. A relative href works over HTTP (GCS) and from a file:// open.
     const infoIcon = (doc, name) => `<a class="info-i" href="${doc}" target="_blank" rel="noopener" title="About ${name} (opens in new tab)" aria-label="About ${name}">${INFO_SVG}</a>`;
     function buildMainDiagram() {
-      const i = state.inputs, o = state.overrides; const L = []; L.push('flowchart TD');
+      const i = state.inputs, o = state.overrides; const L = [];
+      // LR reads as a left-to-right request lifecycle on normal screens; fall back to TD on the
+      // mobile single-column layout (same 880px breakpoint), where a wide LR graph is unreadable.
+      const dir = window.matchMedia('(max-width:880px)').matches ? 'TD' : 'LR'; L.push('flowchart ' + dir);
       const cls = [];
-      const node = (id, label, tier) => { cls.push(`class ${id} ${tier}`); return `${id}["${label}"]`; };
+      const node = (id, label, tier, shape) => { cls.push(`class ${id} ${tier}`); return shape === 'cyl' ? `${id}[("${label}")]` : `${id}["${label}"]`; };
       // Data plane: an offline index (written by the ingestion branch with a dashed/async edge,
       // read by retrieval) plus live-queried sources. storeReader reads the index at query time;
       // liveReader queries the live sources. Drawn from the selected sources, not the ingestion toggle.
@@ -1814,7 +1817,7 @@
         const hasIndex = idxSel.length || i.dataSources.includes('vector');   // something to retrieve from
         if (ragOn && hasIndex) {
           const storeLabel = o.ragEngine === 'vais' ? 'Vertex AI Search ⊕' : 'Vector store + BM25 ⊕';
-          L.push(node('Store', storeLabel, 'data')); L.push(`${storeReader} --> Store`);
+          L.push(node('Store', storeLabel, 'data', 'cyl')); L.push(`${storeReader} --> Store`);
           // offline ingestion branch only when there is content to crawl, parse, and index
           if (idxSel.length) {
             L.push(node('Idx', `Index sources<br/>${idxSel.map(s => INDEXED_LABEL[s]).join(' / ')}`, 'data'));
@@ -1856,7 +1859,7 @@
         L.push(node('QG', 'Quality gate', 'retr')); L.push('Exec --> QG');
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human approval', 'gov')); L.push('QG --> Appr'); }
         dataPlane('Exec', 'Exec');
-        L.push(node('State', 'State store (Spanner)', 'data')); L.push('Exec --> State');
+        L.push(node('State', 'State store (Spanner)', 'data', 'cyl')); L.push('Exec --> State');
         L.push(node('Obs', 'Observability', 'obs')); L.push('Exec --> Obs');
       }
       L.push('classDef client fill:#16384a,stroke:#5ec8f8,color:#dbeefb;');
@@ -1873,7 +1876,7 @@
       const map = {
         gateway: 'flowchart LR\n A[Auth IAM+mTLS]-->B[PII redact]-->C[Route]-->D[Semantic cache]-->E[Rate limit]-->F[Audit log]-->G[Provider fan-out]',
         ingestion: 'flowchart LR\n A[Docs + Website]-->B[Document AI / crawler]-->C[Chunker]-->D[Embeddings]-->E[Vector + BM25 + GCS]',
-        vais: 'flowchart LR\n A[Docs + Website data store]-->B[Managed parse + chunk + embed]-->C[Managed index]-->D[RRF (semantic + keyword) + rerank]-->E[Grounded answer + citations]',
+        vais: 'flowchart LR\n A[Docs + Website data store]-->B[Managed parse + chunk + embed]-->C[Managed index]-->D["RRF (semantic + keyword) + rerank"]-->E[Grounded answer + citations]',
         sandbox: 'flowchart LR\n A[Ephemeral instance + KMS]-->B[Entity resolution]-->C[Web/OSINT + risk rules]-->D[Memory wipe]-->E[Audit hash]',
         funnel: 'flowchart LR\n A[Metadata pre-filter]-->B[Dense + BM25 RRF]-->C[Reranker]-->D[Grounded generation + citations]',
       };
@@ -2394,6 +2397,8 @@
     const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
     $('#copyMermaid').addEventListener('click', () => { navigator.clipboard?.writeText(diagSrc); $('#copyMermaid').textContent = '✓'; setTimeout(() => $('#copyMermaid').innerHTML = COPY_ICON, 1200); });
     $('#permalinkBtn').addEventListener('click', () => { navigator.clipboard?.writeText(currentPermalink()); const s = $('#permalinkBtn').querySelector('span'); s.textContent = 'Copied'; setTimeout(() => s.textContent = 'Permalink', 1200); });
+    // Re-render the diagram when crossing the mobile breakpoint, so its direction (LR vs TD) tracks the layout.
+    window.matchMedia('(max-width:880px)').addEventListener('change', () => renderDiagram());
 
     /* ===================== Self-test ===================== */
     function selfTest() {
@@ -2474,6 +2479,7 @@
       // automation diagram includes a Live data node for query-time sources
       applyPreset('automation', 'regulated'); deriveOverrides();
       assert('automation diagram shows live data sources', /Live data/.test(buildMainDiagram()));
+      assert('automation state store renders as a datastore cylinder', /State\[\(/.test(buildMainDiagram()));
       // RAG defaults to managed Vertex AI Search; the engine drives the diagram, BOM, and knobs
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
       assert('RAG engine defaults to managed Vertex AI Search', state.overrides.ragEngine === 'vais' && bomHtml().includes('Vertex AI Search'));
@@ -2481,6 +2487,9 @@
       const dgV = buildMainDiagram();
       assert('main diagram shows offline ingestion into the store', /Index sources/.test(dgV) && /-\. crawl \+ parse \+ embed \.->/.test(dgV) && /Vertex AI Search/.test(dgV));
       assert('managed folds retrieval into the store (no separate funnel)', !/Retrieval funnel/.test(dgV) && /Orch --> Store/.test(dgV));
+      assert('retrieval index renders as a datastore cylinder', /Store\[\(/.test(dgV));
+      const dirWide = !window.matchMedia('(max-width:880px)').matches;
+      assert('diagram direction follows the viewport', new RegExp('flowchart ' + (dirWide ? 'LR' : 'TD')).test(buildMainDiagram()));
       state.overrides.ragEngine = 'selfbuilt'; deriveOverrides();
       assert('self-built restores the pipeline BOM + knobs', bomHtml().includes('Vertex AI Vector Search') && bomHtml().includes('Document AI') && bomHtml().includes('BM25') && visibleInputs().selfbuilt === true);
       const dgS = buildMainDiagram();
