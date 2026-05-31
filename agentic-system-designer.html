@@ -2210,6 +2210,8 @@
     function schedulePermalink() { clearTimeout(plTimer); plTimer = setTimeout(() => { try { location.replace('#' + encodeState()); } catch (e) { } }, 120); }
     function encodeState() { return btoa(unescape(encodeURIComponent(JSON.stringify({ p: state.purpose, pr: state.preset, c: state.custom, i: state.inputs, o: state.overrides, co: state.costOverrides })))); }
     function decodeState(h) { try { const d = JSON.parse(decodeURIComponent(escape(atob(h)))); if (d.p) { state.purpose = d.p; state.preset = d.pr; state.custom = !!d.c; state.inputs = d.i; state.overrides = d.o; state.costOverrides = d.co || {}; return true; } } catch (e) { } return false; }
+    // Build the link from live state at click time and flush the pending debounce, so the copied URL is never stale.
+    function currentPermalink() { clearTimeout(plTimer); const base = location.href.split('#')[0]; const h = '#' + encodeState(); try { location.replace(h); } catch (e) { } return base + h; }
 
     /* ===================== Wiring ===================== */
     function onInput() {
@@ -2318,7 +2320,7 @@
     });
     const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
     $('#copyMermaid').addEventListener('click', () => { navigator.clipboard?.writeText(diagSrc); $('#copyMermaid').textContent = '✓'; setTimeout(() => $('#copyMermaid').innerHTML = COPY_ICON, 1200); });
-    $('#permalinkBtn').addEventListener('click', () => { navigator.clipboard?.writeText(location.href); const s = $('#permalinkBtn').querySelector('span'); s.textContent = 'Copied'; setTimeout(() => s.textContent = 'Permalink', 1200); });
+    $('#permalinkBtn').addEventListener('click', () => { navigator.clipboard?.writeText(currentPermalink()); const s = $('#permalinkBtn').querySelector('span'); s.textContent = 'Copied'; setTimeout(() => s.textContent = 'Permalink', 1200); });
 
     /* ===================== Self-test ===================== */
     function selfTest() {
@@ -2338,8 +2340,11 @@
       applyPreset('assistant', 'customer_support'); deriveOverrides(); assert('external derives guardrails on', state.overrides.guardrails === true);
       // metrics sanity
       applyPreset('assistant', 'expert_copilot'); const m = computeMetrics(); assert('cost opt ≤ naive', m.costOpt <= m.costNaive); assert('peak ≥ avg', m.volPeak >= m.volAvg);
-      // permalink round-trip
-      applyPreset('assistant', 'expert_copilot'); const enc = encodeState(); const snap = JSON.stringify(state.inputs); decodeState(enc); assert('permalink round-trip', JSON.stringify(state.inputs) === snap);
+      // permalink round-trip: inputs, overrides, cost overrides, and the custom flag survive encode then decode
+      applyPreset('assistant', 'expert_copilot'); state.custom = true; state.costOverrides = { BigQuery: 1234 }; state.overrides.routingSplit = 55;
+      const snap = JSON.stringify({ c: state.custom, i: state.inputs, o: state.overrides, co: state.costOverrides });
+      decodeState(encodeState());
+      assert('permalink round-trip', JSON.stringify({ c: state.custom, i: state.inputs, o: state.overrides, co: state.costOverrides }) === snap);
       // hnsw moves a number
       applyPreset('assistant', 'highvol_qa'); state.overrides.hnswEf = 64; const r1 = computeMetrics().hnswRecall; state.overrides.hnswEf = 512; const r2 = computeMetrics().hnswRecall; assert('efSearch raises recall', r2 > r1);
       // context-cache split: higher reuse % lowers optimized cost
