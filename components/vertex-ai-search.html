@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vertex AI Search in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Vertex AI Search</div>
+    <span class="tag">Managed RAG engine (indexing + search)</span>
+    <h1>Vertex AI Search in agentic systems</h1>
+    <p class="lead">Vertex AI Search (part of Vertex AI Agent Builder) is a <b>managed retrieval engine</b>. It ingests
+      documents and crawls company websites into managed data stores, then serves <b>blended semantic plus keyword
+      search</b> with built-in reranking and optional grounded answers with citations. It replaces the do-it-yourself
+      stack of parse, chunk, embed, index, and rank with one service. The design rule that follows: make it the
+      <b>default whenever RAG is required</b>, because the data has to be indexed in every RAG system anyway, and drop to
+      a self-built Vector Search pipeline only when you need control the managed service does not expose. Reflects Google
+      Cloud guidance as of May 2026; verify against current Google Cloud docs.</p>
+
+    <h2>Role by purpose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Purpose</th>
+          <th>Recommended role</th>
+          <th>Fit</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Interactive assistant</td>
+          <td>Default managed RAG grounding over documents and crawled website content</td>
+          <td class="fit-strong">Strong</td>
+        </tr>
+        <tr>
+          <td>Task automation</td>
+          <td>Indexed-corpus or site retrieval when a run needs grounding, rather than live lookups</td>
+          <td class="fit-cond">Conditional</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>You need RAG and want documents and company website pages indexed without assembling a parse, chunk, embed,
+            and index pipeline yourself.</li>
+          <li>Fast time to value: connectors for Cloud Storage, BigQuery, and websites (by URL pattern), with managed
+            parsing, chunking, embedding, and a managed index.</li>
+          <li>Blended semantic plus keyword retrieval with built-in reranking and optional grounded answers with
+            citations, out of the box.</li>
+          <li>Crawling and indexing company website or OSINT pages by URL pattern (basic or advanced website
+            indexing).</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>You need a custom chunker, a specific embedding model, or fine ANN tuning (HNSW M and efSearch). Use Vertex
+            AI Vector Search with your own pipeline.</li>
+          <li>You run on-prem or self-host the stack. Managed Vertex AI Search is a Google Cloud service.</li>
+          <li>You already operate a vector database (AlloyDB pgvector, Elasticsearch) and want to keep retrieval
+            there.</li>
+          <li>Purely transactional or analytical lookups with no semantic retrieval. Use the right database instead.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Choosing Vertex AI Search vs. alternatives</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency / cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Full control of chunking, embeddings, and ANN tuning</td>
+          <td>Vertex AI Vector Search + Document AI pipeline</td>
+          <td>around 12 ms; per index node-hour plus pipeline</td>
+        </tr>
+        <tr>
+          <td>Postgres plus vector in one engine, SQL pre-filtering</td>
+          <td>AlloyDB (pgvector)</td>
+          <td>low ms; per vCPU and storage</td>
+        </tr>
+        <tr>
+          <td>Hybrid lexical plus vector with self-hosting</td>
+          <td>Elasticsearch</td>
+          <td>low tens of ms; more operational overhead</td>
+        </tr>
+        <tr>
+          <td>Managed end-to-end RAG over documents and websites</td>
+          <td>Vertex AI Search</td>
+          <td>tens of ms; per query plus index storage</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> managed blended retrieval in the tens of milliseconds, comfortably inside an interactive
+        budget. The crawl, parse, and embed work is offline, so it never sits on the request path.</li>
+      <li><b>Cost:</b> billed per search query plus index (data store) storage per GiB-month, with extra for advanced
+        features such as LLM-powered summarization and for website crawling. Spend tracks query volume and indexed data
+        size rather than node-hours. Treat any figure as a rough range and verify current Google Cloud pricing.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Data stores:</b> create an unstructured data store for documents (Cloud Storage or BigQuery) and a website
+        data store for site pages by URL pattern. Advanced website indexing crawls and refreshes pages on a
+        schedule.</li>
+      <li><b>Blended search and rerank:</b> the engine fuses semantic and keyword signals and reranks, so you do not wire
+        BM25 and a separate reranker yourself.</li>
+      <li><b>Grounded answers:</b> use the answer and grounding APIs to return cited summaries, or return passages and let
+        your own model generate the response.</li>
+      <li><b>Freshness:</b> set a re-crawl and re-index cadence that matches how fast the source documents and pages
+        change. The index is only as fresh as the last run.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>In the designer this is the <b>Indexing and retrieval engine</b> input, set to <b>Managed: Vertex AI Search</b> by
+      default whenever retrieval is on. The architecture diagram shows it as the store that retrieval reads, fed by a
+      dashed offline branch from the index sources (documents and website). Switching the engine to <b>Self-built</b>
+      reveals the Vector DB, HNSW, and ingestion-separation knobs and swaps the bill of materials to Document AI,
+      Dataflow, a vector database, and BM25.</p>
+    <div class="note"><b>Default for RAG.</b> Because every RAG system must index its data first, the tool defaults to
+      managed Vertex AI Search when retrieval is on, and treats the self-built Vector Search pipeline as the opt-in
+      alternative for teams that need the extra control.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/generative-ai-app-builder/docs/introduction">Introduction to
+          Vertex AI Search (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/generative-ai-app-builder/docs/create-data-store-es">Create a
+          search data store, including website data stores (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/overview">Vertex AI Vector
+          Search overview, the self-built alternative (Google Cloud Docs)</a></li>
+      <li><a class="src"
+          href="https://medium.com/google-cloud/the-gcp-rag-spectrum-vertex-ai-search-rag-engine-and-vector-search-which-one-should-you-use-f56d50720d5a">The
+          GCP RAG Spectrum: Vertex AI Search, RAG Engine, and Vector Search (Medium)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

@@ -535,6 +535,7 @@
 
     .sev.cost,
     .sev.quality,
+    .sev.freshness,
     .sev.caching {
       background: #16302a;
       color: var(--retr);
@@ -1199,24 +1200,30 @@
             <option value="rerank">Hybrid + reranker</option>
           </select>
         </div>
-        <div class="ctl" data-ov="metadataPrefilter" data-vis="retr"><label>Metadata pre-filter</label>
+        <div class="ctl" data-ov="ragEngine" data-vis="retr"><label>Indexing &amp; retrieval engine</label>
+          <select data-bind="overrides.ragEngine">
+            <option value="vais">Managed: Vertex AI Search</option>
+            <option value="selfbuilt">Self-built: Vector Search + pipeline</option>
+          </select>
+        </div>
+        <div class="ctl" data-ov="metadataPrefilter" data-vis="selfbuilt"><label>Metadata pre-filter</label>
           <input type="checkbox" data-bind="overrides.metadataPrefilter">
         </div>
-        <div class="ctl" data-ov="vectorDB" data-vis="retr"><label>Vector DB</label>
+        <div class="ctl" data-ov="vectorDB" data-vis="selfbuilt"><label>Vector DB</label>
           <select data-bind="overrides.vectorDB">
             <option value="vertex">Vertex Vector Search</option>
             <option value="alloydb">AlloyDB (pgvector)</option>
             <option value="elastic">Elasticsearch hybrid</option>
           </select>
         </div>
-        <div class="ctl" data-ov="ingestionSep" data-vis="retr"><label>Ingestion separation</label>
+        <div class="ctl" data-ov="ingestionSep" data-vis="selfbuilt"><label>Ingestion separation</label>
           <input type="checkbox" data-bind="overrides.ingestionSep">
         </div>
-        <div class="ctl" data-ov="hnswM" data-vis="retr"><label>HNSW M</label>
+        <div class="ctl" data-ov="hnswM" data-vis="selfbuilt"><label>HNSW M</label>
           <input type="range" min="8" max="64" step="4" data-bind="overrides.hnswM"><output class="val"
             data-out="overrides.hnswM"></output>
         </div>
-        <div class="ctl" data-ov="hnswEf" data-vis="retr"><label>HNSW efSearch</label>
+        <div class="ctl" data-ov="hnswEf" data-vis="selfbuilt"><label>HNSW efSearch</label>
           <input type="range" min="16" max="512" step="16" data-bind="overrides.hnswEf"><output class="val"
             data-out="overrides.hnswEf"></output>
         </div>
@@ -1389,6 +1396,8 @@
       // BigQuery on-demand grounding read: assume ~50 MB scanned per request (the latency model already adds one
       // BigQuery scan per request), billed at $6.25/TiB after the 1 TiB/mo free tier, plus a fixed dataset size.
       bqScanMB: 50, bqStorageGB: 200, bqOnDemandPerTiB: 6.25,
+      // Vertex AI Search (managed RAG): ~$3 per 1k search queries + index storage $/GiB-mo + a website data store base.
+      vais: { perQuery: 0.003, storageGiB: 5, websiteBase: 30 },
       hnsw: { a: 0.5, b: 120, baseMs: 8 },
       lat: { gateway: 40, retrieval: 70, rerank: 80, ttft: 400, perOutTokMs: 5, bigqueryScan: 1200, webGround: 600, onpremCall: 400, guardrails: 30, qualityGate: 80 },
     };
@@ -1418,7 +1427,7 @@
       deployment: 'gcp', multiRegion: true,
       pattern: 'multi', numAgents: 4, reactMaxIter: 6, platform: 'adk',
       reasoningModel: 'gemini-35-flash', fastModel: 'gemini-3-flash', smartRouting: true, routingSplit: 70, judgeDiversity: false,
-      retrieval: 'rerank', metadataPrefilter: true, vectorDB: 'vertex', ingestionSep: false, hnswM: 32, hnswEf: 128,
+      ragEngine: 'vais', retrieval: 'rerank', metadataPrefilter: true, vectorDB: 'vertex', ingestionSep: false, hnswM: 32, hnswEf: 128,
       gateway: true, auditLog: true, rulesEngine: true, sandbox: false,
       stateStore: 'redis_spanner', contextCache: true, reuseInputPct: 50,
       accelerator: 'h100', quant: 'fp8', pagedAttn: true, gpuTier: 'cud_3y', gpuUtil: 70,
@@ -1475,6 +1484,7 @@
         lock('reasoningModel', 'llama4-selfhost', 'On-prem → open-weight self-hosted model (no token-metered API)', 'on-prem');
         lock('fastModel', 'llama4-selfhost', 'On-prem → open-weight self-hosted model (no token-metered API)', 'on-prem');
         lock('smartRouting', false, 'On-prem single open model → routing n/a', 'on-prem');
+        lock('ragEngine', 'selfbuilt', 'On-prem → self-built pipeline (managed Vertex AI Search is cloud-only)', 'on-prem');
         if (o.vectorDB === 'vertex') lock('vectorDB', 'elastic', 'On-prem → self-hosted vector DB', 'on-prem');
       } else {
         // Managed/hybrid path uses token-metered APIs - never leave a model stuck on the
@@ -1558,8 +1568,9 @@
         const out = i.tokensOut * mm.out / 1e6;
         return { fresh, cached, out, total: fresh + cached + out };
       };
-      // Live grounding: one grounded search per action when a web source is wired ($/1k calls).
-      const groundPerCall = i.dataSources.includes('web') ? (rm.grounding || 0) / 1000 : 0;
+      // Web is indexed offline now (crawled into the store, costed in costSummary), so it is no longer
+      // a per-request live search. Live grounding stays a model capability, wired to no source here.
+      const groundPerCall = 0;
       // Naive baseline: reasoning model, no context cache, no routing, no response cache.
       const naiveTok = i.tokensIn * rm.in / 1e6 + i.tokensOut * rm.out / 1e6;
       m.costNaive = dailyActions * (naiveTok + groundPerCall) * 365;
@@ -1584,7 +1595,6 @@
       const groundSubs = [];
       if (['hybrid', 'dense', 'rerank'].includes(o.retrieval)) groundSubs.push({ label: 'Vector / hybrid retrieval', ms: L.retrieval });
       if (i.dataSources.includes('bigquery')) groundSubs.push({ label: 'BigQuery scan', ms: L.bigqueryScan });
-      if (i.dataSources.includes('web')) groundSubs.push({ label: 'Web grounding', ms: L.webGround });
       if (i.dataSources.includes('onprem')) groundSubs.push({ label: 'On-prem call', ms: L.onpremCall });
       const grounding = groundSubs.length ? Math.max(...groundSubs.map(s => s.ms)) : 0;
       const parts = [];
@@ -1659,7 +1669,7 @@
       // cost
       if (!o.contextCache && i.tokensIn >= 3000) add('cost', 'Largest cheap win: enable context cache on the reused system prompt - cached input bills at the model cache-read rate (~10% of input).', 'input cost↓', 'contextCache');
       if (o.contextCache && i.tokensIn >= 3000 && (o.reuseInputPct || 0) < 40) add('cost', 'Context cache on but low reuse % - set reusable-input toward your real shared-prompt/retrieved fraction to capture the discount.', 'input cost↓', 'reuseInputPct');
-      if (i.dataSources.includes('web') && (modelById(o.reasoningModel).grounding || 0) > 0 && !o.autocomplete) add('cost', 'Live web grounding is billed per search - autocomplete + response cache cut repeat grounded calls on the popular head.', 'grounding↓', 'autocomplete');
+      if (i.dataSources.includes('web')) add('freshness', 'Crawled website content is indexed offline, so answers are only as fresh as the last crawl - set a re-crawl cadence that matches how fast the pages change.', '', 'web');
       if (!o.smartRouting) add('cost', 'Route lookups to the fast model; reserve the reasoning model for hard queries.', '', 'smartRouting');
       // latency budget: warn when measured p95 exceeds the SLO for the chosen preset, for example
       // when a slow source (BigQuery, Web/OSINT, on-prem) is forced back onto the request path
@@ -1675,6 +1685,10 @@
 
     /* ===================== Diagram ===================== */
     const SRC_LABEL = { bigquery: 'BigQuery', onprem: 'On-prem', vector: 'Vector', stream: 'Stream', kg: 'KG', web: 'Web', doc_corpus: 'Corpus' };
+    // Which sources are indexed offline (crawled/parsed/embedded into the vector store) vs read live at query time.
+    const INDEXED_SRC = ['doc_corpus', 'web'];
+    const LIVE_SRC = ['bigquery', 'onprem', 'kg', 'stream'];
+    const INDEXED_LABEL = { doc_corpus: 'Docs', web: 'Website' };
     const AGENT_ROLES = { assistant: ['Q&A', 'summarize', 'draft', 'policy', 'compare', 'extract', 'plan', 'translate'], automation: ['code-gen', 'review', 'test', 'docs', 'migrate', 'plan'] };
     const roleList = (p, n) => { const r = AGENT_ROLES[p]; return n <= r.length ? r.slice(0, n).join(' · ') : r.join(' · ') + ` +${n - r.length}`; };
     const srcList = arr => arr.map(s => SRC_LABEL[s] || s).join(' · ');
@@ -1690,8 +1704,11 @@
       Retr: 'Narrows candidates in stages (metadata pre-filter → dense + BM25 → rerank) so the model is grounded on only the most relevant passages.',
       Sand: 'Runs PII-sensitive or untrusted tool execution in an ephemeral, isolated instance that is wiped after each use, so sensitive data and side-effects never persist.',
       LLM: 'The reasoning and fast models. Smart routing sends easy lookups to the cheap model and hard queries to the reasoning model.',
-      Data: 'The grounding sources (vector store, BigQuery, document corpus, and so on) that retrieval and the orchestrator read from.',
-      Ingest: 'Turns source documents into searchable chunks and embeddings (parse → chunk → embed → index). Run separately so re-indexing and backfills do not disturb live serving.',
+      Store: 'The index that retrieval reads at query time. Managed (Vertex AI Search) or self-built (Vertex AI Vector Search + BM25). Populated offline by the ingestion branch, never at request time.',
+      Idx: 'The content indexed offline into the store: the document corpus and crawled company website pages. Re-crawled and re-embedded on a schedule, so the index is only as fresh as the last run.',
+      Live: 'Sources queried live at request time (BigQuery text-to-SQL, on-prem DB, knowledge graph, streaming), not pre-indexed.',
+      DocAI: 'Parses source documents and pages into clean structured text (layout, tables, OCR) before chunking and embedding.',
+      Emb: 'Splits parsed content into chunks, embeds them, and writes the vectors plus a BM25 index into the store.',
       Obs: 'Traces, logs, and evals for every step, so quality, latency, and cost stay measurable and regressions get caught.',
       Appr: 'A human review step (maker-checker or dual-control) before a high-stakes action is committed.',
       Fb: 'Captures thumbs and reasons from users and feeds them into the eval set, so quality does not silently decay.',
@@ -1712,7 +1729,7 @@
       onprem: 'On-prem or legacy system of record reached over a private link. Latency varies, so validate it fits the SLO.',
       stream: 'Streaming or event source (Pub/Sub, Kafka) for fresh, near-real-time context.',
       kg: 'Knowledge graph for entity and relationship lookups and multi-hop reasoning.',
-      web: 'Live Web or OSINT grounding via search. Adds a network round-trip and is billed per search.',
+      web: 'Company website / OSINT pages crawled and indexed into the vector store (Vertex AI Search website data store, or a self-built crawler), then served from the index like any other RAG source.',
     };
     function dataSourceRoleText(v) {
       const subsec = state.purpose === 'assistant' && state.inputs.latencyPreset === 'subsecond';
@@ -1723,13 +1740,12 @@
         return t;
       }
       let t = DATA_SOURCE_ROLE[v] || '';
-      if (subsec && v === 'web') t += ' Off the sub-second hot path: cache grounded results or raise the SLO.';
       return t;
     }
     // Synchronous sources too slow for a sub-second interactive assistant. Selecting sub-second
     // auto-unchecks these once; the user can force them back on, and then the Latency p95 metric
     // flags the SLO miss rather than the source itself.
-    const LATENCY_HEAVY = ['bigquery', 'web', 'onprem'];
+    const LATENCY_HEAVY = ['bigquery', 'onprem'];   // slow query-time sources; web is indexed offline now, so it is fast at read time
     // p95 budget (ms) per latency preset on the assistant path. Exceeding it warns on the metric.
     const LATENCY_BUDGET = { subsecond: 1000, agentic: 6000, minutes: Infinity };
     // One-time adjustments when the SLO is changed to sub-second (all overridable afterward).
@@ -1745,6 +1761,7 @@
       'BigQuery': 'components/bigquery.html',
       // data and storage
       'Vertex AI Vector Search': 'components/vertex-vector-search.html',
+      'Vertex AI Search': 'components/vertex-ai-search.html',
       'Spanner': 'components/spanner.html',
       'AlloyDB': 'components/alloydb.html',
       'Memorystore': 'components/memorystore.html',
@@ -1778,6 +1795,23 @@
       const i = state.inputs, o = state.overrides; const L = []; L.push('flowchart TD');
       const cls = [];
       const node = (id, label, tier) => { cls.push(`class ${id} ${tier}`); return `${id}["${label}"]`; };
+      // Data plane: an offline index (written by the ingestion branch with a dashed/async edge,
+      // read by retrieval) plus live-queried sources. storeReader reads the index at query time;
+      // liveReader queries the live sources. Drawn from the selected sources, not the ingestion toggle.
+      const dataPlane = (storeReader, liveReader) => {
+        const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
+        const idxSel = i.dataSources.filter(s => INDEXED_SRC.includes(s));
+        const liveSel = i.dataSources.filter(s => LIVE_SRC.includes(s));
+        if (ragOn) {
+          const storeLabel = o.ragEngine === 'vais' ? 'Vertex AI Search ⊕' : 'Vector store + BM25 ⊕';
+          L.push(node('Store', storeLabel, 'data')); L.push(`${storeReader} --> Store`);
+          const idxLabel = idxSel.length ? idxSel.map(s => INDEXED_LABEL[s]).join(' / ') : 'Documents';
+          L.push(node('Idx', `Index sources<br/>${idxLabel}`, 'data'));
+          if (o.ragEngine === 'vais') { L.push('Idx -. crawl + parse + embed .-> Store'); }
+          else { L.push(node('DocAI', 'Document AI', 'data')); L.push(node('Emb', 'Chunk + embed', 'data')); L.push('Idx --> DocAI'); L.push('DocAI --> Emb'); L.push('Emb -. write .-> Store'); }
+        }
+        if (liveSel.length) { L.push(node('Live', `Live data<br/>${liveSel.map(s => SRC_LABEL[s]).join(' · ')}`, 'data')); L.push(`${liveReader} --> Live`); }
+      };
       if (state.purpose === 'assistant') {
         L.push(node('Client', 'Client UI', 'client'));
         let head = 'Client';
@@ -1788,9 +1822,8 @@
         if (['hybrid', 'dense', 'rerank'].includes(o.retrieval)) { L.push(node('Retr', 'Retrieval funnel ⊕', 'retr')); L.push('Orch --> Retr'); }
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Orch --> Sand'); }
         L.push(node('LLM', 'Model(s)', 'orch')); L.push('Orch --> LLM');
-        // data layer (grouped)
-        if (i.dataSources.length) { L.push(node('Data', `Data layer<br/>${srcList(i.dataSources)}`, 'data')); L.push((['hybrid', 'dense', 'rerank'].includes(o.retrieval) ? 'Retr' : 'Orch') + ' --> Data'); }
-        if (o.ingestionSep) { L.push(node('Ingest', 'Ingestion ⊕', 'data')); L.push('Ingest --> Data'); }
+        // data plane: offline index (written by ingestion, read by retrieval) + live sources
+        dataPlane(['hybrid', 'dense', 'rerank'].includes(o.retrieval) ? 'Retr' : 'Orch', 'Orch');
         L.push(node('Obs', 'Observability', 'obs')); L.push('Orch --> Obs');
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Approval gate', 'gov')); L.push('LLM --> Appr'); }
         if (o.feedbackLoop) { L.push(node('Fb', 'Feedback → eval', 'gov')); L.push('Obs --> Fb'); }
@@ -1805,7 +1838,7 @@
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Exec --> Sand'); }
         L.push(node('QG', 'Quality gate', 'retr')); L.push('Exec --> QG');
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human approval', 'gov')); L.push('QG --> Appr'); }
-        if (i.dataSources.length) { L.push(node('Data', `Data layer<br/>${srcList(i.dataSources)}`, 'data')); L.push('Exec --> Data'); }
+        dataPlane('Exec', 'Exec');
         L.push(node('State', 'State store (Spanner)', 'data')); L.push('Exec --> State');
         L.push(node('Obs', 'Observability', 'obs')); L.push('Exec --> Obs');
       }
@@ -1822,7 +1855,8 @@
     function buildComponentDiagram(key) {
       const map = {
         gateway: 'flowchart LR\n A[Auth IAM+mTLS]-->B[PII redact]-->C[Route]-->D[Semantic cache]-->E[Rate limit]-->F[Audit log]-->G[Provider fan-out]',
-        ingestion: 'flowchart LR\n A[Source]-->B[Document AI]-->C[Chunker]-->D[Embeddings]-->E[Vector + BM25 + GCS]',
+        ingestion: 'flowchart LR\n A[Docs + Website]-->B[Document AI / crawler]-->C[Chunker]-->D[Embeddings]-->E[Vector + BM25 + GCS]',
+        vais: 'flowchart LR\n A[Docs + Website data store]-->B[Managed parse + chunk + embed]-->C[Managed index]-->D[Blended semantic + keyword + rerank]-->E[Grounded answer + citations]',
         sandbox: 'flowchart LR\n A[Ephemeral instance + KMS]-->B[Entity resolution]-->C[Web/OSINT + risk rules]-->D[Memory wipe]-->E[Audit hash]',
         funnel: 'flowchart LR\n A[Metadata pre-filter]-->B[Dense + BM25 RRF]-->C[Reranker]-->D[Grounded generation + citations]',
       };
@@ -1872,6 +1906,7 @@
       v.multi = o.pattern === 'multi';
       v.routing = o.smartRouting;
       v.retr = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
+      v.selfbuilt = v.retr && o.ragEngine === 'selfbuilt';   // DIY knobs only when not on managed Vertex AI Search
       v.gw = o.gateway;
       v.ctxreuse = o.contextCache;
       v.selfhost = o.deployment !== 'gcp';
@@ -1925,7 +1960,7 @@
       const budgetLabel = m.latencyBudget >= 1000 ? (m.latencyBudget / 1000) + 's' : m.latencyBudget + 'ms';
       cards.push(card('Latency p95', fmt(m.latencyP95, 0) + ' <small>ms</small>' + (m.latencyOverBudget ? ` <span class="over">over ${budgetLabel} SLO</span>` : ''), 'critical path; grounding sources run in parallel (slowest wins); see the Latency breakdown below for line items', m.latencyOverBudget ? 'warn' : ''));
       if (m.indexGB > 0) cards.push(card('Vector index', fmt(m.indexGB, 1) + ' <small>GB · ' + m.shards + ' shard(s)</small>', 'chunks × dim × 4 bytes'));
-      if (m.indexGB > 0) cards.push(card('HNSW recall / ANN p95', (m.hnswRecall * 100).toFixed(1) + '% <small>/ ' + fmt(m.annP95, 0) + 'ms</small>', 'efSearch/M trade recall vs latency'));
+      if (m.indexGB > 0 && o.ragEngine === 'selfbuilt') cards.push(card('HNSW recall / ANN p95', (m.hnswRecall * 100).toFixed(1) + '% <small>/ ' + fmt(m.annP95, 0) + 'ms</small>', 'efSearch/M trade recall vs latency'));
       if (m.gpuNodes) cards.push(card('Self-host fleet', `${m.gpuNodes}×8 ${(o.accelerator || 'h100').toUpperCase()} <small>· ${money(m.gpuMo)}/mo</small>`, `${fmt(m.nodeTPS, 0)} tok/s/node · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util · sized by peak decode tok/s (peak QPS × out-tokens)`));
       cards.push(card('Storage / mo', money(m.storageMo), 'index + logs (illustrative)'));
       return cards.join('');
@@ -2027,9 +2062,15 @@
       const o = state.overrides, i = state.inputs, b = new Set();
       b.add(o.platform === 'adk' ? 'ADK + Agent Engine' : o.platform === 'studio' ? 'Agent Studio' : 'LangGraph');
       if (o.gateway) b.add('Apigee'); if (o.auditLog) b.add('Cloud Logging (WORM)');
-      if (['hybrid', 'dense', 'rerank'].includes(o.retrieval)) b.add(o.vectorDB === 'vertex' ? 'Vertex AI Vector Search' : o.vectorDB === 'alloydb' ? 'AlloyDB' : 'Elasticsearch');
-      if (o.retrieval === 'hybrid' || o.retrieval === 'rerank') b.add('BM25');
-      if (o.ingestionSep) b.add('Dataflow'); if (i.dataSources.includes('doc_corpus')) b.add('Document AI');
+      const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
+      if (ragOn && o.ragEngine === 'vais') {
+        b.add('Vertex AI Search');                              // managed: parse + chunk + embed + index + retrieve + rerank in one service
+      } else if (ragOn) {
+        b.add(o.vectorDB === 'vertex' ? 'Vertex AI Vector Search' : o.vectorDB === 'alloydb' ? 'AlloyDB' : 'Elasticsearch');
+        if (o.retrieval === 'hybrid' || o.retrieval === 'rerank') b.add('BM25');
+        if (o.ingestionSep || i.dataSources.includes('web')) b.add('Dataflow');   // ingestion / website crawl pipeline
+        if (i.dataSources.includes('doc_corpus')) b.add('Document AI');
+      }
       if (i.dataSources.includes('bigquery')) b.add('BigQuery');
       b.add(o.stateStore.includes('spanner') ? 'Spanner' : 'Cloud SQL'); if (o.stateStore.includes('redis')) b.add('Memorystore');
       b.add('Cloud Trace'); b.add('Vertex AI Eval');
@@ -2069,6 +2110,7 @@
         'Apigee': 120 + R * 0.0003,
         'Cloud Logging (WORM)': 5 + (Tk / 1e6) * 0.05,
         'Vertex AI Vector Search': idxNodes * 438,
+        'Vertex AI Search': R * K.vais.perQuery + (m.indexGB || 0) * K.vais.storageGiB + (i.dataSources.includes('web') ? K.vais.websiteBase : 0),
         'AlloyDB': 300 + m.indexGB * 0.3,
         'Elasticsearch': idxNodes * 450,
         'BM25': 0,
@@ -2136,7 +2178,7 @@
         }
         // drill-down on click (subset of boxes)
         let key = null;
-        if (/Gateway/.test(t)) key = 'gateway'; else if (/Ingestion/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
+        if (/Gateway/.test(t)) key = 'gateway'; else if (/Vertex AI Search/.test(t)) key = 'vais'; else if (/Vector store/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
         if (key) { n.classList.add('drill'); n.style.cursor = 'pointer'; n.addEventListener('click', () => openModal(key)); }
       });
     }
@@ -2144,8 +2186,8 @@
     /* ===================== Drill-down modal ===================== */
     async function openModal(key) {
       state.ui.openModal = key;
-      const titles = { gateway: 'LLM Gateway', ingestion: 'Ingestion pipeline', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
-      const purposeId = { gateway: 'GW', ingestion: 'Ingest', sandbox: 'Sand', funnel: 'Retr' };   // map modal key → node id in NODE_PURPOSE
+      const titles = { gateway: 'LLM Gateway', ingestion: 'Self-built ingestion pipeline', vais: 'Vertex AI Search', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
+      const purposeId = { gateway: 'GW', ingestion: 'Store', vais: 'Store', sandbox: 'Sand', funnel: 'Retr' };   // map modal key → node id in NODE_PURPOSE
       const subcalc = key === 'gateway' || key === 'ingestion';
       const root = $('#modal-root'), box = $('#modal');
       let inner = `<span class="close" id="modalClose">×</span><h2>${titles[key]} ${subcalc ? '· sub-calculator' : '· detail'}</h2>`;
@@ -2363,7 +2405,7 @@
       // context-cache split: higher reuse % lowers optimized cost
       applyPreset('assistant', 'expert_copilot'); state.overrides.contextCache = true; state.overrides.reuseInputPct = 0; const k0 = computeMetrics().costOpt; state.overrides.reuseInputPct = 80; const k1 = computeMetrics().costOpt; assert('higher reuse % lowers cost', k1 < k0);
       // grounding: wiring a web source raises naive cost (Gemini grounds)
-      applyPreset('assistant', 'expert_copilot'); const w0 = computeMetrics().costNaive; state.inputs.dataSources = [...state.inputs.dataSources, 'web']; const w1 = computeMetrics().costNaive; assert('web grounding adds cost', w1 > w0);
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides(); const wc0 = costSummary(computeMetrics()).totalYr; state.inputs.dataSources = [...state.inputs.dataSources, 'web']; const wc1 = costSummary(computeMetrics()).totalYr; assert('indexing web adds cost', wc1 > wc0);
       // self-host: int4 fleet ≤ bf16 fleet; on-prem collapses token cost to $0
       applyPreset('automation', 'regulated'); state.overrides.deployment = 'onprem'; deriveOverrides(); state.overrides.quant = 'bf16'; const nbf = computeMetrics().gpuNodes; state.overrides.quant = 'int4'; const ni4 = computeMetrics().gpuNodes; assert('int4 ≤ bf16 fleet', ni4 <= nbf); assert('on-prem zeroes token cost', computeMetrics().costOpt === 0);
       // automation trust-tier presets yield distinct governance postures, all derived from inputs
@@ -2408,9 +2450,26 @@
       applyPreset('assistant', 'expert_copilot'); state.inputs.latencyPreset = 'agentic'; state.inputs.dataSources = ['vector', 'bigquery']; deriveOverrides(); const lp1 = computeMetrics().latencyP95;
       state.inputs.dataSources = ['vector', 'bigquery', 'web', 'onprem']; const lp3 = computeMetrics().latencyP95;
       assert('parallel grounding takes max not sum', lp3 === lp1);
-      // automation diagram now includes a Data layer node for selected sources
+      // automation diagram includes a Live data node for query-time sources
       applyPreset('automation', 'regulated'); deriveOverrides();
-      assert('automation diagram shows data sources', /Data layer/.test(buildMainDiagram()));
+      assert('automation diagram shows live data sources', /Live data/.test(buildMainDiagram()));
+      // RAG defaults to managed Vertex AI Search; the engine drives the diagram, BOM, and knobs
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides();
+      assert('RAG engine defaults to managed Vertex AI Search', state.overrides.ragEngine === 'vais' && bomHtml().includes('Vertex AI Search'));
+      assert('managed collapses the DIY BOM + hides knobs', !bomHtml().includes('Document AI') && !bomHtml().includes('BM25') && !bomHtml().includes('Dataflow') && visibleInputs().selfbuilt === false);
+      const dgV = buildMainDiagram();
+      assert('main diagram shows offline ingestion into the store', /Index sources/.test(dgV) && /-\. crawl \+ parse \+ embed \.->/.test(dgV) && /Vertex AI Search/.test(dgV));
+      state.overrides.ragEngine = 'selfbuilt'; deriveOverrides();
+      assert('self-built restores the pipeline BOM + knobs', bomHtml().includes('Vertex AI Vector Search') && bomHtml().includes('Document AI') && bomHtml().includes('BM25') && visibleInputs().selfbuilt === true);
+      const dgS = buildMainDiagram();
+      assert('self-built diagram shows Document AI to vector store', /Document AI/.test(dgS) && /Chunk \+ embed/.test(dgS) && /Vector store \+ BM25/.test(dgS) && /-\. write \.->/.test(dgS));
+      applyPreset('assistant', 'expert_copilot'); state.overrides.deployment = 'onprem'; deriveOverrides();
+      assert('on-prem forces the self-built engine', state.overrides.ragEngine === 'selfbuilt' && !!state.locks.ragEngine);
+      // crawled website is an indexed source (offline), not a live query-time call
+      applyPreset('assistant', 'strictpii_verify'); deriveOverrides();
+      const dgW = buildMainDiagram();
+      assert('web is crawled + indexed, not live', /Index sources/.test(dgW) && /Website/.test(dgW));
+      assert('web no longer pins a latency-heavy query call', LATENCY_HEAVY.includes('web') === false);
       // component explainer: BigQuery is registered and its info icon opens the doc in a new tab
       assert('BigQuery doc registered', COMPONENT_DOC['BigQuery'] === 'components/bigquery.html');
       assert('info icon opens doc in new tab', /href="components\/bigquery\.html"/.test(infoIcon(COMPONENT_DOC['BigQuery'], 'BigQuery')) && /target="_blank"/.test(infoIcon('x', 'y')));
