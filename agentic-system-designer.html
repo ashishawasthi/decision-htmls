@@ -1358,7 +1358,9 @@
     try {
       const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
       mermaid = mod.default;
-      mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'dark', flowchart: { htmlLabels: true, curve: 'basis' } });
+      // Compact nodes: tight padding + a narrow wrapping width so multi-word labels break onto ~2 rows,
+      // and reduced rank/node spacing, which shrinks the overall LR width.
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'dark', flowchart: { htmlLabels: true, curve: 'basis', padding: 6, nodeSpacing: 28, rankSpacing: 45, wrappingWidth: 100 } });
       mermaidOK = true;
     } catch (e) { console.warn('Mermaid CDN unavailable - using source fallback', e); }
 
@@ -1816,7 +1818,7 @@
         const liveSel = i.dataSources.filter(s => LIVE_SRC.includes(s));
         const hasIndex = idxSel.length || i.dataSources.includes('vector');   // something to retrieve from
         if (ragOn && hasIndex) {
-          const storeLabel = o.ragEngine === 'vais' ? 'Vertex AI Search ⊕' : 'Vector store + BM25 ⊕';
+          const storeLabel = o.ragEngine === 'vais' ? 'Vertex AI Search ⊕' : 'Vector store + BM25 ⊕';
           L.push(node('Store', storeLabel, 'data', 'cyl')); L.push(`${storeReader} --> Store`);
           // offline ingestion branch only when there is content to crawl, parse, and index
           if (idxSel.length) {
@@ -1832,15 +1834,15 @@
       if (state.purpose === 'assistant') {
         L.push(node('Client', 'Client UI', 'client'));
         let head = 'Client';
-        if (o.gateway) { L.push(node('GW', 'LLM Gateway ⊕', 'gateway')); L.push('Client --> GW'); head = 'GW'; }
+        if (o.gateway) { L.push(node('GW', 'LLM Gateway ⊕', 'gateway')); L.push('Client --> GW'); head = 'GW'; }
         L.push(node('Orch', o.pattern === 'multi' ? `Orchestrator<br/>${roleList('assistant', o.numAgents)}` : 'Orchestrator<br/>single agent', 'orch'));
         if (o.guardrails) { L.push(node('Guard', 'Safety guardrails', 'gov')); L.push(`${head} --> Guard`); L.push('Guard --> Orch'); }
         else { L.push(`${head} --> Orch`); }
         // Self-built draws an explicit retrieval funnel (dense + BM25 + rerank); managed Vertex AI
         // Search performs retrieval inside its store node, so the orchestrator reads the store directly.
         const showFunnel = ['hybrid', 'dense', 'rerank'].includes(o.retrieval) && o.ragEngine === 'selfbuilt';
-        if (showFunnel) { L.push(node('Retr', 'Retrieval funnel ⊕', 'retr')); L.push('Orch --> Retr'); }
-        if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Orch --> Sand'); }
+        if (showFunnel) { L.push(node('Retr', 'Retrieval funnel ⊕', 'retr')); L.push('Orch --> Retr'); }
+        if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Orch --> Sand'); }
         L.push(node('LLM', 'Model(s)', 'orch')); L.push('Orch --> LLM');
         // data plane: offline index (written by ingestion, read by retrieval) + live sources
         dataPlane(showFunnel ? 'Retr' : 'Orch', 'Orch');
@@ -1850,12 +1852,12 @@
       } else {
         L.push(node('Trig', 'Trigger (ticket/event)', 'client'));
         let head = 'Trig';
-        if (o.gateway) { L.push(node('GW', 'LLM Gateway ⊕', 'gateway')); L.push(`${head} --> GW`); head = 'GW'; }
+        if (o.gateway) { L.push(node('GW', 'LLM Gateway ⊕', 'gateway')); L.push(`${head} --> GW`); head = 'GW'; }
         if (o.guardrails) { L.push(node('Guard', 'Safety guardrails', 'gov')); L.push(`${head} --> Guard`); head = 'Guard'; }
         L.push(node('Req', 'Requirement agent', 'orch')); L.push(`${head} --> Req`);
         L.push(node('Plan', 'Planner', 'orch')); L.push('Req --> Plan');
         L.push(node('Exec', `Executor pool<br/>${roleList('automation', o.numAgents)}`, 'orch')); L.push('Plan --> Exec');
-        if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Exec --> Sand'); }
+        if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Exec --> Sand'); }
         L.push(node('QG', 'Quality gate', 'retr')); L.push('Exec --> QG');
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human approval', 'gov')); L.push('QG --> Appr'); }
         dataPlane('Exec', 'Exec');
