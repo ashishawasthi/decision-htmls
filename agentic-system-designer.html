@@ -49,6 +49,12 @@
       background: var(--panel)
     }
 
+    header .permalink-top {
+      position: absolute;
+      top: 14px;
+      right: 20px
+    }
+
     .backlink {
       position: absolute;
       top: 11px;
@@ -84,7 +90,8 @@
     header h1 {
       margin: 0;
       font-size: 18px;
-      font-weight: 650
+      font-weight: 650;
+      padding-right: 108px
     }
 
     header .sub {
@@ -175,6 +182,25 @@
       align-items: center;
       gap: 8px;
       flex-wrap: wrap
+    }
+
+    /* action buttons between the Purpose card and Workload & SLO */
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center
+    }
+
+    .actions .mini {
+      font-size: 11px;
+      padding: 3px 7px;
+      gap: 4px
+    }
+
+    .actions .mini > svg {
+      width: 12px;
+      height: 12px
     }
 
     select,
@@ -909,15 +935,7 @@
 <body>
   <header>
     <a class="backlink" href="index.html" aria-label="Back to all tools" title="Back to all tools"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></a>
-    <h1>Agentic System Designer <span style="color:var(--muted);font-weight:400;font-size:13px">- design a GenAI system
-        on Google Cloud</span></h1>
-    <div class="sub">Toggle the inputs → the architecture, metrics, and risks recompute live. Deterministic, no LLM.
-      Pricing/heuristics ~May 2026.</div>
-  </header>
-
-  <div class="banner" id="intro">
-    <span class="x" id="introClose">×</span>
-    <b>How to read:</b> left → decisions · right → design · <b>⊕</b> → drill in · <span class="tag" style="margin:0">blue</span> → driving input · <span class="tag static" style="margin:0">grey</span> → fixed · <span class="lock" style="margin:0">🔒</span> → forced
+    <h1>Agentic System Designer <span style="color:var(--muted);font-weight:400;font-size:13px">- design a GenAI system on Google Cloud</span></h1>
     <div class="legend">
       <span><i style="background:var(--client)"></i>client</span>
       <span><i style="background:var(--gateway)"></i>gateway</span>
@@ -926,8 +944,11 @@
       <span><i style="background:var(--data)"></i>data</span>
       <span><i style="background:var(--obs)"></i>observability</span>
       <span><i style="background:var(--gov)"></i>governance</span>
+      <span><b>⊕</b> drill in</span>
+      <span><span class="tag" style="margin:0">blue</span> driving input</span>
     </div>
-  </div>
+    <button class="mini permalink-top" id="permalinkBtn" title="Copy permalink"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Permalink</span></button>
+  </header>
   <div id="testbar"></div>
 
   <main>
@@ -942,11 +963,11 @@
           </select>
         </div>
         <div class="chips" id="presetChips"></div>
-        <div class="row" style="margin-top:8px">
-          <button class="mini" id="resetBtn"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>Reset to preset defaults</span></button>
-          <button class="mini" id="permalinkBtn"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy permalink</span></button>
-          <button class="mini" id="pinBtn" title="Snapshot the current design, then see what changes against it"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Pin baseline</span></button>
-        </div>
+      </div>
+
+      <div class="actions">
+        <button class="mini" id="resetBtn" title="Reset to preset defaults"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>Reset</span></button>
+        <button class="mini" id="pinBtn" title="Snapshot the current design, then see what changes against it"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Pin</span></button>
       </div>
 
       <fieldset data-grp="workload">
@@ -1356,7 +1377,7 @@
       inputs: {}, overrides: {}, locks: {}, baseline: null,
       componentInputs: { gateway: { aggregateQPS: null, tenantApps: 1, providers: 1 }, ingestion: { docsPerDay: null, backfillDocs: 0, docPages: 40, reindexSLOmin: 5 } },
       costOverrides: {},   // BOM component name → user-entered $/mo (overrides any estimate)
-      ui: { openModal: null, introDismissed: false },
+      ui: { openModal: null },
     };
 
     /* ===================== Helpers ===================== */
@@ -2168,7 +2189,7 @@
     }
     function renderDiffStrip() {
       const strip = $('#diffStrip'), pin = $('#pinBtn');
-      if (pin) { pin.classList.toggle('pinned', !!state.baseline); const s = pin.querySelector('span'); if (s) s.textContent = state.baseline ? 'Re-pin baseline' : 'Pin baseline'; }
+      if (pin) { pin.classList.toggle('pinned', !!state.baseline); const s = pin.querySelector('span'); if (s) s.textContent = state.baseline ? 'Re-pin' : 'Pin'; }
       if (!state.baseline) { strip.hidden = true; strip.innerHTML = ''; return; }
       const d = computeDiff();
       const grp = (label, pills) => pills.length ? `<div class="diff-grp"><span class="dlabel">${label}</span>${pills.join('')}</div>` : '';
@@ -2188,10 +2209,9 @@
       if (v == null || isNaN(v)) delete state.costOverrides[t.dataset.cost]; else state.costOverrides[t.dataset.cost] = v;
       render(); schedulePermalink();
     });
-    $('#introClose').addEventListener('click', () => { $('#intro').style.display = 'none'; });
     const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
     $('#copyMermaid').addEventListener('click', () => { navigator.clipboard?.writeText(diagSrc); $('#copyMermaid').textContent = '✓'; setTimeout(() => $('#copyMermaid').innerHTML = COPY_ICON, 1200); });
-    $('#permalinkBtn').addEventListener('click', () => { navigator.clipboard?.writeText(location.href); const s = $('#permalinkBtn').querySelector('span'); s.textContent = 'Copied'; setTimeout(() => s.textContent = 'Copy permalink', 1200); });
+    $('#permalinkBtn').addEventListener('click', () => { navigator.clipboard?.writeText(location.href); const s = $('#permalinkBtn').querySelector('span'); s.textContent = 'Copied'; setTimeout(() => s.textContent = 'Permalink', 1200); });
 
     /* ===================== Self-test ===================== */
     function selfTest() {
