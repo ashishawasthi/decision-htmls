@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document AI in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Document AI</div>
+    <span class="tag">Document parsing and extraction</span>
+    <h1>Document AI in agentic systems</h1>
+    <p class="lead">Document AI runs OCR plus layout and entity extraction that turns PDFs, scans, and forms into
+      <b>structured, chunkable text</b>: it recovers reading order, tables, and form fields that a plain text dump loses.
+      The design rule that follows: use it at <b>ingestion time</b> to prepare a clean document corpus for embedding, not
+      on the live request path, and treat its per-page cost as a real line item in the ingestion budget. Reflects Google
+      Cloud guidance as of May 2026; verify against current Google Cloud docs.</p>
+
+    <h2>Role</h2>
+    <p>Document AI sits at the front of the ingestion pipeline as the parsing stage. It converts a raw document corpus
+      into structured text and layout that downstream chunking and embedding can use. The role does not flip between an
+      interactive assistant and task automation: in both cases it is an offline, batch-oriented preprocessor, and what
+      changes is only how often you reindex.</p>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>A corpus of PDFs, scans, or photographed documents where text is not already machine-readable and OCR is
+            required.</li>
+          <li>Documents whose meaning depends on layout: tables, multi-column pages, forms, and key-value pairs that a
+            naive extractor would scramble.</li>
+          <li>Preparing a corpus for embedding and RAG, where clean reading order and preserved tables directly improve
+            chunk quality and retrieval.</li>
+          <li>Structured extraction of named entities (dates, amounts, parties) from forms and contracts for downstream
+            grounding.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>On a sub-second request path: parsing is an ingestion step, not a per-query operation.</li>
+          <li>Corpora that are already clean text (Markdown, HTML, well-structured exports). A text-extraction library is
+            cheaper and adequate.</li>
+          <li>Very high document volumes where per-page parsing cost is not budgeted: it can dominate ingestion spend.</li>
+          <li>When the platform's built-in parsing already meets quality needs (for example Vertex AI Search ingesting
+            PDFs directly), adding a separate parser may be redundant.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency or cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Plain text from already-digital files, layout not critical</td>
+          <td>Text-extraction libraries (for example pdfplumber, Apache Tika)</td>
+          <td>near-free compute, but loses tables and layout</td>
+        </tr>
+        <tr>
+          <td>End-to-end managed RAG with adequate built-in parsing</td>
+          <td>Vertex AI Search built-in document parsing</td>
+          <td>folded into the search index cost</td>
+        </tr>
+        <tr>
+          <td>High-fidelity OCR plus layout, tables, and entities</td>
+          <td>Document AI</td>
+          <td>per page processed (a few cents per page, tier-dependent)</td>
+        </tr>
+        <tr>
+          <td>Existing third-party OCR contract or on-prem requirement</td>
+          <td>Third-party OCR engine</td>
+          <td>vendor-dependent; verify layout and table support</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> seconds per document for online processing, longer for full batch jobs. This is fine because
+        parsing runs at ingestion, off the request path, so nothing waits on a sub-second response.</li>
+      <li><b>Cost:</b> billed per page processed, with the rate depending on the processor type (for example general OCR
+        versus specialized form or layout parsers). Roughly a few cents per page as of May 2026; verify against current
+        Google Cloud pricing. At high document volumes this per-page charge can dominate total ingestion cost, so size it
+        against the corpus before committing.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Parse then chunk then embed:</b> run Document AI first to recover clean text and layout, then chunk on
+        structural boundaries (sections, tables, paragraphs) rather than fixed character windows, then embed. Better
+        parsing yields better chunks and better retrieval.</li>
+      <li><b>Batch over online:</b> for an initial corpus load or a reindex, use batch processing across the whole corpus
+        rather than per-document online calls. It is cheaper and matches the offline nature of ingestion.</li>
+      <li><b>Pick the right processor:</b> use the general or layout parser for broad corpora and a specialized processor
+        only where structured entity extraction earns its higher per-page cost.</li>
+      <li><b>Control volume:</b> deduplicate and filter the corpus before parsing so you do not pay per page for
+        documents you will never retrieve.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>In the designer, Document AI is the parsing stage inside the <b>Ingestion pipeline</b>, which is drillable, and it
+      backs the <b>Doc corpus</b> data source. When the corpus is PDFs or scans, the pipeline routes them through
+      Document AI before chunking and embedding.</p>
+    <div class="note"><b>It is an ingestion cost, not a serving cost.</b> Because parsing is per page and runs offline,
+      the tool accounts for Document AI in the ingestion budget rather than on the request path, so a chat-heavy
+      assistant does not get charged parsing latency per query, while a large-corpus build shows the per-page cost where
+      it actually lands.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/document-ai/docs/overview">Document AI overview (Google
+          Cloud Docs)</a></li>
+      <li><a class="src" href="https://cloud.google.com/document-ai/pricing">Document AI pricing (Google Cloud)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/document-ai/docs/layout-parse-chunk">Layout parser:
+          parse and chunk documents (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/generative-ai-app-builder/docs/parse-chunk-documents">Parse
+          and chunk documents for Vertex AI Search (Google Cloud Docs)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

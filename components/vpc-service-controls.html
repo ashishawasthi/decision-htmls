@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VPC Service Controls in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / VPC Service Controls</div>
+    <span class="tag">Data-exfiltration perimeter</span>
+    <h1>VPC Service Controls in agentic systems</h1>
+    <p class="lead">VPC Service Controls draws a <b>service perimeter</b> around Google Cloud resources that blocks data
+      movement to anything outside it, mitigating exfiltration and pinning data residency. The design rule that follows:
+      under strict-PII or regulated requirements, put the sensitive services inside a perimeter so credentials alone
+      cannot pull data out. It layers with IAM rather than replacing it: <b>IAM is identity and access, VPC Service
+      Controls is the perimeter</b>. Reflects Google Cloud guidance as of May 2026.</p>
+
+    <h2>Role</h2>
+    <p>The role does not differ by purpose. For both interactive assistants and task automation, VPC Service Controls is
+      the <b>perimeter that keeps data in</b>: it stops a stolen credential or misconfigured client from moving data to a
+      project or network outside the boundary, and it pins where data can be accessed. It is an org and infrastructure
+      control, not part of any single request path.</p>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Strict-PII or regulated systems that must prevent exfiltration even when an identity is compromised.</li>
+          <li>Data-residency commitments that require sensitive data to stay within a defined set of projects and
+            regions.</li>
+          <li>Designs that combine private connectivity (Private Service Connect) with a perimeter so traffic to Google
+            APIs never traverses the public internet.</li>
+          <li>Multi-project estates where you want a hard boundary around the services that hold sensitive data, on top of
+            IAM and Organization Policy.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Low-sensitivity workloads where the operational cost of perimeter design and ingress and egress rules is not
+            justified.</li>
+          <li>Treating it as access control: it does not grant or scope permissions. That is IAM, which you still need.</li>
+          <li>Treating it as field-level privacy: it does not redact PII inside the data. That is Cloud DLP.</li>
+          <li>Bolting it on late without planning ingress and egress rules: legitimate cross-project and partner flows can
+            break, so design the boundary up front.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency or cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>A boundary that blocks exfiltration and pins residency</td>
+          <td>VPC Service Controls</td>
+          <td>no direct charge; design and operations effort</td>
+        </tr>
+        <tr>
+          <td>Grant and scope who can do what</td>
+          <td>IAM (layers with, does not replace)</td>
+          <td>no direct charge; identity and access, not a perimeter</td>
+        </tr>
+        <tr>
+          <td>Org-wide guardrails on allowed configurations</td>
+          <td>Organization Policy (complementary)</td>
+          <td>no direct charge; constraints, not a data boundary</td>
+        </tr>
+        <tr>
+          <td>Private access to Google APIs without public IPs</td>
+          <td>Private Service Connect (complementary)</td>
+          <td>connectivity cost; private path, pairs with the perimeter</td>
+        </tr>
+        <tr>
+          <td>Remove sensitive data from content</td>
+          <td>Cloud DLP (complementary)</td>
+          <td>per unit processed; redaction, not a network boundary</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> the perimeter is enforced at the control plane on API access, so it adds no meaningful latency to
+        in-perimeter request paths. The real cost is design and operations: getting ingress and egress rules right.</li>
+      <li><b>Cost:</b> no direct charge for VPC Service Controls itself. Budget instead for the engineering effort to
+        design the perimeter and for any private connectivity (such as Private Service Connect) you pair with it.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Wrap the sensitive services:</b> place the projects and APIs that hold regulated data inside a perimeter so a
+        valid credential cannot move that data to a project or network outside it.</li>
+      <li><b>Layer with IAM, do not swap:</b> keep IAM for who can do what and add the perimeter for where data can go.
+        The two together give least privilege plus a hard exfiltration boundary.</li>
+      <li><b>Pair with private connectivity and Organization Policy:</b> use Private Service Connect so traffic to Google
+        APIs stays private, and Organization Policy to constrain configurations, so the perimeter is one layer of a
+        defense-in-depth posture.</li>
+      <li><b>Tuning:</b> define ingress and egress rules for legitimate cross-project, partner, and CI flows, use access
+        levels for trusted contexts, and test in dry-run mode before enforcing so you catch broken paths without an
+        outage.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>The designer exposes this as the <b>Data residency pin + VPC-SC</b> override. It draws the exfiltration and residency
+      boundary around the sensitive services in the architecture.</p>
+    <div class="note"><b>Strict-PII locks it on.</b> When sensitivity is set to strict-PII, the rules engine forces the
+      Data residency pin and VPC-SC on rather than leaving it optional, because residency and exfiltration control are
+      table stakes at that tier. It sits alongside, not in place of, IAM (identity and access) and Cloud DLP (field-level
+      redaction): the perimeter keeps data in, IAM controls who reaches it, and DLP removes sensitive values from the
+      content itself.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/vpc-service-controls/docs/overview">VPC Service Controls
+          overview (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/vpc-service-controls/docs/service-perimeters">Service
+          perimeter details and configuration (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/vpc-service-controls/docs/ingress-egress-rules">Ingress and
+          egress rules (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/private-service-connect/docs/overview">Private Service
+          Connect overview (Google Cloud Docs)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

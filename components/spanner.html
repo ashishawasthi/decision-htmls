@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spanner in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Spanner</div>
+    <span class="tag">Globally-distributed relational DB</span>
+    <h1>Spanner in agentic systems</h1>
+    <p class="lead">Spanner is a <b>strongly consistent, horizontally scalable</b> relational database with synchronous
+      multi-region replication. The one fact that drives the decision: it gives you SQL and multi-row transactions at
+      scale <b>without a single-primary bottleneck</b>, including multi-region active-active. The design rule that
+      follows: reach for Spanner when agent run state, sessions, or the transactional system of record must scale out or
+      stay available across regions; otherwise a single-primary database is cheaper. Reflects Google Cloud guidance as of
+      May 2026; verify against current Google Cloud docs.</p>
+
+    <h2>Role</h2>
+    <p>The role is the same across the tool's top-level purposes: Spanner is the <b>durable transactional state store</b>
+      and system of record. It holds agent run state, conversation and session records, and the business rows the agent
+      reads and writes transactionally. The reason to pick it over a cheaper database is scale and multi-region
+      availability, not a different function.</p>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Agent run state, sessions, and a transactional system of record that must scale horizontally beyond a
+            single primary.</li>
+          <li>Multi-region active-active, where reads and writes are served close to users with strong consistency.</li>
+          <li>Workloads that need both relational SQL and strong external consistency at high write throughput.</li>
+          <li>High-availability requirements (regional or multi-region) backed by a strong SLA, with no manual
+            sharding.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Small, single-region workloads where a single primary is plenty. Cloud SQL is cheaper and simpler.</li>
+          <li>Postgres-compatible HTAP or in-engine vector retrieval. Use AlloyDB.</li>
+          <li>Massive key-value point lookups with no need for SQL or multi-row transactions. Use Bigtable.</li>
+          <li>Large analytical scans and aggregation. Use BigQuery, and keep it off the request path.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency / cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Single-primary relational at smaller scale, lower cost</td>
+          <td>Cloud SQL</td>
+          <td>low ms; per instance and storage</td>
+        </tr>
+        <tr>
+          <td>Postgres-compatible with HTAP and pgvector</td>
+          <td>AlloyDB</td>
+          <td>low ms; per vCPU and storage</td>
+        </tr>
+        <tr>
+          <td>Key-value at massive scale, no SQL or multi-row transactions</td>
+          <td>Bigtable</td>
+          <td>single-digit ms; per node and storage</td>
+        </tr>
+        <tr>
+          <td>Horizontal scale plus multi-region active-active relational</td>
+          <td>Spanner</td>
+          <td>low single-digit to low tens of ms; per node plus storage</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> low single-digit to low tens of milliseconds for typical reads and writes, with multi-region
+        writes paying a cross-region commit cost for strong consistency. It is built to hold these numbers as you scale
+        out, not to beat a local single-node database on a single small query.</li>
+      <li><b>Cost:</b> billed per compute capacity (nodes or processing units) plus storage, with multi-region
+        configurations costing more than regional. Provisioned capacity means you pay for the footprint, not per query,
+        so right-sizing nodes matters. Treat any figure as a rough range and verify against current Google Cloud
+        pricing.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Run state and sessions:</b> store agent run records and session rows keyed so that related writes stay
+        local. Design the primary key to spread load and avoid hotspots (avoid monotonically increasing keys).</li>
+      <li><b>Interleaving and locality:</b> interleave child rows with their parent to keep transactional reads and
+        writes within a split, reducing latency for the common access pattern.</li>
+      <li><b>Multi-region active-active:</b> pick a multi-region configuration when you need writes served near users
+        with strong consistency; accept the higher write latency and cost that buys.</li>
+      <li><b>Stale reads where safe:</b> use bounded-staleness or exact-staleness reads for read-heavy paths that
+        tolerate slightly old data, to cut latency and load versus strong reads.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>In the designer this is the <b>State store</b> input. The core choice is Spanner versus Cloud SQL: pick Spanner
+      when the system needs horizontal scale or multi-region active-active, and Cloud SQL when a single primary in one
+      region is enough.</p>
+    <div class="note"><b>Multi-region active-active is the tell.</b> When the design calls for active-active writes
+      across regions with strong consistency, the tool steers state to Spanner. If you only need a single-region
+      primary, Cloud SQL keeps the cost lower for the same logical role.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/spanner/docs/overview">Spanner overview (Google Cloud
+          Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/spanner/docs/instance-configurations">Regional and
+          multi-region configurations (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/spanner/docs/schema-and-data-model">Schema design and
+          interleaved tables (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://cloud.google.com/spanner">Cloud Spanner product page (Google Cloud)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

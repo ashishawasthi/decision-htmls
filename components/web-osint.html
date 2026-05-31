@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web/OSINT in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Web/OSINT</div>
+    <span class="tag">Live web grounding</span>
+    <h1>Web/OSINT in agentic systems</h1>
+    <p class="lead">Web/OSINT is live grounding from web search (Vertex AI grounding with Google Search, or external
+      search and OSINT APIs) for <b>fresh, open-world information</b>. The one fact that drives the design: every call is
+      a <b>network round-trip to untrusted pages</b>, which costs latency, money, and brings source-trust and
+      prompt-injection risk. The rule that follows: keep it off the sub-second hot path, cache grounded results for the
+      popular head, and treat retrieved content as untrusted. Reflects Google Cloud guidance as of May 2026.</p>
+
+    <h2>Role by purpose</h2>
+    <p>The right place for web grounding flips with the top-level purpose you pick in the tool, because the cost is a live
+      round-trip that an asynchronous run can absorb but a sub-second request cannot.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Purpose</th>
+          <th>Recommended role</th>
+          <th>Fit</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Interactive assistant</td>
+          <td>Off the hot path: serve cached grounded results for the head, and gate a live search behind a relaxed
+            budget when freshness is essential</td>
+          <td class="fit-cond">Conditional</td>
+        </tr>
+        <tr>
+          <td>Task automation</td>
+          <td>Primary open-world grounding source; asynchronous runs absorb the per-search latency and cost</td>
+          <td class="fit-strong">Strong</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Open-world questions that need information no internal corpus holds: current events, public filings,
+            external entities, breaking facts.</li>
+          <li>Freshness that matters more than the few-hundred-millisecond cost of a live search, typically in
+            asynchronous automation.</li>
+          <li>Research and enrichment runs that gather and cite external sources as part of a longer workflow.</li>
+          <li>Reducing hallucination by grounding answers on retrieved pages with citations, rather than on model memory
+            alone.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>A sub-second interactive path. A live search round-trip will exceed the budget; this tool raises a warning
+            when web grounding sits on an assistant hot path.</li>
+          <li>Questions an internal, curated corpus already answers faster and under your control. Use vector RAG.</li>
+          <li>Feeding retrieved page content into tools or actions without treating it as untrusted. Open pages carry
+            prompt-injection risk.</li>
+          <li>High-volume identical lookups with no caching, which pile up per-search cost and latency needlessly.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency / cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Fresh, open-world facts the corpus lacks</td>
+          <td>Web/OSINT (Vertex grounding with Google Search or external APIs)</td>
+          <td>network round-trip, per-search cost</td>
+        </tr>
+        <tr>
+          <td>Controlled, fast retrieval over known content</td>
+          <td>Curated internal corpus with vector RAG</td>
+          <td>around 12 ms, no per-call search fee</td>
+        </tr>
+        <tr>
+          <td>Fresh external content but predictable retrieval cost</td>
+          <td>Scheduled crawl into the internal corpus</td>
+          <td>crawl-interval staleness, indexed reads</td>
+        </tr>
+        <tr>
+          <td>Popular repeated open-world queries</td>
+          <td>Cache grounded results for the head, search only the tail</td>
+          <td>cache hit is fast and free, miss pays the round-trip</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> a live search adds a network round-trip, commonly a few hundred milliseconds or more, which is
+        why it does not belong on a sub-second path. Caching the popular head removes that round-trip for repeat
+        queries.</li>
+      <li><b>Cost:</b> charged per search call (grounding requests or external search-API calls), so spend tracks query
+        volume. Rough ranges only as of May 2026; verify against current Google Cloud or provider docs, since the figure
+        is usage-dependent.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Cache the head:</b> store grounded results for popular queries so the request path serves a cache hit
+        instead of a live round-trip, and reserve live search for the long tail and time-sensitive asks.</li>
+      <li><b>Crawl ahead for predictability:</b> for content you can anticipate, run a scheduled crawl into the internal
+        corpus, turning a live per-search cost into a controlled indexed read.</li>
+      <li><b>Treat pages as untrusted:</b> retrieved content can carry prompt-injection. Isolate it from tool-calling and
+        action authority, prefer trusted source allowlists, and keep citations so a human can verify provenance.</li>
+      <li><b>Budget gating:</b> on an assistant, gate a live search behind a relaxed budget and a freshness check, rather
+        than calling it on every request.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>Web/OSINT is its own data source in the designer, and selecting it adds a grounding cost line for the per-search
+      spend. It is the source most likely to land on the wrong path, so the tool guards it explicitly.</p>
+    <div class="note"><b>The sub-second warning is the point.</b> When web grounding sits on an assistant hot path with a
+      sub-second SLO, the designer raises a latency warning, because a live search round-trip cannot meet that budget. On
+      the automation side it is a strong fit: asynchronous runs absorb the latency and cost, and caching plus a crawl
+      keep the popular head fast.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/overview">Grounding
+          overview for Vertex AI (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search">Ground
+          responses with Google Search (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://owasp.org/www-project-top-10-for-large-language-model-applications/">OWASP Top 10
+          for LLM Applications, prompt injection (OWASP)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/overview">Vertex AI Vector
+          Search overview (Google Cloud Docs)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

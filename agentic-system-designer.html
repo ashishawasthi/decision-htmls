@@ -1129,7 +1129,7 @@
   </main>
 
   <div class="foot">Deterministic design tool - advice is computed from formulas + rules, no runtime LLM. Illustrative
-    pricing/heuristics ~May 2026.</div>
+    pricing/heuristics ~May 2026.<br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</div>
 
   <div id="modal-root">
     <div class="modal" id="modal"></div>
@@ -1460,11 +1460,34 @@
     // BOM chip / display name. Add a file under components/ and a line here to light up its info icon.
     const COMPONENT_DOC = {
       'BigQuery': 'components/bigquery.html',
-      // 'Vertex AI Vector Search': 'components/vertex-vector-search.html',
-      // 'Spanner': 'components/spanner.html',  (see components/_TEMPLATE.html)
+      // data and storage
+      'Vertex AI Vector Search': 'components/vertex-vector-search.html',
+      'Spanner': 'components/spanner.html',
+      'AlloyDB': 'components/alloydb.html',
+      'Memorystore': 'components/memorystore.html',
+      // gateway and security
+      'Apigee': 'components/apigee.html',
+      'Model Armor': 'components/model-armor.html',
+      'Cloud DLP': 'components/cloud-dlp.html',
+      'VPC Service Controls': 'components/vpc-service-controls.html',
+      // ingestion and serving
+      'Document AI': 'components/document-ai.html',
+      'Dataflow': 'components/dataflow.html',
+      'vLLM on GKE': 'components/vllm-gke.html',
+      'ADK + Agent Engine': 'components/agent-engine.html',
+      // observability and governance
+      'Cloud Logging (WORM)': 'components/cloud-logging.html',
+      'Cloud Trace': 'components/cloud-trace.html',
+      'Vertex AI Eval': 'components/vertex-ai-eval.html',
+      'Vertex Model Registry': 'components/vertex-model-registry.html',
+      // data-source roles (not single GCP products)
+      'On-prem DB': 'components/onprem.html',
+      'Pub/Sub': 'components/pubsub.html',
+      'Knowledge graph': 'components/knowledge-graph.html',
+      'Web/OSINT': 'components/web-osint.html',
     };
     // Map a data-source checkbox value to its component name, so the icon can appear on the source too.
-    const DS_COMPONENT = { bigquery: 'BigQuery', vector: 'Vertex AI Vector Search', doc_corpus: 'Document AI', stream: 'Pub/Sub', onprem: 'On-prem DB' };
+    const DS_COMPONENT = { bigquery: 'BigQuery', vector: 'Vertex AI Vector Search', doc_corpus: 'Document AI', stream: 'Pub/Sub', onprem: 'On-prem DB', kg: 'Knowledge graph', web: 'Web/OSINT' };
     const INFO_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>';
     // Opens the explainer in a new tab. A relative href works over HTTP (GCS) and from a file:// open.
     const infoIcon = (doc, name) => `<a class="info-i" href="${doc}" target="_blank" rel="noopener" title="About ${name} (opens in new tab)" aria-label="About ${name}">${INFO_SVG}</a>`;

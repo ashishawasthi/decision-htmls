@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vertex Model Registry in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Vertex Model Registry</div>
+    <span class="tag">Model and version governance</span>
+    <h1>Vertex Model Registry in agentic systems</h1>
+    <p class="lead">Vertex Model Registry is the <b>system of record for what is in production</b>: it registers,
+      versions, and stages models (and, alongside it, prompt versions) with lineage, approvals, and rollback. Under a
+      model-risk regime the question "exactly which model and prompt served this decision, and who approved it" must
+      have a precise, auditable answer, and an ungoverned config string cannot give one. The design rule that follows:
+      when you are subject to model-risk governance, pin every production model and prompt to a registered, approved
+      version so promotion, audit, and rollback all run through one controlled path. Reflects Google Cloud guidance as of
+      May 2026; verify against current Google Cloud docs.</p>
+
+    <h2>Role</h2>
+    <p>The role does not change with the top-level purpose. For both an interactive assistant and a task automation
+      system, Vertex Model Registry is the <b>governed catalog and promotion control point</b> for models and versions.
+      Purpose may change how often you ship a new version, but not the need to register, approve, and be able to roll it
+      back.</p>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Model-risk governance regimes (regulated finance, healthcare, public sector) that require you to pin,
+            approve, and audit exactly what is in production.</li>
+          <li>Champion-challenger lifecycle management: track versions, stage a challenger, and promote or roll back with
+            a clear trail.</li>
+          <li>Lineage and reproducibility: tying a production version back to its training data, evaluation, and the
+            person who approved it.</li>
+          <li>Fast, controlled rollback to a known-good version when a release regresses.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Throwaway prototypes and demos where formal versioning and approvals add overhead without payoff.</li>
+          <li>As a serving or inference engine: the registry governs versions; Vertex AI endpoints serve them.</li>
+          <li>As your evaluation system: it stores results and approvals but does not compute quality. Use Vertex AI
+            Eval.</li>
+          <li>As the audit log of runtime events: that is Cloud Logging. The registry governs artifacts, not request
+            traffic.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency / cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Governed, auditable model and version control native to Vertex</td>
+          <td>Vertex Model Registry</td>
+          <td>minimal; metadata and storage only</td>
+        </tr>
+        <tr>
+          <td>A quick version pin with no governance overhead</td>
+          <td>DIY version pinning in config or a feature flag</td>
+          <td>near zero cost; no lineage or approvals</td>
+        </tr>
+        <tr>
+          <td>Open-source, portable registry across environments</td>
+          <td>MLflow Model Registry (self-managed)</td>
+          <td>low license cost; operational and hosting cost</td>
+        </tr>
+        <tr>
+          <td>Measuring quality of a version before promotion</td>
+          <td>Vertex AI Eval (feeds approval decisions)</td>
+          <td>per eval run; judge-model tokens</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> not on the request path. The registry is a control-plane and governance layer used at deploy
+        and audit time, not per inference, so it adds no user-facing latency. Serving latency comes from the endpoint, not
+        the registry.</li>
+      <li><b>Cost:</b> minimal. You pay for metadata and stored model artifacts, not for a running service, so the
+        registry itself is a rounding error next to inference spend. Cost stays in serving and evaluation, not in
+        governance. Verify current rates against Google Cloud pricing.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Register every production candidate:</b> push each model and prompt version into the registry with metadata,
+        rather than referencing a model by a loose string in app config.</li>
+      <li><b>Gate promotion on eval and approval:</b> require a passing Vertex AI Eval run and a recorded human approval
+        before a version is promoted to the production alias.</li>
+      <li><b>Serve through an alias, not a hard-coded ID:</b> point the endpoint at a stable production alias so a
+        rollback is repointing the alias to the previous version, fast and auditable.</li>
+      <li><b>Track lineage end to end:</b> link each version to its dataset, evaluation results, and approver so an
+        auditor can reconstruct exactly what served a decision and why.</li>
+      <li><b>Version prompts too:</b> treat the prompt as a governed artifact alongside the model, since in an agentic
+        system the prompt changes behavior as much as a weight update does.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>This component backs the <b>Model risk governance</b> override. When the scenario calls for model-risk controls,
+      the rules engine turns this on so production models and prompts are pinned to registered, approved versions instead
+      of floating on whatever config happens to be deployed.</p>
+    <div class="note"><b>It is the governance counterpart to eval.</b> The designer treats Vertex AI Eval as the measure
+      and the registry as the gate: eval scores a version, the registry records the approval and pins what ships, and
+      together they give you a defensible, reversible promotion path.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/model-registry/introduction">Introduction to
+          Vertex AI Model Registry (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/model-registry/versioning">Model versioning
+          with Model Registry (Google Cloud Docs)</a></li>
+      <li><a class="src"
+          href="https://docs.cloud.google.com/vertex-ai/docs/model-registry/model-deployment-monitoring">Model
+          governance and lineage on Vertex AI (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://cloud.google.com/vertex-ai/pricing">Vertex AI pricing</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

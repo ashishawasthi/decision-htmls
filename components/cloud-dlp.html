@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloud DLP in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Cloud DLP</div>
+    <span class="tag">Sensitive data protection (PII)</span>
+    <h1>Cloud DLP in agentic systems</h1>
+    <p class="lead">Cloud DLP (Sensitive Data Protection) <b>discovers, classifies, and de-identifies</b> sensitive data:
+      redact, mask, tokenize, or apply format-preserving encryption. The design rule that follows: redact PII in the
+      gateway and at ingestion, so the model never sees raw sensitive data and none of it lands in logs. Reflects Google
+      Cloud guidance as of May 2026.</p>
+
+    <h2>Role</h2>
+    <p>The role does not meaningfully change with purpose: Cloud DLP is the <b>de-identification step</b> that removes or
+      tokenizes PII before content reaches the model and before it is written to logs or storage. For an interactive
+      assistant it sits inline in the request and response path; for task automation it runs at ingestion and on outputs.
+      Either way the job is the same, and either way it is complementary to safety screening, not a substitute for it.</p>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Any regulated or strict-PII workload where prompts, retrieved content, or outputs may carry personal data
+            that must not reach the model in the clear.</li>
+          <li>Redacting before logging and tracing, so sensitive data is not persisted in observability or analytics
+            stores.</li>
+          <li>Ingestion pipelines that scan and de-identify documents before they enter a corpus or vector store.</li>
+          <li>Reversible tokenization or format-preserving encryption when a downstream step must re-identify data under
+            control.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Fully synthetic or already-anonymized data with no personal information to protect.</li>
+          <li>Treating it as a safety filter: it removes sensitive data but does not stop prompt injection, jailbreaks, or
+            malicious URLs. That is Model Armor.</li>
+          <li>Treating it as a network boundary: de-identification is not a perimeter. Data residency and exfiltration
+            control come from VPC Service Controls.</li>
+          <li>Hard real-time paths with no budget for an inline inspection call, unless you scope the scan tightly or run
+            it asynchronously.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency or cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Context-aware PII discovery and de-identification across many infoTypes</td>
+          <td>Cloud DLP</td>
+          <td>inline inspection call; priced per unit processed</td>
+        </tr>
+        <tr>
+          <td>Cheap, narrow pattern matches on a few known formats</td>
+          <td>DIY regex</td>
+          <td>near-zero cost; brittle, misses context and edge cases</td>
+        </tr>
+        <tr>
+          <td>Basic built-in redaction bundled with the model</td>
+          <td>Provider-native redaction</td>
+          <td>bundled; fewer types, less control, less portable</td>
+        </tr>
+        <tr>
+          <td>Stop unsafe content (injection, jailbreaks, leakage)</td>
+          <td>Model Armor (complementary)</td>
+          <td>safety screening, not de-identification</td>
+        </tr>
+        <tr>
+          <td>Keep data inside a residency or exfiltration boundary</td>
+          <td>VPC Service Controls (complementary)</td>
+          <td>network perimeter, not field-level redaction</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> an inline inspection and de-identification call on the content, so it adds a hop to the request
+        path. Cost scales with how much you scan, so narrow the infoTypes and payload on interactive paths and push bulk
+        scanning to ingestion.</li>
+      <li><b>Cost:</b> priced per unit processed (by bytes or records inspected), so spend tracks data volume and how
+        often you scan. It is usage-dependent; confirm the current per-unit rate against Google Cloud pricing.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Redact at the gateway:</b> de-identify prompts on the way in and responses on the way out at the Apigee or
+        orchestrator layer, so raw PII never reaches the model and never enters request logs.</li>
+      <li><b>De-identify at ingestion:</b> scan and redact documents before they enter a corpus or vector store, so the
+        retrieval path cannot surface sensitive data later.</li>
+      <li><b>Pair with Model Armor:</b> run both at the same seam. Guardrails stop unsafe content, DLP removes sensitive
+        data; together they cover safety and privacy on the same hop.</li>
+      <li><b>Tuning:</b> select the infoTypes that matter for your jurisdiction, choose a transform (redact, mask,
+        tokenize, or format-preserving encryption) per re-identification need, and scope scans to the smallest payload to
+        hold down latency and cost.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>The designer applies <b>always-on DLP redaction at the gateway</b> and turns on PII handling whenever sensitivity is
+      set to regulated or strict-PII. Enabling it places de-identification in front of the model and ahead of logging.</p>
+    <div class="note"><b>It is a distinct control from its neighbors.</b> The tool separates three jobs that are easy to
+      conflate: Cloud DLP removes sensitive data, Model Armor (Safety guardrails) screens unsafe content, and VPC Service
+      Controls draws the network perimeter. A strict-PII design typically switches on all three, since each closes a gap
+      the others do not.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/sensitive-data-protection/docs/sensitive-data-protection-overview">Sensitive
+          Data Protection (Cloud DLP) overview (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/sensitive-data-protection/docs/deidentify-sensitive-data">De-identifying
+          sensitive data (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/sensitive-data-protection/docs/infotypes-reference">InfoType
+          detector reference (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://cloud.google.com/sensitive-data-protection/pricing">Sensitive Data Protection
+          pricing (Google Cloud)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloud Trace in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Cloud Trace</div>
+    <span class="tag">Distributed tracing</span>
+    <h1>Cloud Trace in agentic systems</h1>
+    <p class="lead">Cloud Trace stitches the spans of a single agent request, gateway, retrieval, rerank, model call, and
+      each tool, into <b>one end-to-end timeline</b>, so you can see where the time actually went across a multi-step
+      run. An agent request is not a single call; it is a tree of nested calls, and without a trace you are guessing
+      which hop blew the latency budget. The design rule that follows: instrument with OpenTelemetry from day one so
+      every step carries a span, and let the trace, not a hunch, tell you what to optimize. Reflects Google Cloud
+      guidance as of May 2026; verify against current Google Cloud docs.</p>
+
+    <h2>Role</h2>
+    <p>The role is the same for an interactive assistant and a task automation system: Cloud Trace is the
+      <b>request-path latency and debugging lens</b>. The difference is emphasis. On an interactive assistant you mostly
+      chase tail latency against a tight SLO; on automation you mostly debug long, multi-step runs and find the slow hop
+      in a chain. The instrumentation and the role do not change.</p>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Finding the latency bottleneck in an agent request: is it retrieval, the reranker, the model, or a slow
+            tool call.</li>
+          <li>Debugging multi-step or multi-agent runs where the failure or stall is somewhere in a deep call tree.</li>
+          <li>Correlating a slow tail (p95 or p99) back to a specific span and dependency.</li>
+          <li>Systems already emitting OpenTelemetry spans, where Trace is the managed backend with no collector to run.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>As your audit or compliance record: traces are sampled and short-lived. Use Cloud Logging with a locked
+            bucket for that.</li>
+          <li>As a metrics or alerting system: use Cloud Monitoring for SLOs, dashboards, and alerts.</li>
+          <li>For output-quality questions like faithfulness or citation accuracy: that is Vertex AI Eval, not tracing.</li>
+          <li>Expecting useful traces with zero instrumentation: without spans there is nothing to see.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency / cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Managed tracing backend, native to Google Cloud, OTel-based</td>
+          <td>Cloud Trace</td>
+          <td>per span ingested; small free monthly allowance</td>
+        </tr>
+        <tr>
+          <td>Unified APM with traces, metrics, and logs in one vendor</td>
+          <td>Datadog, Honeycomb, or similar third-party APM</td>
+          <td>per host or per-span event; licensing-driven</td>
+        </tr>
+        <tr>
+          <td>Full control over storage and query, self-hosted</td>
+          <td>DIY span logging or self-managed Jaeger / Tempo</td>
+          <td>low license cost; high operational cost</td>
+        </tr>
+        <tr>
+          <td>SLOs, dashboards, and alerting on latency</td>
+          <td>Cloud Monitoring (alongside Trace)</td>
+          <td>per metric / time series</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> negligible on the request path. Spans are exported asynchronously and reporting is designed to
+        be low overhead, so tracing does not meaningfully add to user-facing latency. Sampling keeps overhead and cost
+        in check on high-traffic paths.</li>
+      <li><b>Cost:</b> driven by spans ingested. A typical shape as of May 2026 is a free allowance of spans per month,
+        then a small per-million-spans charge beyond it. Sampling rate is the main cost lever: trace every request in low
+        traffic, sample a fraction at high volume. Verify current rates against Google Cloud pricing.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Instrument with OpenTelemetry:</b> emit spans from each stage (gateway, retrieval, rerank, model, tools) and
+        export to Cloud Trace. OTel keeps you portable: the same instrumentation can target another backend later.</li>
+      <li><b>Propagate context across hops:</b> pass trace context through every service and tool call so the spans join
+        into one trace instead of fragmenting into disconnected pieces.</li>
+      <li><b>Annotate spans with attributes:</b> tag model name, token counts, retrieval-doc counts, and cache hits so a
+        slow trace explains itself rather than just showing a duration.</li>
+      <li><b>Tune sampling:</b> head-based sampling controls cost; keep a high rate in staging and on low-traffic paths,
+        lower it on hot paths, and bias toward keeping slow or errored traces.</li>
+      <li><b>Correlate with logs and metrics:</b> carry the trace ID into Cloud Logging entries so you can jump from a log
+        line to its full trace, and watch latency SLOs in Cloud Monitoring.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>This component backs the always-on observability row labelled <b>Live trace</b>: distributed tracing is treated as
+      a baseline capability of any serious agentic deployment, not an optional add-on, so it stays on across presets.</p>
+    <div class="note"><b>It is the real-world counterpart to the latency model.</b> The designer estimates each stage's
+      latency (gateway, retrieval, rerank, model, tools) to compute an end-to-end budget; Cloud Trace is how you measure
+      those same stages in production and check the estimate against what actually ran.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/trace/docs/overview">Cloud Trace overview (Google Cloud
+          Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/trace/docs/setup">Instrument applications with OpenTelemetry
+          for Cloud Trace (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/trace/docs/trace-context">Trace context propagation (Google
+          Cloud Docs)</a></li>
+      <li><a class="src" href="https://cloud.google.com/stackdriver/pricing">Google Cloud Observability pricing (Cloud
+          Trace)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

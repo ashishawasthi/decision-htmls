@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloud Logging (WORM) in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Cloud Logging (WORM)</div>
+    <span class="tag">Immutable audit logging</span>
+    <h1>Cloud Logging (WORM) in agentic systems</h1>
+    <p class="lead">Cloud Logging centralizes logs across the agent stack, and a <b>locked retention bucket</b> turns a
+      log bucket into write-once-read-many storage: once a retention period is locked, no one, not even a project owner,
+      can shorten it or delete entries before it expires. That single property is what makes it admissible as a
+      tamper-evident audit trail. The design rule that follows: reach for it when an auditor or regulator must trust that
+      the record was not edited after the fact, and pair it with redaction so the immutable record never freezes raw
+      PII in place. Reflects Google Cloud guidance as of May 2026; verify against current Google Cloud docs.</p>
+
+    <h2>Role</h2>
+    <p>The role does not change with the top-level purpose: in both an interactive assistant and a task automation
+      system, Cloud Logging with a locked bucket is the <b>tamper-evident system of record</b> for audit and forensic
+      events. What changes is volume and event mix, not the role.</p>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Regulated audit requirements (finance, healthcare, public sector) where you must prove the log was not
+            altered or pruned after an event.</li>
+          <li>Security forensics and incident response, where a defensible timeline of agent actions, tool calls, and
+            data access matters.</li>
+          <li>Recording prompt, tool-invocation, and decision events for governance regimes that demand retention for a
+            fixed number of years.</li>
+          <li>Meeting legal hold or chain-of-custody expectations on operational logs.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>General app debugging where standard, non-locked buckets are cheaper and stay flexible.</li>
+          <li>Storing raw PII or secrets in the log body: a locked bucket means you cannot delete the bad entry. Redact
+            first.</li>
+          <li>High-cardinality metrics or traces: use Cloud Monitoring and Cloud Trace, not the audit log.</li>
+          <li>As a queryable feature store or analytics warehouse. Route to BigQuery for analysis instead.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency / cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Tamper-evident, retention-locked audit trail</td>
+          <td>Cloud Logging with a locked retention bucket</td>
+          <td>per GB ingested plus storage</td>
+        </tr>
+        <tr>
+          <td>Operational logs you may need to edit or expire early</td>
+          <td>Standard Cloud Logging bucket (no lock)</td>
+          <td>per GB, lower retained volume</td>
+        </tr>
+        <tr>
+          <td>Central SIEM correlation across many sources</td>
+          <td>Export sink to Chronicle, Splunk, or a third-party SIEM</td>
+          <td>export is low cost; SIEM licensing dominates</td>
+        </tr>
+        <tr>
+          <td>Long-term cold archive at lowest storage cost</td>
+          <td>Sink to a Cloud Storage bucket with object retention / Bucket Lock</td>
+          <td>cents per GB-month, archival tier</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> not on any request path. Logging is asynchronous and fire-and-forget from the agent's
+        perspective, so it does not add to user-facing latency. Treat write durability, not speed, as the requirement.</li>
+      <li><b>Cost:</b> driven by GB ingested and GB stored over the retention window. A common pattern is a generous free
+        ingestion allowance per month, then a per-GB ingestion charge (roughly single-digit dollars per GB as of May
+        2026) plus per-GB-month storage beyond the included period. Locked long retention is the main cost lever, so log
+        deliberately and redact aggressively. Verify current rates against Google Cloud pricing.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Lock the retention, on purpose:</b> create a dedicated log bucket, set the retention period, then lock it.
+        Locking is irreversible, so size the period to the longest applicable regulatory requirement before you commit.</li>
+      <li><b>Redact before it lands:</b> run log payloads through Cloud DLP (Sensitive Data Protection) de-identification
+        so PII is masked or tokenized before the immutable write. A locked bucket cannot delete a leaked secret, so the
+        guardrail has to sit upstream.</li>
+      <li><b>Separate audit from debug:</b> route audit and security events to the locked bucket with a log sink and
+        filter, and keep noisy application logs in a standard, shorter-retention bucket to control cost.</li>
+      <li><b>Tighten access:</b> restrict read access to the audit bucket with IAM, and enable Data Access audit logs so
+        reads of the audit trail are themselves recorded.</li>
+      <li><b>Fan out where needed:</b> add an export sink to a SIEM or to BigQuery for correlation and analysis, while the
+        locked bucket remains the authoritative untouched copy.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>This component backs the <b>Immutable audit log</b> override. When you raise data sensitivity to the regulated
+      level, the rules engine locks this control on rather than leaving it optional, because at that sensitivity a
+      tamper-evident trail is a hard requirement, not a nice-to-have.</p>
+    <div class="note"><b>It travels with redaction.</b> The designer pairs the immutable audit log with PII redaction
+      (Cloud DLP) under regulated sensitivity, so the record you cannot edit is also a record that never captured raw
+      PII in the first place.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/logging/docs/buckets">Configure and manage log buckets
+          (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/logging/docs/routing/overview">Routing and storage overview:
+          log sinks and buckets (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/dlp/docs/deidentify-sensitive-data">De-identifying sensitive
+          data with Sensitive Data Protection (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://cloud.google.com/stackdriver/pricing">Google Cloud Observability pricing (Cloud
+          Logging)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

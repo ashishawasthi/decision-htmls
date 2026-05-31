@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vertex AI Vector Search in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Vertex AI Vector Search</div>
+    <span class="tag">Managed vector index (ANN retrieval)</span>
+    <h1>Vertex AI Vector Search in agentic systems</h1>
+    <p class="lead">Vertex AI Vector Search is a managed <b>approximate-nearest-neighbor (ANN)</b> index for semantic
+      retrieval, the backbone of RAG grounding. It returns the nearest vectors in <b>low single-digit to low tens of
+      milliseconds</b> (illustratively around 12 ms) even at billions of vectors. The design rule that follows: make it
+      the default grounding store on the synchronous RAG hot path, and reach for an alternative only when you need SQL
+      pre-filtering, hybrid lexical search, or a batch and cost-sensitive path. Reflects Google Cloud guidance as of May
+      2026; verify against current Google Cloud docs.</p>
+
+    <h2>Role</h2>
+    <p>The role does not change with the top-level purpose you pick in the tool: in both the interactive assistant and
+      task automation paths, Vertex AI Vector Search is the <b>semantic retrieval layer</b> that turns a query embedding
+      into the top-k candidate chunks the model grounds on. What changes is only how tight the surrounding latency budget
+      is.</p>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Synchronous RAG retrieval on an interactive request path, where the retrieval step must stay in the low
+            tens of milliseconds.</li>
+          <li>Large corpora, from millions to billions of chunks, where you want ANN recall to hold as the index
+            grows.</li>
+          <li>A dedicated, fully managed index you do not want to operate yourself (sharding, replication, query
+            serving).</li>
+          <li>Filtered ANN where a handful of metadata restricts (namespace, tags, numeric ranges) narrow the candidate
+            set without a full SQL engine.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Rich SQL pre-filtering or joins against transactional rows before the vector step. Use AlloyDB pgvector so
+            the filter and the vector live in one engine.</li>
+          <li>Hybrid lexical plus vector ranking (BM25 fused with embeddings). Elasticsearch handles this natively.</li>
+          <li>Batch or cost-sensitive similarity over data already in the warehouse. Use BigQuery vector search, which is
+            not interactive.</li>
+          <li>Tiny corpora where a single Postgres instance with pgvector is simpler and cheaper to run.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency / cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Postgres plus vector in one engine, SQL pre-filtering, transactional, moderate scale</td>
+          <td>AlloyDB (pgvector)</td>
+          <td>low ms; per vCPU and storage</td>
+        </tr>
+        <tr>
+          <td>Hybrid lexical plus vector ranking</td>
+          <td>Elasticsearch</td>
+          <td>low tens of ms; more operational overhead</td>
+        </tr>
+        <tr>
+          <td>Batch or cost-sensitive similarity over warehouse data</td>
+          <td>BigQuery vector search</td>
+          <td>hundreds of ms to seconds; per TB scanned</td>
+        </tr>
+        <tr>
+          <td>Default interactive semantic retrieval at large scale</td>
+          <td>Vertex AI Vector Search</td>
+          <td>around 12 ms; per deployed index node-hour</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> low single-digit to low tens of milliseconds for ANN queries (illustratively around 12 ms),
+        which is why it sits comfortably inside a sub-second interactive budget. Exact numbers depend on
+        dimensionality, the shard count, and your recall and latency tuning.</li>
+      <li><b>Cost:</b> billed per deployed index node-hour for the serving endpoint, so spend scales with index size and
+        the machine type and replica count you deploy, not directly with query volume. Larger corpora need more or
+        bigger nodes. Treat any dollar figure as a rough range and verify against current Google Cloud pricing.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Embed, then retrieve:</b> embed the query (for example with a Vertex AI text-embeddings model), query the
+        index for top-k, then pass the retrieved chunks to the model as grounding. Keep k small enough to fit the
+        context budget and the reranking step.</li>
+      <li><b>Recall versus latency:</b> the index is approximate. Tune the tree-AH or ScaNN build parameters and the
+        number of leaves searched to trade recall against latency; raise the search fraction only as far as your budget
+        allows.</li>
+      <li><b>Filtered ANN:</b> attach namespaces and numeric or token restricts to vectors so a query can scope to a
+        tenant, document set, or freshness window without a separate filtering engine.</li>
+      <li><b>Index freshness:</b> use streaming upserts for near-real-time additions, or periodic batch rebuilds for
+        bulk reloads. Size the index to your corpus chunk count, and re-shard as the corpus grows.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>In the designer this is the <b>Vector DB</b> retrieval input and the component behind the <b>Retrieval funnel</b>.
+      Selecting Vertex AI Vector Search models the default low-latency grounding store on the synchronous RAG path, and
+      the funnel sizing scales with the corpus chunk count you enter.</p>
+    <div class="note"><b>Index sizing tracks the corpus.</b> The number of chunks you feed the retrieval funnel drives
+      index size, which in turn drives the deployed node count and therefore cost. Growing the corpus moves both the
+      retrieval node-hour cost and, at the margins, the latency you should expect.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/overview">Vertex AI Vector
+          Search overview (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/configuring-indexes">Configure
+          index parameters for Vector Search (Google Cloud Docs)</a></li>
+      <li><a class="src"
+          href="https://cloud.google.com/blog/topics/developers-practitioners/find-anything-blazingly-fast-googles-vector-search-technology">Find
+          anything blazingly fast with Google's vector search technology (Google Cloud Blog)</a></li>
+      <li><a class="src"
+          href="https://medium.com/google-cloud/the-gcp-rag-spectrum-vertex-ai-search-rag-engine-and-vector-search-which-one-should-you-use-f56d50720d5a">The
+          GCP RAG Spectrum: Vertex AI Search, RAG Engine, and Vector Search (Medium)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

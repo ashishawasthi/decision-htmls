@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>On-prem DB in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / On-prem DB</div>
+    <span class="tag">On-prem system of record</span>
+    <h1>On-prem DB in agentic systems</h1>
+    <p class="lead">An on-prem DB is a legacy or on-premises database reached over <b>private connectivity</b> (Cloud
+      Interconnect, Cloud VPN, or Private Service Connect), used when the system of record <b>cannot move to the
+      cloud</b>. The one fact that drives the design: every read crosses your private link, so latency is variable and
+      often higher than a cloud-native store. The rule that follows: in an interactive request path, prove it fits the
+      latency budget; in asynchronous automation it is usually fine. Reflects Google Cloud guidance as of May 2026.</p>
+
+    <h2>Role by purpose</h2>
+    <p>The right place for an on-prem DB flips with the top-level purpose you pick in the tool, because the constraint is
+      the network round-trip rather than the data itself.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Purpose</th>
+          <th>Recommended role</th>
+          <th>Fit</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Interactive assistant</td>
+          <td>Grounding source only if it fits the latency budget, otherwise replicate or cache hot data into a cloud
+            store and read that on the hot path</td>
+          <td class="fit-cond">Conditional</td>
+        </tr>
+        <tr>
+          <td>Task automation</td>
+          <td>Primary system of record; asynchronous runs absorb the connectivity latency</td>
+          <td class="fit-strong">Strong</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>The authoritative record lives on-prem and residency, licensing, or security policy prevents it from
+            moving to the cloud.</li>
+          <li>Asynchronous automation with minute-scale budgets, where a slower or occasionally variable read does not
+            break an SLO.</li>
+          <li>Reads that comfortably fit the latency budget once you have measured the round-trip across Interconnect or
+            VPN, not guessed it.</li>
+          <li>A bridge during migration: the agent reads the on-prem source today while hot data is replicated into a
+            cloud store for the eventual cutover.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>A sub-second interactive hot path that depends on every request reaching the on-prem DB. A slow link or a
+            blip will blow the budget.</li>
+          <li>Designs with no fallback when connectivity degrades. A single private link is a reliability and
+            availability risk on the request path.</li>
+          <li>High-fan-out per-request lookups, where each call pays the round-trip and they stack up.</li>
+          <li>New greenfield data that has no residency constraint. Put it in a cloud-native store from the start.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency / cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Hot data off the request path, low ms reads</td>
+          <td>Replicate or cache into AlloyDB, Spanner, or Bigtable</td>
+          <td>single-digit ms</td>
+        </tr>
+        <tr>
+          <td>Authoritative record that cannot move</td>
+          <td>On-prem DB over Interconnect, VPN, or Private Service Connect</td>
+          <td>variable, often tens of ms or more plus link cost</td>
+        </tr>
+        <tr>
+          <td>Fresh changes streamed out of the legacy system</td>
+          <td>Change data capture into Pub/Sub, then a cloud store</td>
+          <td>near-real-time, pipeline cost</td>
+        </tr>
+        <tr>
+          <td>Lowest, most stable round-trip to on-prem</td>
+          <td>Dedicated or Partner Interconnect over Cloud VPN</td>
+          <td>committed bandwidth, higher fixed cost</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> variable and often higher than a cloud-native store, set by the private link and the distance
+        to your data center. Cloud VPN runs over the public internet and varies more; Dedicated Interconnect gives a
+        more predictable round-trip. Treat the figure as something to measure, not assume.</li>
+      <li><b>Cost:</b> dominated by the connectivity itself, not per-query. Interconnect carries port and VLAN
+        attachment charges plus egress; Cloud VPN carries tunnel and egress charges. Rough ranges only as of May 2026,
+        and they scale with committed bandwidth, so verify against current Google Cloud docs.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Keep it off the hot path:</b> for an assistant, replicate or cache the hot, frequently read data into a
+        cloud store (AlloyDB, Spanner, or Bigtable) and read that synchronously. Reach the on-prem DB only when you must
+        and the budget allows.</li>
+      <li><b>Stream, do not poll:</b> use change data capture into Pub/Sub to push fresh changes out of the legacy system
+        rather than having the agent reach back in on every request.</li>
+      <li><b>Harden the link:</b> prefer Dedicated or Partner Interconnect for a predictable round-trip, and design for
+        connectivity loss with a fallback or a clear degraded mode rather than a hard dependency.</li>
+      <li><b>Private and contained:</b> reach the source over Private Service Connect or private connectivity, set tight
+        timeouts and retries, and keep the access path inside your VPC.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>The On-prem DB data source pairs with the on-prem deployment option in the designer. Selecting it tells the tool
+      the system of record sits behind private connectivity rather than in a managed cloud store.</p>
+    <div class="note"><b>Latency is a decision, not a default.</b> On the assistant side the tool treats an on-prem read
+      as conditional: confirm it fits the request budget, or move hot data into a cloud store and read that instead. On
+      the automation side it is a strong fit, since asynchronous runs absorb the variable connectivity latency.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/network-connectivity/docs/interconnect/concepts/overview">Cloud
+          Interconnect overview (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/network-connectivity/docs/vpn/concepts/overview">Cloud VPN
+          overview (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/vpc/docs/private-service-connect">Private Service Connect
+          (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/datastream/docs/overview">Datastream change data capture
+          overview (Google Cloud Docs)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

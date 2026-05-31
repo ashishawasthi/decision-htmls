@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vertex AI Eval in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Vertex AI Eval</div>
+    <span class="tag">Managed LLM evaluation</span>
+    <h1>Vertex AI Eval in agentic systems</h1>
+    <p class="lead">Vertex AI Eval scores model and agent output on metrics you choose: computed metrics, model-based
+      (LLM-as-judge) scoring, and custom rubrics, usually run on a <b>sampled, asynchronous stream</b> of production
+      traffic rather than in the request path. Quality is not something a latency dashboard can see; you have to grade
+      the answers, and grading every response with a judge model is too slow and too costly to sit inline. The design
+      rule that follows: keep eval off the hot path, run it on a small async sample, and use it to watch faithfulness,
+      citation accuracy, and drift and to settle champion-challenger comparisons. Reflects Google Cloud guidance as of
+      May 2026; verify against current Google Cloud docs.</p>
+
+    <h2>Role</h2>
+    <p>The role is consistent across an interactive assistant and a task automation system: Vertex AI Eval is the
+      <b>output-quality measurement layer</b>, running asynchronously beside production. What shifts is the metric set.
+      An assistant leans on faithfulness, helpfulness, and citation accuracy; automation leans on task success and
+      schema or format correctness. The placement, sampled and async, stays the same.</p>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Measuring faithfulness and citation accuracy on RAG answers so you can catch hallucination and
+            ungrounded claims.</li>
+          <li>Drift monitoring: tracking whether quality metrics slide after a model, prompt, or data change.</li>
+          <li>Champion-challenger and A/B comparisons between two models or two prompts on the same inputs.</li>
+          <li>Standardizing on managed computed and model-based metrics instead of hand-rolling and maintaining a judge
+            harness.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Synchronous, per-request gating: a judge-model call in the hot path adds seconds and cost. Sample async
+            instead.</li>
+          <li>Latency or availability questions: that is Cloud Trace and Cloud Monitoring, not eval.</li>
+          <li>As the sole arbiter on high-stakes output: keep a human-in-the-loop review for the riskiest decisions.</li>
+          <li>Grading 100% of traffic with a large judge model: the token bill scales with volume; sample.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency / cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Managed eval with computed, model-based, and custom metrics on Vertex</td>
+          <td>Vertex AI Eval (Gen AI evaluation service)</td>
+          <td>per eval run; judge-model tokens dominate</td>
+        </tr>
+        <tr>
+          <td>Full control over metrics and harness, portable across clouds</td>
+          <td>DIY eval harness or open frameworks (for example Ragas, DeepEval)</td>
+          <td>low license cost; engineering and judge-token cost</td>
+        </tr>
+        <tr>
+          <td>Definitive sign-off on high-stakes or ambiguous output</td>
+          <td>Human review / human-in-the-loop labeling</td>
+          <td>slow and expensive per item; highest trust</td>
+        </tr>
+        <tr>
+          <td>Latency, errors, and availability, not quality</td>
+          <td>Cloud Trace and Cloud Monitoring</td>
+          <td>per span / per time series</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> not on the user-facing path. Eval runs asynchronously on a sampled stream, so judge-model
+        latency (often several seconds per item) never reaches the end user. Results land in dashboards and logs minutes
+        later, which is fine for monitoring and comparison.</li>
+      <li><b>Cost:</b> driven by eval runs, and within a run by judge-model tokens: a larger judge model and longer
+        inputs and outputs cost more per scored item. Sampling rate is the dominant lever, which is why production eval
+        runs on a small fraction of traffic rather than everything. Verify current rates against Google Cloud pricing.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Sample, don't grade everything:</b> tee a small percentage of production requests and responses to an async
+        eval job. This holds cost down while still surfacing drift and regressions.</li>
+      <li><b>Pick metrics that match the job:</b> faithfulness and groundedness for RAG, citation accuracy where sources
+        are shown, plus custom rubric metrics for domain-specific quality.</li>
+      <li><b>Choose the judge deliberately:</b> a stronger judge model grades better but costs more per item; match judge
+        size to how high-stakes the decision is.</li>
+      <li><b>Run champion-challenger:</b> score the current and candidate model or prompt on the same sampled inputs and
+        compare before you promote a change.</li>
+      <li><b>Close the loop with humans:</b> route low-scoring or flagged items to human review, and feed corrections
+        back to improve prompts, retrieval, and the eval rubric itself.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>This component backs the <b>Eval</b> observability row, shown running on roughly a 5% asynchronous sample of
+      production traffic. That number encodes the core rule: continuous quality measurement on a sampled stream, off the
+      request path, so you watch faithfulness and drift without paying judge-model cost on every call.</p>
+    <div class="note"><b>It anchors the human feedback loop.</b> The designer pairs sampled eval with human review:
+      automated scores flag the suspect responses, humans adjudicate the hardest cases, and that signal feeds back into
+      prompts, retrieval, and champion-challenger decisions.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/evaluation-overview">Gen
+          AI evaluation service overview (Google Cloud Docs)</a></li>
+      <li><a class="src"
+          href="https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/determine-eval">Define your evaluation
+          metrics (Google Cloud Docs)</a></li>
+      <li><a class="src"
+          href="https://cloud.google.com/blog/products/ai-machine-learning/enhancing-llm-quality-and-interpretability-with-the-vertex-gen-ai-evaluation-service">Enhancing
+          LLM quality with the Vertex Gen AI evaluation service (Google Cloud Blog)</a></li>
+      <li><a class="src" href="https://cloud.google.com/vertex-ai/pricing">Vertex AI pricing</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

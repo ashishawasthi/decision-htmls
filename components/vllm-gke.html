@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>vLLM on GKE in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / vLLM on GKE</div>
+    <span class="tag">Self-hosted open-weight serving</span>
+    <h1>vLLM on GKE in agentic systems</h1>
+    <p class="lead">vLLM serves open-weight models on GPU nodes with <b>paged attention and continuous batching</b>, which
+      pack many concurrent requests onto each accelerator and raise tokens-per-second-per-GPU; on Google Kubernetes
+      Engine you own the cluster, the GPUs, and the operations. The design rule that follows: <b>self-host only when the
+      driver is real</b>: data residency, control over an open model, or cost at sustained high volume. Below high steady
+      utilization, a managed token API usually wins. Reflects Google Cloud guidance as of May 2026; verify against
+      current Google Cloud docs.</p>
+
+    <h2>Role</h2>
+    <p>vLLM on GKE is the self-hosted serving tier for the model itself. It is the path you take when a managed model API
+      does not fit a hard constraint. The role does not change between an interactive assistant and task automation: in
+      both it is the inference backend. What changes is how you size the GPU fleet, since an interactive workload is
+      latency-bound while batch automation can run hotter for throughput.</p>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Data residency or isolation rules that require the model to run inside your own VPC and cluster.</li>
+          <li>Open-weight model control: a specific checkpoint, a fine-tune, or a version you must pin and not have
+            changed under you.</li>
+          <li>Sustained high volume where steady GPU utilization makes node-hours cheaper than per-token API pricing.</li>
+          <li>Teams with the platform skills to run GKE, GPUs, autoscaling, and upgrades in production.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Spiky or low-to-moderate traffic: idle GPUs are expensive, and a managed pay-per-token API is usually
+            cheaper and simpler.</li>
+          <li>Teams without GPU and Kubernetes operations capacity: the undifferentiated work is real.</li>
+          <li>When a managed frontier model is required for quality and no suitable open-weight model exists.</li>
+          <li>Fast prototypes and pilots, where standing up a GPU fleet is premature.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency or cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>No operations, elastic traffic, fastest path to production</td>
+          <td>Managed Vertex AI model APIs</td>
+          <td>pay per token; best below high steady utilization</td>
+        </tr>
+        <tr>
+          <td>Data residency, open-model control, cost at sustained scale</td>
+          <td>vLLM on GKE</td>
+          <td>GPU node-hours, sized to peak decode throughput</td>
+        </tr>
+        <tr>
+          <td>Maximum control, existing hardware, strict on-prem mandate</td>
+          <td>On-prem GPUs</td>
+          <td>highest fixed cost and lead time</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> driven by model size, accelerator, quantization, and batch fullness. Continuous batching keeps
+        throughput high under load but, pushed too hard, it trades per-request latency for tokens-per-second, so size for
+        peak decode throughput at your target tail latency.</li>
+      <li><b>Cost:</b> GPU node-hours, paid whether or not the GPUs are busy. The fleet is sized to peak decode
+        throughput, so the economics turn on utilization: high and steady favors self-hosting, spiky or low favors a
+        managed token API. Verify current accelerator rates against Google Cloud pricing.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Throughput features:</b> vLLM's paged attention and continuous batching are what make GPU self-hosting
+        economical; without them you would need far more accelerators for the same load.</li>
+      <li><b>Quantization:</b> serving a quantized checkpoint cuts memory and can raise throughput per GPU, often the
+        single biggest lever on fleet size and cost, at some accuracy cost to validate.</li>
+      <li><b>Fleet sizing:</b> choose the accelerator, set quantization, pick a pricing tier (on-demand, committed use,
+        or Spot), and target a utilization that holds tail latency, then size node count to peak decode throughput.</li>
+      <li><b>Autoscaling and headroom:</b> scale GPU node pools on load and keep enough headroom that batches do not
+        overflow at peak, which is when latency degrades fastest.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>Selecting the <b>self-host deployment path</b> in the designer routes the model serving tier to vLLM on GKE and
+      opens <b>GPU fleet sizing</b>: accelerator type, quantization, pricing tier, and target utilization.</p>
+    <div class="note"><b>The sizing inputs drive the cost.</b> The tool sizes the fleet to peak decode throughput from
+      those inputs, so changing accelerator, quantization, pricing tier, or utilization moves the estimate. That is what
+      lets you compare self-hosting against a managed token API at your own volume instead of in the abstract.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.vllm.ai/en/latest/">vLLM documentation (paged attention, continuous
+          batching)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/kubernetes-engine/docs/tutorials/serve-vllm-tpu">Serve
+          an LLM with vLLM on GKE (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/kubernetes-engine/docs/concepts/about-gpus">About GPUs in
+          GKE (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://cloud.google.com/compute/gpus-pricing">GPU pricing on Google Cloud</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

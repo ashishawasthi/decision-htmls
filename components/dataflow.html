@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dataflow in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Dataflow</div>
+    <span class="tag">Managed Apache Beam (stream and batch)</span>
+    <h1>Dataflow in agentic systems</h1>
+    <p class="lead">Dataflow is serverless Apache Beam for <b>streaming and batch</b> data processing: one programming
+      model that autoscales workers and runs the same pipeline over a live stream or a finite dataset. The design rule
+      that follows: make it the <b>ETL backbone</b> of a separated ingestion pipeline (parse, chunk, embed, index) so
+      that backfills and full reindexing run as their own jobs and never disturb live serving traffic. Reflects Google
+      Cloud guidance as of May 2026; verify against current Google Cloud docs.</p>
+
+    <h2>Role</h2>
+    <p>Dataflow is the data-processing engine that moves a corpus through parse, chunk, embed, and index. The role is the
+      same whether the system is an interactive assistant or task automation: it is an offline, scale-out ETL layer that
+      sits behind serving. What it buys you is separation: ingestion and reindexing become jobs you can run, scale, and
+      retry without touching the request path.</p>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>A large corpus where ingestion is separated from serving and a reindex must run without slowing or risking
+            live traffic.</li>
+          <li>Backfills and full reindexing: reprocess the whole corpus, recompute embeddings after a model change, and
+            rebuild the index as a discrete job.</li>
+          <li>Streaming ingestion: documents or events arriving continuously that need parse, chunk, and embed in near
+            real time.</li>
+          <li>Pipelines that need autoscaling and exactly-once processing over millions of items without you managing
+            worker fleets.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Small or one-off ingestion where a single Cloud Run job or script is simpler and cheaper to operate.</li>
+          <li>Pure step orchestration (run A, then B, then C) with little data crunching: a workflow or scheduler fits
+            better than a Beam pipeline.</li>
+          <li>On the synchronous request path: Dataflow is batch and streaming ETL, not a per-query service.</li>
+          <li>Teams with no Apache Beam familiarity and a tiny corpus, where the learning curve outweighs the benefit.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency or cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Simple, smaller-scale ingestion with no streaming</td>
+          <td>Cloud Run jobs</td>
+          <td>per vCPU and memory while running; lower floor</td>
+        </tr>
+        <tr>
+          <td>Orchestrate multi-step pipelines and dependencies</td>
+          <td>Cloud Composer (Airflow) or Workflows</td>
+          <td>environment or per-step cost; pairs with, not replaces, Dataflow</td>
+        </tr>
+        <tr>
+          <td>Large-scale streaming or batch ETL that autoscales</td>
+          <td>Dataflow</td>
+          <td>per vCPU-hour plus memory and shuffle</td>
+        </tr>
+        <tr>
+          <td>Quick experiment or tiny corpus</td>
+          <td>Manual scripts</td>
+          <td>near-free, but no autoscaling, retries, or operability</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> minutes to hours for a batch reindex, seconds of processing lag for streaming. It runs off the
+        request path, so this latency sits in ingestion, not in any serving SLO.</li>
+      <li><b>Cost:</b> billed per vCPU-hour plus memory, local disk, and data shuffled, summed across autoscaled workers.
+        Spend tracks how much data you process and how parallel you run, so a full reindex is a visible, bursty cost
+        rather than a steady one. Verify current rates against Google Cloud pricing.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Separated ingestion pipeline:</b> Dataflow reads the corpus, parses (often via Document AI), chunks, calls
+        the embedding model, and writes vectors to the index, all as a job decoupled from serving.</li>
+      <li><b>Reindex without downtime:</b> build a fresh index in a new job, then swap serving over to it, so live
+        traffic never reads a half-built index.</li>
+      <li><b>Batch versus streaming:</b> use batch for backfills and periodic full rebuilds; use streaming when documents
+        arrive continuously and freshness matters.</li>
+      <li><b>Tune throughput and cost:</b> right-size machine types, cap maximum workers, and use templates for
+            repeatable jobs. Pair with Cloud Composer or Workflows when ingestion is several ordered stages.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>Dataflow is what the designer reaches for behind the <b>Ingestion separation</b> override: the choice to run
+      parse, chunk, embed, and index as their own pipeline rather than inline with serving.</p>
+    <div class="note"><b>The rules engine locks it on for a large corpus.</b> Once corpus size crosses the threshold
+      where inline ingestion would threaten the serving path, the tool turns Ingestion separation on and keeps it on, so
+      a heavy reindex runs as a Dataflow job instead of competing with live traffic.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/dataflow/docs/overview">Dataflow overview (Google Cloud
+          Docs)</a></li>
+      <li><a class="src" href="https://cloud.google.com/dataflow/pricing">Dataflow pricing (Google Cloud)</a></li>
+      <li><a class="src" href="https://beam.apache.org/documentation/basics/">Apache Beam programming model basics
+          (Apache Beam)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/dataflow/docs/machine-learning">Dataflow ML and the
+          RunInference transform (Google Cloud Docs)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

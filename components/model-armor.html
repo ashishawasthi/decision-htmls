@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Model Armor in agentic systems</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #161b22;
+      --panel2: #1c2430;
+      --border: #2a3441;
+      --muted: #8b98a8;
+      --text: #e6edf3;
+      --accent: #4c9aff;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --err: #f85149;
+      --data: #e6c84c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+
+    .crumb a { color: var(--accent); text-decoration: none; }
+
+    .crumb a:hover { text-decoration: underline; }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--data);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 28px; margin: 0 0 8px; }
+
+    h2 {
+      font-size: 18px;
+      margin: 34px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    p, li { font-size: 14.5px; }
+
+    .lead { font-size: 16px; color: var(--text); }
+
+    .lead b { color: #fff; }
+
+    code {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+
+    thead th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+
+    td.fit-strong { color: var(--ok); font-weight: 600; }
+
+    td.fit-cond { color: var(--warn); font-weight: 600; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+
+    .card.use { border-left: 3px solid var(--ok); }
+
+    .card.avoid { border-left: 3px solid var(--err); }
+
+    .card h3 { margin-top: 0; }
+
+    ul { margin: 6px 0; padding-left: 20px; }
+
+    li { margin: 3px 0; }
+
+    .note {
+      background: rgba(76, 154, 255, .08);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      margin: 14px 0;
+    }
+
+    .note b { color: var(--text); }
+
+    a.src { color: var(--accent); text-decoration: none; }
+
+    a.src:hover { text-decoration: underline; }
+
+    .sources { font-size: 12.5px; color: var(--muted); }
+
+    .sources li { margin: 4px 0; }
+
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Model Armor</div>
+    <span class="tag">Managed LLM safety filtering</span>
+    <h1>Model Armor in agentic systems</h1>
+    <p class="lead">Model Armor is a <b>managed safety layer</b> that screens prompts and responses for prompt injection,
+      jailbreaks, sensitive-data leakage, and malicious URLs. It sits on the <b>input and output</b> of the model, usually
+      at the gateway or orchestrator. The design rule that follows: put it on both sides of any external-facing or
+      regulated system rather than trusting prompt instructions to keep the model safe. Reflects Google Cloud guidance as
+      of May 2026.</p>
+
+    <h2>Role by purpose</h2>
+    <p>What Model Armor protects against shifts with the top-level purpose you pick in the tool.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Purpose</th>
+          <th>Recommended role</th>
+          <th>Fit</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Interactive assistant</td>
+          <td>Inline guard on every user turn: screen the prompt for injection and jailbreaks, screen the response for
+            leakage and malicious URLs before it reaches the user</td>
+          <td class="fit-strong">Strong</td>
+        </tr>
+        <tr>
+          <td>Task automation</td>
+          <td>Guard on untrusted tool and document inputs feeding the model, and on any output that leaves the system, to
+            blunt indirect prompt injection from retrieved content</td>
+          <td class="fit-cond">Conditional</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>External-facing or public systems where users (or content the model retrieves) are untrusted and can attempt
+            injection or jailbreaks.</li>
+          <li>Regulated workloads that must demonstrate input and output screening with consistent, managed policies
+            rather than hand-rolled regex.</li>
+          <li>Agents that browse, read documents, or call tools, where indirect prompt injection rides in on retrieved
+            content.</li>
+          <li>Cases where you want screening decoupled from the model so it holds across model and provider swaps.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Fully internal, low-risk tools with only trusted inputs, where the added hop buys little.</li>
+          <li>Treating it as PII removal: it flags and blocks unsafe content but is not the de-identification engine. Pair
+            it with Cloud DLP.</li>
+          <li>Hard real-time paths with no budget for a synchronous screening call, unless you accept the latency or screen
+            asynchronously.</li>
+          <li>Assuming it replaces system-prompt hygiene, least-privilege tools, and output validation. It is one layer of
+            defense in depth, not the only one.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Alternatives, and how to choose</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>What you need</th>
+          <th>Use instead</th>
+          <th>Typical latency or cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Managed, multi-category screening with low operational burden</td>
+          <td>Model Armor</td>
+          <td>added screening call on input and output; per-unit cost</td>
+        </tr>
+        <tr>
+          <td>Cheap, narrow keyword or pattern blocks</td>
+          <td>DIY regex or classifier filters</td>
+          <td>near-zero cost; brittle, misses context and novel attacks</td>
+        </tr>
+        <tr>
+          <td>Full control or on-prem, open-weights guard</td>
+          <td>Self-hosted guard model (for example Llama Guard)</td>
+          <td>your own GPU inference cost; you operate and tune it</td>
+        </tr>
+        <tr>
+          <td>Basic built-in content blocking only</td>
+          <td>Provider-native safety filters</td>
+          <td>bundled with the model; fewer categories, less portable</td>
+        </tr>
+        <tr>
+          <td>Remove PII from prompts and logs</td>
+          <td>Cloud DLP (complementary, not a substitute)</td>
+          <td>per-unit processed; redaction, not safety screening</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Latency and cost profile</h2>
+    <ul>
+      <li><b>Latency:</b> each screen is an extra synchronous call on the prompt and again on the response, so it adds two
+        hops to an interactive turn. Budget for it on tight SLOs, or screen the lower-risk side asynchronously.</li>
+      <li><b>Cost:</b> priced per unit screened (by request and content size), so spend scales with traffic and prompt
+        and response length. It is usage-dependent; confirm the current per-unit rate and quotas against Google Cloud
+        pricing.</li>
+    </ul>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li><b>Both sides of the model:</b> sanitize the prompt before the model sees it and screen the response before it
+        reaches the user or downstream system. One-sided screening leaves a gap.</li>
+      <li><b>At the gateway or orchestrator:</b> placing it in the Apigee flow or the agent orchestrator gives one
+        consistent enforcement point across apps instead of per-app filters.</li>
+      <li><b>Pair with Cloud DLP:</b> guardrails stop unsafe content, DLP removes sensitive data. Run DLP redaction
+        alongside Model Armor so prompts are both safe and de-identified before the model and before logging.</li>
+      <li><b>Tuning:</b> set category thresholds and block or sanitize actions per risk tolerance, log detections for
+        review, and combine with least-privilege tools and output validation so screening is one layer of defense in
+        depth, not the only control.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>The designer exposes Model Armor as the <b>Safety guardrails</b> override, placed on the input and output of the
+      model in the architecture. Enabling it adds the screening layer that an external or regulated design needs.</p>
+    <div class="note"><b>The rules engine locks it on for exposed audiences.</b> When the audience is external or public,
+      the tool forces Safety guardrails on rather than leaving it optional, because an untrusted caller is the case Model
+      Armor exists for. PII redaction (Cloud DLP) is shown as a separate, complementary override: guardrails stop unsafe
+      content, DLP removes sensitive data, and a regulated design typically wants both.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/security-command-center/docs/model-armor-overview">Model
+          Armor overview (Google Cloud Docs)</a></li>
+      <li><a class="src"
+          href="https://cloud.google.com/blog/products/identity-security/introducing-model-armor-to-protect-your-ai-apps">Introducing
+          Model Armor to safeguard your AI applications (Google Cloud Blog)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/sensitive-data-protection/docs/sensitive-data-protection-overview">Sensitive
+          Data Protection (Cloud DLP) overview (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://owasp.org/www-project-top-10-for-large-language-model-applications/">OWASP Top 10
+          for LLM Applications</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>
