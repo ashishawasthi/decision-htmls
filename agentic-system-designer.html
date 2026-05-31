@@ -1873,7 +1873,7 @@
       const map = {
         gateway: 'flowchart LR\n A[Auth IAM+mTLS]-->B[PII redact]-->C[Route]-->D[Semantic cache]-->E[Rate limit]-->F[Audit log]-->G[Provider fan-out]',
         ingestion: 'flowchart LR\n A[Docs + Website]-->B[Document AI / crawler]-->C[Chunker]-->D[Embeddings]-->E[Vector + BM25 + GCS]',
-        vais: 'flowchart LR\n A[Docs + Website data store]-->B[Managed parse + chunk + embed]-->C[Managed index]-->D[Blended semantic + keyword + rerank]-->E[Grounded answer + citations]',
+        vais: 'flowchart LR\n A[Docs + Website data store]-->B[Managed parse + chunk + embed]-->C[Managed index]-->D[RRF (semantic + keyword) + rerank]-->E[Grounded answer + citations]',
         sandbox: 'flowchart LR\n A[Ephemeral instance + KMS]-->B[Entity resolution]-->C[Web/OSINT + risk rules]-->D[Memory wipe]-->E[Audit hash]',
         funnel: 'flowchart LR\n A[Metadata pre-filter]-->B[Dense + BM25 RRF]-->C[Reranker]-->D[Grounded generation + citations]',
       };
