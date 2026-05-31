@@ -1382,6 +1382,9 @@
         },
       },
       storageBQ: 0.02, storageGCS: 0.02, egress: 0.10, vsNodeHr: 0.6,
+      // BigQuery on-demand grounding read: assume ~50 MB scanned per request (the latency model already adds one
+      // BigQuery scan per request), billed at $6.25/TiB after the 1 TiB/mo free tier, plus a fixed dataset size.
+      bqScanMB: 50, bqStorageGB: 200, bqOnDemandPerTiB: 6.25,
       hnsw: { a: 0.5, b: 120, baseMs: 8 },
       lat: { gateway: 40, retrieval: 70, rerank: 80, ttft: 400, perOutTokMs: 5, bigqueryScan: 1200, webGround: 600, onpremCall: 400, guardrails: 30, qualityGate: 80 },
     };
@@ -1958,7 +1961,7 @@
       const s = costSummary(m);
       const costInput = (name, val, red) => `<input class="cost-in${red ? ' red' : ''}" data-cost="${name.replace(/"/g, '&quot;')}" type="number" min="0" step="1" value="${val != null ? Math.round(val) : ''}" placeholder="enter" aria-label="${name} monthly cost"><span class="permo">/mo</span>`;
       rows.push(grp('Platform &amp; infrastructure <small>($ / mo · editable)</small>'));
-      s.priced.forEach(x => rows.push(`<div class="cost-row"><span class="cl">${x.name} <small>${x.src === 'manual' ? 'manual' : 'est.'}</small></span><span class="cn">${costInput(x.name, x.mo, false)}</span></div>`));
+      s.priced.forEach(x => { const en = x.src === 'manual' ? null : BOM_EST_NOTE[x.name]; rows.push(`<div class="cost-row"><span class="cl"${en ? ` title="${en.why.replace(/"/g, '&quot;')}"` : ''}>${x.name} <small>${x.src === 'manual' ? 'manual' : ('est.' + (en ? ' · ' + en.note : ''))}</small></span><span class="cn">${costInput(x.name, x.mo, false)}</span></div>`); });
       s.red.forEach(x => rows.push(`<div class="cost-row red"><span class="cl" title="${(x.why || '').replace(/"/g, '&quot;')}">${x.name} <small>${x.short} · enter $/mo</small></span><span class="cn">${costInput(x.name, null, true)}</span></div>`));
       if (s.free.length) rows.push(`<div class="cost-row"><span class="cl">Included at no charge <small>${s.free.join(' · ')}</small></span><span class="cn">$0</span></div>`);
       rows.push(row('Platform $/mo', money(s.platMo) + (s.red.length ? ` <span class="cred">+${s.red.length} unpriced</span>` : ''), s.priced.length + ' priced', true));
@@ -2035,8 +2038,13 @@
 
     /* ===================== Platform cost model (illustrative ~May 2026, $/mo) ===================== */
     // Why a component is left for manual entry: it's usage-dependent, NOT lack of a public price.
-    const BOM_UNPRICED = {
-      'BigQuery': { short: 'usage-based, volume not modeled', why: 'BigQuery is priced publicly (~$6.25/TB scanned on-demand + ~$0.02/GB-mo storage), but the bytes your queries scan and the data you store aren\'t modeled here. Enter your own $/mo.' },
+    const BOM_UNPRICED = {};   // every component below is now modeled; the generic fallback still covers any future unpriced item
+    // Inline assumption shown next to an estimate whose per-request volume we had to assume rather than derive from inputs.
+    const BOM_EST_NOTE = {
+      'BigQuery': {
+        note: `~${K.bqScanMB} MB scanned/req`,
+        why: `On-demand BigQuery at $${K.bqOnDemandPerTiB}/TiB scanned, assuming ~${K.bqScanMB} MB per request (the model already adds one BigQuery scan per request on the grounding path) after the 1 TiB/mo free tier, plus ~${K.bqStorageGB} GB stored at $${K.storageBQ}/GB-mo. Partitioning and clustering can push the scan well below this; type your own $/mo to override.`,
+      },
     };
     const unpricedReason = name => BOM_UNPRICED[name] || { short: 'usage not modeled', why: 'Spend is usage-dependent and not modeled here. Enter your own $/mo estimate.' };
     // Returns an estimated monthly $ for a BOM component, 0 if bundled/free, or
@@ -2049,6 +2057,7 @@
       const dbNodes = Math.max(1, Math.ceil((m.volPeak || 0) / 100));
       const docsDay = (state.componentInputs.ingestion.docsPerDay ?? Math.round((i.corpusSize || 0) * 0.002));
       const pages = state.componentInputs.ingestion.docPages || 40;
+      const bqScanTiB = (R * K.bqScanMB) / 1048576;            // MiB scanned/mo → TiB (~1 grounding scan/req × bqScanMB)
       const P = {
         'ADK + Agent Engine': 40 + R * 0.0006,
         'Agent Studio': 40 + R * 0.0006,
@@ -2061,7 +2070,7 @@
         'BM25': 0,
         'Dataflow': docsDay > 0 ? 30 + docsDay * 0.02 : 0,
         'Document AI': docsDay * pages * 30.4 * 0.0015,
-        'BigQuery': null,                                        // query spend not modeled → manual
+        'BigQuery': Math.max(0, bqScanTiB - 1) * K.bqOnDemandPerTiB + Math.max(0, K.bqStorageGB - 10) * K.storageBQ,  // on-demand scan + storage; 1 TiB & 10 GiB/mo free
         'Spanner': dbNodes * 657 + m.indexGB * 0.3,
         'Cloud SQL': 200 + dbNodes * 120,
         'Memorystore': 70,
@@ -2367,12 +2376,16 @@
       assert('governance descriptor populated with reasons', Array.isArray(state.governance) && state.governance.length === 12 && state.governance.every(g => g.why));
       // editing diverges from the preset → Custom; applying a preset clears it
       state.custom = true; applyPreset('assistant', 'expert_copilot'); assert('applying a preset clears Custom', state.custom === false);
-      // BOM costing: platform adds to GenAI; BigQuery is unpriced until entered; override lifts total + clears red
+      // BOM costing: platform adds to GenAI; BigQuery is volume-modeled (scales with requests); override still wins
       applyPreset('assistant', 'expert_copilot'); state.costOverrides = {}; const cs0 = costSummary(computeMetrics());
       assert('platform cost > 0', cs0.platMo > 0 && cs0.totalYr > computeMetrics().costOpt);
-      assert('BigQuery unpriced by default', cs0.red.some(x => x.name === 'BigQuery'));
-      state.costOverrides['BigQuery'] = 1000; const cs1 = costSummary(computeMetrics());
-      assert('cost override lifts total + clears red', cs1.totalYr > cs0.totalYr && !cs1.red.some(x => x.name === 'BigQuery'));
+      assert('BigQuery is volume-modeled, not unpriced', cs0.priced.some(x => x.name === 'BigQuery') && !cs0.red.some(x => x.name === 'BigQuery'));
+      const bqLo = bomMonthlyCost('BigQuery', computeMetrics());
+      state.inputs.actionsPerDay *= 10; const bqHi = bomMonthlyCost('BigQuery', computeMetrics()); state.inputs.actionsPerDay /= 10;
+      assert('BigQuery scan cost scales with request volume', bqLo > 0 && bqHi > bqLo);
+      state.costOverrides['BigQuery'] = 1e6; const cs1 = costSummary(computeMetrics());
+      assert('cost override wins over estimate', cs1.totalYr > cs0.totalYr && cs1.priced.find(x => x.name === 'BigQuery').src === 'manual');
+      state.costOverrides = {};
       // sub-second adjust: prunes slow sources, ensures a vector store, biases routing to the fast model
       applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['bigquery', 'onprem']; state.overrides.routingSplit = 50; applySubSecondAdjust();
       assert('sub-second prunes slow sources + ensures vector', !state.inputs.dataSources.includes('bigquery') && !state.inputs.dataSources.includes('onprem') && state.inputs.dataSources.includes('vector') && state.overrides.routingSplit >= 85);
