@@ -1098,7 +1098,6 @@
           <div class="checks" id="dataSources">
             <label><input type="checkbox" name="dataSources" value="bigquery">BigQuery</label>
             <label><input type="checkbox" name="dataSources" value="onprem">On-prem DB</label>
-            <label><input type="checkbox" name="dataSources" value="vector">Vector store</label>
             <label><input type="checkbox" name="dataSources" value="stream">Streaming</label>
             <label><input type="checkbox" name="dataSources" value="kg">Knowledge graph</label>
             <label><input type="checkbox" name="dataSources" value="web">Web grounding</label>
@@ -1404,9 +1403,9 @@
     /* ===================== Presets (primary-input bundles) ===================== */
     const PRESETS = {
       assistant: {
-        expert_copilot: { label: 'Expert copilot', inputs: { actors: 1000, actionsPerDay: 10, burst: 5, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 4000, tokensOut: 800, audienceSensitivity: 'internal_regulated', dataSources: ['vector', 'bigquery', 'doc_corpus'], corpusSize: 2e6, freshness: 'eod', languages: ['en'] } },
-        highvol_qa: { label: 'High-volume Q&A', inputs: { actors: 20000, actionsPerDay: 50, burst: 6, activeHoursPerWeek: 120, latencyPreset: 'subsecond', tokensIn: 3000, tokensOut: 500, audienceSensitivity: 'internal_regulated', dataSources: ['vector', 'doc_corpus'], corpusSize: 1e7, freshness: 'static', languages: ['en'] } },
-        customer_support: { label: 'Customer support', inputs: { actors: 50000, actionsPerDay: 4, burst: 7, activeHoursPerWeek: 168, latencyPreset: 'agentic', tokensIn: 2500, tokensOut: 600, audienceSensitivity: 'external_enterprise', dataSources: ['vector', 'doc_corpus'], corpusSize: 5e5, freshness: 'eod', languages: ['en', 'zh'] } },
+        expert_copilot: { label: 'Expert copilot', inputs: { actors: 1000, actionsPerDay: 10, burst: 5, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 4000, tokensOut: 800, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'doc_corpus'], corpusSize: 2e6, freshness: 'eod', languages: ['en'] } },
+        highvol_qa: { label: 'High-volume Q&A', inputs: { actors: 20000, actionsPerDay: 50, burst: 6, activeHoursPerWeek: 120, latencyPreset: 'subsecond', tokensIn: 3000, tokensOut: 500, audienceSensitivity: 'internal_regulated', dataSources: ['doc_corpus'], corpusSize: 1e7, freshness: 'static', languages: ['en'] } },
+        customer_support: { label: 'Customer support', inputs: { actors: 50000, actionsPerDay: 4, burst: 7, activeHoursPerWeek: 168, latencyPreset: 'agentic', tokensIn: 2500, tokensOut: 600, audienceSensitivity: 'external_enterprise', dataSources: ['doc_corpus'], corpusSize: 5e5, freshness: 'eod', languages: ['en', 'zh'] } },
         strictpii_verify: { label: 'Strict-PII verification', inputs: { actors: 300, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 6000, tokensOut: 1000, audienceSensitivity: 'internal_strictpii', dataSources: ['web', 'kg', 'onprem'], corpusSize: 0, freshness: 'realtime', languages: ['en'] } },
       },
       automation: {
@@ -1462,9 +1461,9 @@
       // preset itself carries only first-level inputs. Governance is never seeded here - it is
       // derived purely from the inputs in deriveGovernance() and shown as a read-only output.
       if (purpose === 'automation') { state.overrides.retrieval = 'none'; state.overrides.pattern = 'multi'; state.overrides.numAgents = 5; state.overrides.stateStore = 'spanner'; }
-      // RAG retrieval only makes sense with an index or vector store behind it; default it off when the
+      // RAG retrieval only makes sense with an indexed source (corpus or website) behind it; default it off when the
       // preset carries only live or grounding sources (the user can still turn it on, which then prompts for a source).
-      if (!state.inputs.dataSources.some(s => ['vector', 'doc_corpus', 'website'].includes(s))) state.overrides.retrieval = 'none';
+      if (!state.inputs.dataSources.some(s => ['doc_corpus', 'website'].includes(s))) state.overrides.retrieval = 'none';
       // A sub-second assistant drops slow grounding sources the same way a manual switch does,
       // so both routes to a sub-second design land in the same place.
       if (purpose === 'assistant' && state.inputs.latencyPreset === 'subsecond') applySubSecondAdjust();
@@ -1652,14 +1651,14 @@
       const i = state.inputs, o = state.overrides, L = state.locks, out = [];
       const add = (sev, msg, save, src) => out.push({ sev, msg, save: save || '', src });
       const { aud, lvl } = sens(i.audienceSensitivity);
-      const qa = state.purpose === 'assistant' && (i.dataSources.includes('doc_corpus') || i.dataSources.includes('vector') || i.dataSources.includes('website'));
+      const qa = state.purpose === 'assistant' && (i.dataSources.includes('doc_corpus') || i.dataSources.includes('website'));
       // caching
       if (qa && !o.autocomplete) add('caching', 'Add query autocomplete - canonicalizes phrasings, lifts cache-hit ~5-15%→~40-60% at ≈zero inference cost.', 'cost↓ latency↓', 'autocomplete');
       if (o.autocomplete && !o.warming) add('caching', 'Precompute the top-N suggested queries offline → ≈$0 + ms latency on the popular head.', '', 'warming');
       // conflict
       if (i.latencyPreset === 'subsecond' && (o.pattern === 'multi' || o.retrieval === 'rerank')) add('conflict', 'Sub-second SLO + multi-agent/rerank can blow the TTFT budget - single-agent + cached path, or raise the SLO.', '', 'pattern');
       if (o.retrieval === 'none' && i.dataSources.some(s => INDEXED_SRC.includes(s))) add('conflict', 'A document corpus or website is selected but retrieval is off, so it is never indexed or queried - turn on a retrieval strategy to use it, or remove the source.', '', 'retrieval');
-      if (['hybrid', 'dense', 'rerank'].includes(o.retrieval) && !i.dataSources.some(s => INDEXED_SRC.includes(s)) && !i.dataSources.includes('vector')) add('conflict', 'Retrieval is on but there is no document corpus, company website, or vector store to retrieve from - add an indexed source, or set retrieval to none (live grounding and live data do not need it).', '', 'retrieval');
+      if (['hybrid', 'dense', 'rerank'].includes(o.retrieval) && !i.dataSources.some(s => INDEXED_SRC.includes(s))) add('conflict', 'Retrieval is on but there is no document corpus or company website to retrieve from - add an indexed source, or set retrieval to none (live grounding and live data do not need it).', '', 'retrieval');
       if (i.freshness === 'realtime' && (o.exactCache || o.semanticCache)) add('conflict', 'Caching contradicts real-time freshness - scope to freshness-tolerant intents or shorten TTL.', '', 'exactCache');
       // privacy / safety / residency
       if (lvl >= 3 && o.semanticCache) add('privacy', 'Semantic cache stores query embeddings - isolate per tenant + short TTL, or disable under strict-PII.', '', 'semanticCache');
@@ -1692,7 +1691,7 @@
     }
 
     /* ===================== Diagram ===================== */
-    const SRC_LABEL = { bigquery: 'BigQuery', onprem: 'On-prem', vector: 'Vector', stream: 'Stream', kg: 'KG', web: 'Web', website: 'Site', doc_corpus: 'Corpus' };
+    const SRC_LABEL = { bigquery: 'BigQuery', onprem: 'On-prem', stream: 'Stream', kg: 'KG', web: 'Web', website: 'Site', doc_corpus: 'Corpus' };
     // Three grounding patterns: indexed content (crawled/parsed/embedded into the store, owned),
     // live data queried at request time, and live web grounding via the model web-search tool.
     const INDEXED_SRC = ['doc_corpus', 'website'];
@@ -1732,7 +1731,6 @@
     // Role of each data source, shown as a hover tooltip on the checkbox. BigQuery's role
     // changes with the top-level purpose (analytical/conditional for an assistant, primary for automation).
     const DATA_SOURCE_ROLE = {
-      vector: 'Low-latency semantic retrieval (Vertex AI Vector Search, around 12 ms). The default RAG grounding source on the hot path.',
       doc_corpus: 'Document corpus parsed, chunked, and embedded for RAG (Document AI ingestion), then served from the vector store.',
       onprem: 'On-prem or legacy system of record reached over a private link. Latency varies, so validate it fits the SLO.',
       stream: 'Streaming or event source (Pub/Sub, Kafka) for fresh, near-real-time context.',
@@ -1744,7 +1742,7 @@
       const subsec = state.purpose === 'assistant' && state.inputs.latencyPreset === 'subsecond';
       if (v === 'bigquery') {
         if (state.purpose === 'automation') return 'Primary grounding and data-processing source. Async minute-scale runs absorb its query latency, so large scans and joins are fine.';
-        let t = 'Analytical / structured grounding via text-to-SQL. Conditional fit: keep it off the sub-second hot path and pair it with a vector store for RAG.';
+        let t = 'Analytical / structured grounding via text-to-SQL. Conditional fit: keep it off the sub-second hot path and pair it with an indexed source (Doc corpus or Company website) for RAG.';
         if (subsec) t += ' At a sub-second SLO this scan will exceed the budget; raise the SLO to agentic.';
         return t;
       }
@@ -1760,7 +1758,7 @@
     // One-time adjustments when the SLO is changed to sub-second (all overridable afterward).
     function applySubSecondAdjust() {
       state.inputs.dataSources = state.inputs.dataSources.filter(s => !LATENCY_HEAVY.includes(s));
-      if (!state.inputs.dataSources.some(s => ['vector', 'doc_corpus'].includes(s))) state.inputs.dataSources.push('vector');
+      if (!state.inputs.dataSources.some(s => ['doc_corpus', 'website'].includes(s))) state.inputs.dataSources.push('doc_corpus');
       state.overrides.smartRouting = true;
       state.overrides.routingSplit = Math.max(state.overrides.routingSplit || 0, 85);
     }
@@ -1796,7 +1794,7 @@
       'Web/OSINT': 'components/web-osint.html',
     };
     // Map a data-source checkbox value to its component name, so the icon can appear on the source too.
-    const DS_COMPONENT = { bigquery: 'BigQuery', vector: 'Vertex AI Vector Search', doc_corpus: 'Document AI', stream: 'Pub/Sub', onprem: 'On-prem DB', kg: 'Knowledge graph', web: 'Web/OSINT', website: 'Vertex AI Search' };
+    const DS_COMPONENT = { bigquery: 'BigQuery', doc_corpus: 'Document AI', stream: 'Pub/Sub', onprem: 'On-prem DB', kg: 'Knowledge graph', web: 'Web/OSINT', website: 'Vertex AI Search' };
     const INFO_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>';
     // Opens the explainer in a new tab. A relative href works over HTTP (GCS) and from a file:// open.
     const infoIcon = (doc, name) => `<a class="info-i" href="${doc}" target="_blank" rel="noopener" title="About ${name} (opens in new tab)" aria-label="About ${name}">${INFO_SVG}</a>`;
@@ -1814,7 +1812,7 @@
         const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
         const idxSel = i.dataSources.filter(s => INDEXED_SRC.includes(s));
         const liveSel = i.dataSources.filter(s => LIVE_SRC.includes(s));
-        const hasIndex = idxSel.length || i.dataSources.includes('vector');   // something to retrieve from
+        const hasIndex = idxSel.length;   // indexed content to retrieve from
         if (ragOn && hasIndex) {
           const storeLabel = o.ragEngine === 'vais' ? 'Vertex AI Search ⊕' : 'Vector store + BM25 ⊕';
           L.push(node('Store', storeLabel, 'data', 'cyl')); L.push(`${storeReader} --> Store`);
@@ -1919,7 +1917,7 @@
     }
     function visibleInputs() {
       const i = state.inputs, o = state.overrides; const v = { always: true };
-      const hasCorpus = i.dataSources.includes('doc_corpus') || i.dataSources.includes('vector') || i.dataSources.includes('website');
+      const hasCorpus = i.dataSources.some(s => INDEXED_SRC.includes(s));
       const staleable = i.dataSources.some(s => ['stream', 'bigquery', 'onprem', 'doc_corpus', 'website'].includes(s));
       v.corpus = hasCorpus; v.freshness = staleable;
       v.languages = state.purpose === 'assistant';
@@ -2083,7 +2081,7 @@
       b.add(o.platform === 'adk' ? 'ADK + Agent Engine' : o.platform === 'studio' ? 'Agent Studio' : 'LangGraph');
       if (o.gateway) b.add('Apigee'); if (o.auditLog) b.add('Cloud Logging (WORM)');
       const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
-      const hasIndex = i.dataSources.some(s => INDEXED_SRC.includes(s)) || i.dataSources.includes('vector');
+      const hasIndex = i.dataSources.some(s => INDEXED_SRC.includes(s));
       if (ragOn && hasIndex && o.ragEngine === 'vais') {
         b.add('Vertex AI Search');                              // managed: parse + chunk + embed + index + retrieve + rerank in one service
       } else if (ragOn && hasIndex) {
@@ -2296,7 +2294,7 @@
       // Any hand edit diverges from the named preset: drop the active-chip highlight and show a
       // 'Custom' tag. The preset is remembered, so Reset or clicking a chip reloads it.
       if (state.preset) state.custom = true;
-      // entering sub-second (interactive assistant): drop slow sources, ensure a vector store, and
+      // entering sub-second (interactive assistant): drop slow sources, ensure an indexed source, and
       // bias routing to the fast model. One time, so the user can force any of it back on afterward.
       if (state.purpose === 'assistant' && state.inputs.latencyPreset === 'subsecond' && prevLatency !== 'subsecond') applySubSecondAdjust();
       render();
@@ -2458,23 +2456,23 @@
       state.costOverrides['BigQuery'] = 1e6; const cs1 = costSummary(computeMetrics());
       assert('cost override wins over estimate', cs1.totalYr > cs0.totalYr && cs1.priced.find(x => x.name === 'BigQuery').src === 'manual');
       state.costOverrides = {};
-      // sub-second adjust: prunes slow sources, ensures a vector store, biases routing to the fast model
+      // sub-second adjust: prunes slow sources, ensures an indexed source, biases routing to the fast model
       applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['bigquery', 'onprem']; state.overrides.routingSplit = 50; applySubSecondAdjust();
-      assert('sub-second prunes slow sources + ensures vector', !state.inputs.dataSources.includes('bigquery') && !state.inputs.dataSources.includes('onprem') && state.inputs.dataSources.includes('vector') && state.overrides.routingSplit >= 85);
+      assert('sub-second prunes slow sources + ensures indexed source', !state.inputs.dataSources.includes('bigquery') && !state.inputs.dataSources.includes('onprem') && state.inputs.dataSources.includes('doc_corpus') && state.overrides.routingSplit >= 85);
       // forcing a slow source back exceeds the SLO budget and warns on Latency p95 (not the source)
-      applyPreset('assistant', 'expert_copilot'); state.inputs.latencyPreset = 'subsecond'; state.inputs.dataSources = ['vector', 'bigquery']; deriveOverrides();
+      applyPreset('assistant', 'expert_copilot'); state.inputs.latencyPreset = 'subsecond'; state.inputs.dataSources = ['doc_corpus', 'bigquery']; deriveOverrides();
       const mBq = computeMetrics();
       assert('forced BigQuery exceeds sub-second budget', mBq.latencyOverBudget === true);
       assert('over-budget raises a latency issue', runLinter(mBq).some(x => x.src === 'latencyPreset'));
-      const latBq = mBq.latencyP95; state.inputs.dataSources = ['vector']; const mClean = computeMetrics();
+      const latBq = mBq.latencyP95; state.inputs.dataSources = ['doc_corpus']; const mClean = computeMetrics();
       assert('BigQuery adds scan latency on assistant', latBq > mClean.latencyP95);
       assert('clean sub-second is within budget', mClean.latencyOverBudget === false);
       // latency line items sum to the p95 total
       applyPreset('assistant', 'expert_copilot'); const mL = computeMetrics();
       assert('latency parts sum to p95', Math.abs(mL.latParts.reduce((a, p) => a + p.ms, 0) - mL.latencyP95) < 1 && mL.latParts.length > 0);
       // parallel grounding takes the max, not the sum: adding web + on-prem alongside BigQuery does not change p95
-      applyPreset('assistant', 'expert_copilot'); state.inputs.latencyPreset = 'agentic'; state.inputs.dataSources = ['vector', 'bigquery']; deriveOverrides(); const lp1 = computeMetrics().latencyP95;
-      state.inputs.dataSources = ['vector', 'bigquery', 'web', 'onprem']; const lp3 = computeMetrics().latencyP95;
+      applyPreset('assistant', 'expert_copilot'); state.inputs.latencyPreset = 'agentic'; state.inputs.dataSources = ['doc_corpus', 'bigquery']; deriveOverrides(); const lp1 = computeMetrics().latencyP95;
+      state.inputs.dataSources = ['doc_corpus', 'bigquery', 'web', 'onprem']; const lp3 = computeMetrics().latencyP95;
       assert('parallel grounding takes max not sum', lp3 === lp1);
       // automation diagram includes a Live data node for query-time sources
       applyPreset('automation', 'regulated'); deriveOverrides();
@@ -2497,10 +2495,10 @@
       assert('self-built shows the retrieval funnel', /Retrieval funnel/.test(dgS));
       applyPreset('assistant', 'expert_copilot'); state.overrides.deployment = 'onprem'; deriveOverrides();
       assert('on-prem forces the self-built engine', state.overrides.ragEngine === 'selfbuilt' && !!state.locks.ragEngine);
-      // no phantom ingestion branch when retrieval is on but no indexed content is selected
-      applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['vector', 'bigquery']; deriveOverrides();
+      // store and offline ingestion branch are coupled: indexed content draws both, a live source draws the Live node alongside
+      applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['doc_corpus', 'bigquery']; deriveOverrides();
       const dgP = buildMainDiagram();
-      assert('no phantom ingestion without indexed content', !/Index sources/.test(dgP) && /Vertex AI Search/.test(dgP) && /Live data/.test(dgP));
+      assert('indexed content draws store + ingestion; live draws Live data', /Index sources/.test(dgP) && /Vertex AI Search/.test(dgP) && /-\. crawl \+ parse \+ embed \.->/.test(dgP) && /Live data/.test(dgP));
       // a corpus/website selected with retrieval off is flagged, not silently dropped
       applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['doc_corpus']; state.overrides.retrieval = 'none'; deriveOverrides();
       assert('corpus without retrieval is flagged', runLinter(computeMetrics()).some(x => x.src === 'retrieval'));
@@ -2508,18 +2506,18 @@
       applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['website']; deriveOverrides();
       const dgWeb = buildMainDiagram();
       assert('company website is indexed (Site under index sources)', /Index sources/.test(dgWeb) && /Site/.test(dgWeb));
-      applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['vector', 'web']; deriveOverrides();
+      applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['web']; deriveOverrides();
       const dgGround = buildMainDiagram();
       assert('web grounding is a live node, not indexed', /Web grounding/.test(dgGround) && !/Index sources/.test(dgGround));
       assert('web grounding is latency-heavy (slow live call)', LATENCY_HEAVY.includes('web') === true);
-      applyPreset('assistant', 'expert_copilot'); state.inputs.latencyPreset = 'agentic'; state.inputs.dataSources = ['vector']; deriveOverrides(); const lg0 = computeMetrics().latencyP95; state.inputs.dataSources = ['vector', 'web']; const lg1 = computeMetrics().latencyP95;
+      applyPreset('assistant', 'expert_copilot'); state.inputs.latencyPreset = 'agentic'; state.inputs.dataSources = ['doc_corpus']; deriveOverrides(); const lg0 = computeMetrics().latencyP95; state.inputs.dataSources = ['doc_corpus', 'web']; const lg1 = computeMetrics().latencyP95;
       assert('web grounding adds live-search latency', lg1 > lg0);
       // web grounding needs a model web-search tool: Gemini/Claude ok, self-hosted Llama warns
-      applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['vector', 'web']; state.overrides.reasoningModel = 'claude-opus-48'; deriveOverrides();
+      applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['doc_corpus', 'web']; state.overrides.reasoningModel = 'claude-opus-48'; deriveOverrides();
       assert('Claude can web-search (no model warning)', !runLinter(computeMetrics()).some(x => x.src === 'reasoningModel'));
       state.overrides.deployment = 'onprem'; deriveOverrides();
       assert('self-hosted Llama cannot web-search (warns)', state.overrides.reasoningModel === 'llama4-selfhost' && runLinter(computeMetrics()).some(x => x.src === 'reasoningModel'));
-      // a live-grounding preset (no index/vector source) defaults retrieval off and draws no phantom store
+      // a live-grounding preset (no indexed source) defaults retrieval off and draws no phantom store
       applyPreset('assistant', 'strictpii_verify'); deriveOverrides();
       const dgSp = buildMainDiagram();
       assert('grounding-only preset: retrieval off, no phantom store', state.overrides.retrieval === 'none' && !/Vertex AI Search/.test(dgSp) && /Web grounding/.test(dgSp) && !bomHtml().includes('Vertex AI Search'));
