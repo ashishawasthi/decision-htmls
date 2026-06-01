@@ -316,6 +316,48 @@
       min-width: 120px
     }
 
+    /* subtle cue that a label or panel header has an explanatory tooltip */
+    .ctl>label.has-help {
+      text-decoration: underline dotted var(--muted);
+      text-underline-offset: 3px;
+      text-decoration-thickness: 1px;
+      cursor: help;
+      position: relative
+    }
+
+    h3.has-help {
+      cursor: help;
+      text-decoration: underline dotted var(--border);
+      text-underline-offset: 4px;
+      text-decoration-thickness: 1px;
+      position: relative
+    }
+
+    /* instant styled tooltip from data-tip (native title is unreliable across browsers) */
+    .has-help:hover::after {
+      content: attr(data-tip);
+      position: absolute;
+      left: 0;
+      top: calc(100% + 5px);
+      z-index: 60;
+      width: max-content;
+      max-width: 240px;
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 9px;
+      font-size: 11.5px;
+      font-weight: 400;
+      line-height: 1.45;
+      letter-spacing: 0;
+      text-transform: none;
+      text-decoration: none;
+      white-space: normal;
+      box-shadow: 0 6px 22px rgba(0, 0, 0, .5);
+      pointer-events: none
+    }
+
     .ctl.hidden {
       display: none
     }
@@ -1057,6 +1099,14 @@
 
       <fieldset data-grp="workload">
         <legend>Workload &amp; SLO <span class="vis-count" id="visCount"></span></legend>
+        <div class="ctl" data-vis="always"><label>Latency SLO</label>
+          <select data-bind="inputs.latencyPreset">
+            <option value="subsecond">Sub-second (deterministic)</option>
+            <option value="agentic">&lt;2s start / &lt;6s full (agentic)</option>
+            <option value="batch">5-10s batch</option>
+            <option value="minutes">Per-run minutes (automation)</option>
+          </select>
+        </div>
         <div class="ctl" data-vis="always"><label>Actors (<span id="actorLabel">seats</span>)</label>
           <input type="number" min="1" step="1" data-bind="inputs.actors">
         </div>
@@ -1070,14 +1120,6 @@
         <div class="ctl" data-vis="always"><label>Active hrs / week</label>
           <input type="range" min="20" max="168" step="2" data-bind="inputs.activeHoursPerWeek"><output class="val"
             data-out="inputs.activeHoursPerWeek"></output>
-        </div>
-        <div class="ctl" data-vis="always"><label>Latency SLO</label>
-          <select data-bind="inputs.latencyPreset">
-            <option value="subsecond">Sub-second (deterministic)</option>
-            <option value="agentic">&lt;2s start / &lt;6s full (agentic)</option>
-            <option value="batch">5-10s batch</option>
-            <option value="minutes">Per-run minutes (automation)</option>
-          </select>
         </div>
         <div class="ctl" data-vis="always"><label>Tokens in / out / query</label>
           <input type="number" min="0" step="100" data-bind="inputs.tokensIn"><input type="number" min="0" step="50"
@@ -1322,12 +1364,16 @@
         <div id="latency"></div>
       </div>
       <div class="panel">
+        <h3>Observability</h3>
+        <div id="observability"></div>
+      </div>
+      <div class="panel">
         <h3>Cost <span id="costHead" class="vis-count"></span></h3>
         <div id="cost"></div>
       </div>
       <div class="panel">
-        <h3>Observability</h3>
-        <div id="observability"></div>
+        <h3>Bill of materials</h3>
+        <div class="bomlist" id="bom"></div>
       </div>
       <div class="panel">
         <h3>Risk &amp; failure</h3>
@@ -1336,10 +1382,6 @@
       <div class="panel">
         <h3>Governance &amp; controls</h3>
         <div id="governance"></div>
-      </div>
-      <div class="panel">
-        <h3>Bill of materials</h3>
-        <div class="bomlist" id="bom"></div>
       </div>
     </section>
   </main>
@@ -1831,7 +1873,7 @@
         L.push(node('Client', 'Client UI', 'client'));
         let head = 'Client';
         if (o.gateway) { L.push(node('GW', 'LLM Gateway ⊕', 'gateway')); L.push('Client --> GW'); head = 'GW'; }
-        L.push(node('Orch', o.pattern === 'multi' ? `Orchestrator<br/>${roleList('assistant', o.numAgents)}` : 'Orchestrator<br/>single agent', 'orch'));
+        L.push(node('Orch', o.pattern === 'multi' ? `Agent layer<br/>${roleList('assistant', o.numAgents)}` : 'Agent layer<br/>single agent', 'orch'));
         if (o.guardrails) { L.push(node('Guard', 'Safety guardrails', 'gov')); L.push(`${head} --> Guard`); L.push('Guard --> Orch'); }
         else { L.push(`${head} --> Orch`); }
         // Self-built draws an explicit retrieval funnel (dense + BM25 + rerank); managed Vertex AI
@@ -1974,13 +2016,12 @@
       const cards = [];
       cards.push(card(m.volLabel + ' avg / peak', `${fmt(m.volAvg, 2)} <small>/ ${fmt(m.volPeak, 2)}</small>`, 'actors × actions/day over the active window, × burst'));
       cards.push(card('Tokens / day', fmt(m.tokensDay, 1), 'daily actions × (in+out)'));
-      cards.push(card('Cache hit (eff.)', (m.cacheHitEff * 100).toFixed(0) + '%', 'response cache: slider + autocomplete + warming, capped 80%'));
-      const budgetLabel = m.latencyBudget >= 1000 ? (m.latencyBudget / 1000) + 's' : m.latencyBudget + 'ms';
-      cards.push(card('Latency p95', fmt(m.latencyP95, 0) + ' <small>ms</small>' + (m.latencyOverBudget ? ` <span class="over">over ${budgetLabel} SLO</span>` : ''), 'critical path; grounding sources run in parallel (slowest wins); see the Latency breakdown below for line items', m.latencyOverBudget ? 'warn' : ''));
+      const chParts = [`base ${o.cacheHit || 0}% (slider)`];
+      if (o.autocomplete) chParts.push('autocomplete +25');
+      if (o.warming) chParts.push('warming +10');
+      cards.push(card('Cache hit (eff.)', (m.cacheHitEff * 100).toFixed(0) + '%', `final effective response-cache hit rate = ${chParts.join(' + ')}, capped at 80%`));
       if (m.indexGB > 0) cards.push(card('Vector index', fmt(m.indexGB, 1) + ' <small>GB · ' + m.shards + ' shard(s)</small>', 'chunks × dim × 4 bytes'));
       if (m.indexGB > 0 && o.ragEngine === 'selfbuilt') cards.push(card('HNSW recall / ANN p95', (m.hnswRecall * 100).toFixed(1) + '% <small>/ ' + fmt(m.annP95, 0) + 'ms</small>', 'efSearch/M trade recall vs latency'));
-      if (m.gpuNodes) cards.push(card('Self-host fleet', `${m.gpuNodes}×8 ${(o.accelerator || 'h100').toUpperCase()} <small>· ${money(m.gpuMo)}/mo</small>`, `${fmt(m.nodeTPS, 0)} tok/s/node · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util · sized by peak decode tok/s (peak QPS × out-tokens)`));
-      cards.push(card('Storage / mo', money(m.storageMo), 'index + logs (illustrative)'));
       return cards.join('');
     }
     function latencyPanelHtml(m) {
@@ -2030,7 +2071,7 @@
     function obsHtml(m) {
       const i = state.inputs, o = state.overrides;
       const path = state.purpose === 'assistant'
-        ? ['client', o.gateway && 'gateway', 'orchestrator', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', 'LLM'].filter(Boolean)
+        ? ['client', o.gateway && 'gateway', 'agent layer', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', 'LLM'].filter(Boolean)
         : ['trigger', 'planner', 'executor', 'quality-gate'];
       const crit = state.purpose === 'assistant' ? 'faithfulness + citation accuracy' : 'PR-success + rework rounds';
       const slo = i.latencyPreset === 'subsecond' ? 'p95 < 1s' : (i.latencyPreset === 'minutes' ? 'per-run < N min' : 'p95 < 2s start / 6s full');
@@ -2052,7 +2093,7 @@
       else if (o.retrieval === 'rerank' && m.volPeak > 10) { bottleneck = 'reranker latency (cascade small→medium)'; bdrv = ['rerank', 'volume']; }
       else if (o.stateStore.includes('spanner') && m.volPeak > 50) { bottleneck = 'Spanner write path (partition by key)'; bdrv = ['state store', 'volume']; }
       else if (o.gateway && m.volPeak > 20) { bottleneck = 'gateway shard (per-region quota)'; bdrv = ['gateway', 'volume']; }
-      const spofs = ['orchestrator → stateless autoscaled', o.retrieval !== 'none' && 'vector index → multi-region read failover', 'model → reasoning→fast→cached failover'].filter(Boolean);
+      const spofs = ['agent layer → stateless autoscaled', o.retrieval !== 'none' && 'vector index → multi-region read failover', 'model → reasoning→fast→cached failover'].filter(Boolean);
       const rows = [
         ['What breaks at 10×', bottleneck, bdrv],
         ['SPOFs', spofs.join('; '), ['retrieval', 'model']],
@@ -2543,10 +2584,79 @@
     }
 
     /* ===================== Init ===================== */
+    // Concise definitions for controls whose intent is not self-evident, keyed by the input's
+    // data-bind path. Applied as a native title tooltip plus a subtle dotted-underline cue. Obvious
+    // controls (actors, actions/day, tokens, corpus size, languages) are intentionally left bare,
+    // and data-source checkboxes carry their own purpose-aware tooltips.
+    const CTL_HELP = {
+      'inputs.latencyPreset': 'Target response-time service level the design must meet.',
+      'inputs.burst': 'Peak-to-average load multiplier, for sizing against spikes.',
+      'inputs.activeHoursPerWeek': 'Hours per week of active use the load is averaged over.',
+      'inputs.audienceSensitivity': 'Who sees the output and how sensitive the data is.',
+      'inputs.freshness': 'How current the grounding data must be.',
+      'overrides.deployment': 'Where inference runs: managed GCP, hybrid, or on-prem.',
+      'overrides.multiRegion': 'Run active in multiple regions for failover and locality.',
+      'overrides.pattern': 'One agent, or a coordinated team of specialist agents.',
+      'overrides.reactMaxIter': 'Maximum reason-act-observe loops allowed per request.',
+      'overrides.platform': 'Agent framework and runtime that hosts the system.',
+      'overrides.reasoningModel': 'Primary model for the hard reasoning steps.',
+      'overrides.fastModel': 'Cheaper, faster model for simple or lookup steps.',
+      'overrides.smartRouting': 'Send simple requests to the fast model, hard ones to the reasoning model.',
+      'overrides.routingSplit': 'Share of traffic routed to the fast model.',
+      'overrides.judgeDiversity': 'Use a different model to check or judge outputs.',
+      'overrides.retrieval': 'Grounding retrieval strategy used at query time.',
+      'overrides.ragEngine': 'Managed Vertex AI Search, or a self-built Vector Search pipeline.',
+      'overrides.metadataPrefilter': 'Filter candidates by metadata before the vector search.',
+      'overrides.vectorDB': 'Backing store for the self-built vector index.',
+      'overrides.ingestionSep': 'Index on a separate pipeline from query serving.',
+      'overrides.hnswM': 'HNSW graph connectivity parameter for the index.',
+      'overrides.hnswEf': 'HNSW query-time search-breadth parameter.',
+      'overrides.stateStore': 'Where session and agent state is kept.',
+      'overrides.contextCache': 'Bill reused prompt and context tokens at the cache-read rate.',
+      'overrides.reuseInputPct': 'Share of input tokens reusable across calls.',
+      'overrides.accelerator': 'GPU or TPU class for self-hosted inference.',
+      'overrides.quant': 'Model weight precision for self-hosting.',
+      'overrides.pagedAttn': 'Paged attention for higher GPU memory efficiency.',
+      'overrides.gpuTier': 'Pricing commitment for the self-host GPU fleet.',
+      'overrides.gpuUtil': 'Assumed steady GPU utilisation used to size the fleet.',
+      'overrides.exactCache': 'Reuse a stored answer when the exact query repeats.',
+      'overrides.semanticCache': 'Reuse a stored answer when a similar query repeats.',
+      'overrides.autocomplete': 'Suggest canonical query phrasings to lift cache hits.',
+      'overrides.warming': 'Precompute answers for the most popular queries.',
+      'overrides.cacheHit': 'Baseline response-cache hit rate from exact and semantic caching.',
+    };
+    // One-line description of what each output panel shows. Keyed by the panel's content-div id.
+    const PANEL_HELP = {
+      diagram: 'System diagram derived from your inputs: request path, data plane, and controls.',
+      issues: 'Automated design checks, levers, and nudges from your current inputs.',
+      metrics: 'Derived scale and sizing figures computed from the inputs.',
+      latency: 'Estimated p95 critical-path latency, broken down by stage.',
+      cost: 'Estimated GenAI and platform run-rate, editable per line.',
+      observability: 'What to trace, evaluate, and alert on for this design.',
+      risk: 'Likely bottleneck at scale, single points of failure, and alerting.',
+      governance: 'Controls the design enforces, derived from audience, sensitivity, and data.',
+      bom: 'Google Cloud components this design requires.',
+    };
+    // Apply the tooltips once (the controls and panel headers are static markup).
+    function applyControlHelp() {
+      document.querySelectorAll('.ctl').forEach(ctl => {
+        const bound = ctl.querySelector('[data-bind]');
+        const lab = ctl.querySelector(':scope > label');
+        if (!bound || !lab) return;
+        const help = CTL_HELP[bound.getAttribute('data-bind')];
+        if (help) { lab.setAttribute('title', help); lab.setAttribute('data-tip', help); lab.classList.add('has-help'); }
+      });
+      for (const [id, txt] of Object.entries(PANEL_HELP)) {
+        const div = document.getElementById(id);
+        const h = id === 'diagram' ? document.querySelector('.diagram-head h3') : (div && div.closest('.panel') ? div.closest('.panel').querySelector('h3') : null);
+        if (h) { h.setAttribute('title', txt); h.setAttribute('data-tip', txt); h.classList.add('has-help'); }
+      }
+    }
     function init() {
       if (location.hash.length > 1 && decodeState(location.hash.slice(1))) { /* loaded */ }
       else applyPreset('assistant', 'expert_copilot');
       render();
+      applyControlHelp();
       if (new URLSearchParams(location.search).has('test')) selfTest();
     }
     init();
