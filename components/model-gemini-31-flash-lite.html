@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini 3.1 Flash-Lite in agentic systems</title>
+  <style>
+    :root { --bg:#0f1419; --panel:#161b22; --panel2:#1c2430; --border:#2a3441; --muted:#8b98a8; --text:#e6edf3; --accent:#4c9aff; --ok:#3fb950; --warn:#d29922; --err:#f85149; --data:#e6c84c; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; line-height:1.6; }
+    main { max-width:880px; margin:0 auto; padding:40px 24px 80px; }
+    .crumb { font-size:12px; color:var(--muted); margin-bottom:18px; }
+    .crumb a { color:var(--accent); text-decoration:none; }
+    .crumb a:hover { text-decoration:underline; }
+    .tag { display:inline-block; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--data); border:1px solid var(--border); border-radius:4px; padding:2px 8px; margin-bottom:12px; }
+    h1 { font-size:28px; margin:0 0 8px; }
+    h2 { font-size:18px; margin:34px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+    h3 { font-size:14px; margin:18px 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    p, li { font-size:14.5px; }
+    .lead { font-size:16px; }
+    .lead b { color:#fff; }
+    code { background:var(--panel2); border:1px solid var(--border); border-radius:4px; padding:1px 5px; font-size:12.5px; font-family:ui-monospace,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+    thead th { color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; }
+    .spec td:first-child { color:var(--muted); width:42%; }
+    .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media (max-width:680px) { .cols { grid-template-columns:1fr; } }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px 16px; }
+    .card.use { border-left:3px solid var(--ok); }
+    .card.avoid { border-left:3px solid var(--err); }
+    .card h3 { margin-top:0; }
+    ul { margin:6px 0; padding-left:20px; }
+    li { margin:3px 0; }
+    .note { background:rgba(76,154,255,.08); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:6px; padding:10px 14px; font-size:13.5px; color:var(--muted); margin:14px 0; }
+    .note b { color:var(--text); }
+    a.src { color:var(--accent); text-decoration:none; }
+    a.src:hover { text-decoration:underline; }
+    .sources { font-size:12.5px; color:var(--muted); }
+    .sources li { margin:4px 0; }
+    footer { margin-top:40px; padding-top:16px; border-top:1px solid var(--border); font-size:12px; color:var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Models / Gemini 3.1 Flash-Lite</div>
+    <span class="tag">Google · Gemini 3 family · fast lane</span>
+    <h1>Gemini 3.1 Flash-Lite in agentic systems</h1>
+    <p class="lead">The <b>cheapest and fastest</b> model in this lineup. It is built for high-volume, latency-sensitive
+      work: the fast lane behind smart routing, autocomplete, classification, and extraction. The design rule that
+      follows: send the simple, high-frequency traffic here and reserve a reasoning model for the hard steps.</p>
+
+    <h2>Spec at a glance</h2>
+    <table class="spec">
+      <tbody>
+        <tr><td>Provider</td><td>Google (Gemini API / Vertex AI)</td></tr>
+        <tr><td>Modality</td><td>Multimodal input (text, image, audio, video), text output</td></tr>
+        <tr><td>Context window</td><td>About 1M tokens</td></tr>
+        <tr><td>Input price</td><td>$0.25 per 1M tokens</td></tr>
+        <tr><td>Output price</td><td>$1.50 per 1M tokens</td></tr>
+        <tr><td>Cached input price</td><td>$0.025 per 1M tokens</td></tr>
+        <tr><td>Integrated search tool</td><td>Yes, Google Search grounding (about $14 per 1k calls). Drives live web grounding when this is the reasoning model</td></tr>
+        <tr><td>Context cache rate</td><td>$0.025 per 1M reused input tokens, the cheapest cache read here</td></tr>
+        <tr><td>Latency</td><td>Fastest here. Time to first token around 180 ms; sustained output around 305 to 380 tokens/sec in independent benchmarks</td></tr>
+        <tr><td>Best role in this tool</td><td>Fast / lookup model (the default)</td></tr>
+      </tbody>
+    </table>
+
+    <h2>When to pick it</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>The fast lane in smart routing: the share set by <code>% to fast model</code> runs here.</li>
+          <li>High-volume Q&amp;A and sub-second SLOs where cost per call and time to first token dominate.</li>
+          <li>Cheap, well-scoped steps: classification, extraction, query rewriting, autocomplete suggestions.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>The hardest multi-step reasoning or planning: route those to a reasoning model.</li>
+          <li>Work where answer quality outranks cost and speed.</li>
+          <li>As the only model in a system that also needs deep synthesis or judging.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>How it maps to this tool</h2>
+    <ul>
+      <li><b>Default Fast / lookup model.</b> Smart routing sends the <code>% to fast model</code> share here; its low
+        time to first token and $1.50 output price pull the blended <b>Generation</b> latency and the output cost down.</li>
+      <li><b>Integrated search tool: yes.</b> It carries Google Search grounding, so when set as the reasoning model a
+        live web source runs live grounding, billed about $14 per 1k searches.</li>
+      <li><b>Context cache.</b> Reused input bills at $0.025 per 1M, the cheapest cache read here, so a high reuse share
+        on the <code>Context cache</code> lever barely adds cost.</li>
+    </ul>
+    <div class="note"><b>Routing is where it pays off.</b> Raise <code>% to fast model</code> and the Generation row in
+      the latency breakdown drops, because more of the blend runs on Flash-Lite. Drop smart routing and every call falls
+      back to the reasoning model, so both latency and cost rise.</div>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://ai.google.dev/gemini-api/docs/pricing">Gemini Developer API pricing (Google AI for Developers)</a></li>
+      <li><a class="src" href="https://cloud.google.com/vertex-ai/generative-ai/pricing">Vertex AI generative AI pricing (Google Cloud)</a></li>
+      <li><a class="src" href="https://www.buildfastwithai.com/blogs/gemini-3-1-flash-lite-vs-2-5-flash-speed-cost-benchmarks-2026">Gemini 3.1 Flash-Lite vs 2.5 Flash: speed, cost and benchmarks (Build Fast with AI)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current vendor docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

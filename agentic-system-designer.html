@@ -1458,12 +1458,15 @@
     /* ===================== Constants (editable, ~May 2026) ===================== */
     // $/1M tokens for in/out/cacheRead; webSearch = $ per 1k web-search/grounding calls
     // (Gemini Google Search, Claude web search tool; 0 = the model has no web search tool).
+    // ttftMs = time to first token; msPerOutTok = generation ms per output token. Both are
+    // illustrative, scaled so the relative speed ordering matches published benchmarks
+    // (Flash-Lite fastest among the API models, Pro / Opus the slowest, self-host in between).
     const MODELS = [
-      { id: 'gemini-3-pro', name: 'Gemini 3 Pro', in: 2.0, out: 12.0, cacheRead: 0.20, webSearch: 14.0 },
-      { id: 'gemini-35-flash', name: 'Gemini 3.5 Flash', in: 1.5, out: 9.0, cacheRead: 0.15, webSearch: 14.0 },
-      { id: 'gemini-3-flash', name: 'Gemini 3 Flash', in: 0.5, out: 3.0, cacheRead: 0.05, webSearch: 14.0 },
-      { id: 'claude-opus-48', name: 'Claude Opus 4.8', in: 5.0, out: 25.0, cacheRead: 0.50, webSearch: 10.0 },
-      { id: 'llama4-selfhost', name: 'Llama 4 (self-host)', in: 0, out: 0, cacheRead: 0, webSearch: 0 },
+      { id: 'gemini-3-pro', name: 'Gemini 3 Pro', in: 2.0, out: 12.0, cacheRead: 0.20, webSearch: 14.0, ttftMs: 550, msPerOutTok: 0.75 },
+      { id: 'gemini-35-flash', name: 'Gemini 3.5 Flash', in: 1.5, out: 9.0, cacheRead: 0.15, webSearch: 14.0, ttftMs: 400, msPerOutTok: 0.5 },
+      { id: 'gemini-31-flash-lite', name: 'Gemini 3.1 Flash-Lite', in: 0.25, out: 1.5, cacheRead: 0.025, webSearch: 14.0, ttftMs: 180, msPerOutTok: 0.3 },
+      { id: 'claude-opus-48', name: 'Claude Opus 4.8', in: 5.0, out: 25.0, cacheRead: 0.50, webSearch: 10.0, ttftMs: 600, msPerOutTok: 0.9 },
+      { id: 'llama4-selfhost', name: 'Llama 4 (self-host)', in: 0, out: 0, cacheRead: 0, webSearch: 0, ttftMs: 500, msPerOutTok: 0.7 },
     ];
     const K = {
       dim: 768, chunksPerDoc: 5, bytesPerFloat: 4,
@@ -1490,7 +1493,7 @@
       // Vertex AI Search (managed RAG): ~$3 per 1k search queries + index storage $/GiB-mo + a website data store base.
       vais: { perQuery: 0.003, storageGiB: 5, websiteBase: 30 },
       hnsw: { a: 0.5, b: 120, baseMs: 8 },
-      lat: { gateway: 40, retrieval: 70, rerank: 80, ttft: 400, perOutTokMs: 5, bigqueryScan: 1200, webGround: 600, onpremCall: 400, guardrails: 30, qualityGate: 80 },
+      lat: { gateway: 40, retrieval: 70, rerank: 80, bigqueryScan: 1200, webGround: 600, onpremCall: 400, guardrails: 30, qualityGate: 80 },
     };
     const modelById = id => MODELS.find(m => m.id === id) || MODELS[0];
 
@@ -1517,7 +1520,7 @@
     const DEFAULT_OVERRIDES = () => ({
       deployment: 'gcp', multiRegion: true,
       pattern: 'multi', numAgents: 4, reactMaxIter: 6, platform: 'adk',
-      reasoningModel: 'gemini-35-flash', fastModel: 'gemini-3-flash', smartRouting: true, routingSplit: 70, judgeDiversity: false,
+      reasoningModel: 'gemini-35-flash', fastModel: 'gemini-31-flash-lite', smartRouting: true, routingSplit: 70, judgeDiversity: false,
       ragEngine: 'vais', retrieval: 'rerank', metadataPrefilter: true, vectorDB: 'vertex', ingestionSep: false, hnswM: 32, hnswEf: 128,
       gateway: true, auditLog: true, rulesEngine: true, sandbox: false,
       stateStore: 'redis_spanner', contextCache: true, reuseInputPct: 50,
@@ -1584,7 +1587,7 @@
         // Managed/hybrid path uses token-metered APIs - never leave a model stuck on the
         // open-weight self-host entry (zero token price ⇒ misleading $0 API cost).
         if (o.reasoningModel === 'llama4-selfhost') o.reasoningModel = 'gemini-35-flash';
-        if (o.fastModel === 'llama4-selfhost') o.fastModel = 'gemini-3-flash';
+        if (o.fastModel === 'llama4-selfhost') o.fastModel = 'gemini-31-flash-lite';
       }
       state.locks = locks;
       // Governance is a pure, read-only function of the first-level inputs. Computed last so it
@@ -1687,7 +1690,13 @@
       // latency p95: critical-path line items. The grounding calls run concurrently, so that
       // stage takes the slowest source (parallel fan-out, max), not the sum.
       const L = K.lat;
-      const gen = L.ttft + i.tokensOut * L.perOutTokMs / 10;             // TTFT + output generation
+      // Generation latency is model-aware: TTFT + output tokens x per-token time, for the model that
+      // serves the request. With smart routing on it is the routing-weighted blend of the fast and
+      // reasoning models (mirrors the cost blend); off, every call runs on the reasoning model.
+      const genOf = mm => mm.ttftMs + i.tokensOut * mm.msPerOutTok;     // TTFT + output generation
+      const fRoute = o.smartRouting ? (o.routingSplit || 0) / 100 : 0;
+      const gen = fRoute * genOf(fm) + (1 - fRoute) * genOf(rm);
+      const genNote = o.smartRouting ? `${o.routingSplit}% ${fm.name} / ${100 - o.routingSplit}% ${rm.name}` : rm.name;
       const groundSubs = [];
       if (['hybrid', 'dense', 'rerank'].includes(o.retrieval)) groundSubs.push({ label: 'Vector / hybrid retrieval', ms: L.retrieval });
       if (i.dataSources.includes('bigquery')) groundSubs.push({ label: 'BigQuery scan', ms: L.bigqueryScan });
@@ -1698,14 +1707,14 @@
       if (o.gateway) parts.push({ label: 'Gateway', ms: L.gateway });
       if (o.guardrails) parts.push({ label: 'Safety guardrails', ms: L.guardrails });
       if (state.purpose === 'automation') {
-        parts.push({ label: 'Planner', ms: L.ttft + i.tokensOut * L.perOutTokMs / 20 });
+        parts.push({ label: 'Planner', ms: rm.ttftMs + i.tokensOut * rm.msPerOutTok / 2, note: rm.name });
         if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
         parts.push({ label: `Executor pool (×${o.numAgents}, parallel)`, ms: gen, note: 'agents concurrent, slowest wins' });
         parts.push({ label: 'Quality gate', ms: L.qualityGate });
       } else {
         if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
         if (o.retrieval === 'rerank') parts.push({ label: 'Rerank', ms: L.rerank });
-        parts.push({ label: 'Generation (TTFT + output)', ms: gen });
+        parts.push({ label: 'Generation (TTFT + output)', ms: gen, note: genNote });
         if (o.pattern === 'multi') parts.push({ label: `ReAct loop (×${o.reactMaxIter} iter)`, ms: ((o.retrieval === 'rerank' ? L.rerank : 0) + gen) * o.reactMaxIter * 0.12, note: 'sequential iterations' });
       }
       m.latParts = parts;
@@ -1889,11 +1898,22 @@
       'Knowledge graph': 'components/knowledge-graph.html',
       'Web/OSINT': 'components/web-osint.html',
     };
+    // Model card pages, keyed by the exact model display name (MODELS[].name). Looked up by docFor()
+    // so the info icon appears next to a model in the Models & routing controls and in the BOM.
+    const MODEL_DOC = {
+      'Gemini 3 Pro': 'components/model-gemini-3-pro.html',
+      'Gemini 3.5 Flash': 'components/model-gemini-35-flash.html',
+      'Gemini 3.1 Flash-Lite': 'components/model-gemini-31-flash-lite.html',
+      'Claude Opus 4.8': 'components/model-claude-opus-48.html',
+      'Llama 4 (self-host)': 'components/model-llama4-selfhost.html',
+    };
     // Map a data-source checkbox value to its component name, so the icon can appear on the source too.
     const DS_COMPONENT = { bigquery: 'BigQuery', doc_corpus: 'Document AI', stream: 'Pub/Sub', onprem: 'On-prem DB', kg: 'Knowledge graph', web: 'Web/OSINT', website: 'Vertex AI Search' };
     const INFO_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>';
     // Opens the explainer in a new tab. A relative href works over HTTP (GCS) and from a file:// open.
     const infoIcon = (doc, name) => `<a class="info-i" href="${doc}" target="_blank" rel="noopener" title="About ${name} (opens in new tab)" aria-label="About ${name}">${INFO_SVG}</a>`;
+    // Explainer page for a display name: a Google Cloud component page or a model card, whichever exists.
+    const docFor = name => COMPONENT_DOC[name] || MODEL_DOC[name] || null;
     function buildMainDiagram() {
       const i = state.inputs, o = state.overrides; const L = [];
       // LR reads as a left-to-right request lifecycle on normal screens; fall back to TD on the
@@ -2055,7 +2075,7 @@
       $('#observability').innerHTML = obsHtml(m);
       $('#risk').innerHTML = riskHtml(m);
       $('#governance').innerHTML = governancePanelHtml();
-      $('#bom').innerHTML = bomHtml().map(s => `<span>${s}${COMPONENT_DOC[s] ? ' ' + infoIcon(COMPONENT_DOC[s], s) : ''}</span>`).join('');
+      $('#bom').innerHTML = bomHtml().map(s => `<span>${s}${docFor(s) ? ' ' + infoIcon(docFor(s), s) : ''}</span>`).join('');
       // baseline comparison ("what changed")
       renderDiffStrip();
       // diagram
@@ -2357,10 +2377,17 @@
       $$('#dataSources input').forEach(c => c.checked = state.inputs.dataSources.includes(c.value));
       $$('#languages input').forEach(c => c.checked = (state.inputs.languages || []).includes(c.value));
       $$('[data-out]').forEach(o => { const v = getPath(state, o.dataset.out); o.textContent = v != null ? v : ''; });
-      // model dropdowns
+      // model dropdowns + an info icon that links to the selected model's card (opens in a new tab)
       ['reasoningModel', 'fastModel'].forEach(role => {
-        const sel = $(`[data-bind="overrides.${role}"]`); if (sel && !sel.dataset.filled) { sel.innerHTML = MODELS.map(m => `<option value="${m.id}">${m.name}</option>`).join(''); sel.dataset.filled = '1'; }
-        if (sel) sel.value = state.overrides[role];
+        const sel = $(`[data-bind="overrides.${role}"]`); if (!sel) return;
+        if (!sel.dataset.filled) { sel.innerHTML = MODELS.map(m => `<option value="${m.id}">${m.name}</option>`).join(''); sel.dataset.filled = '1'; }
+        sel.value = state.overrides[role];
+        const name = modelById(state.overrides[role]).name, doc = docFor(name);
+        let ic = sel.parentElement.querySelector('a.info-i');
+        if (doc) {
+          if (!ic) { sel.insertAdjacentHTML('afterend', ' ' + infoIcon(doc, name)); }
+          else { ic.setAttribute('href', doc); ic.setAttribute('title', `About ${name} (opens in new tab)`); ic.setAttribute('aria-label', `About ${name}`); }
+        } else if (ic) { ic.remove(); }
       });
       // preset chips
       renderChips();
@@ -2565,6 +2592,15 @@
       // latency line items sum to the p95 total
       applyPreset('assistant', 'expert_copilot'); const mL = computeMetrics();
       assert('latency parts sum to p95', Math.abs(mL.latParts.reduce((a, p) => a + p.ms, 0) - mL.latencyP95) < 1 && mL.latParts.length > 0);
+      // model-aware generation latency: the fast model defaults to Gemini 3.1 Flash-Lite and its speed
+      // flows into the generation stage, so a slower fast model or no routing both raise p95.
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides();
+      assert('default fast model is Gemini 3.1 Flash-Lite', state.overrides.fastModel === 'gemini-31-flash-lite' && modelById('gemini-31-flash-lite').name === 'Gemini 3.1 Flash-Lite');
+      const latFL = computeMetrics().latencyP95;
+      state.overrides.fastModel = 'claude-opus-48'; const latSlowFast = computeMetrics().latencyP95;
+      assert('a slower fast model raises generation latency', latSlowFast > latFL);
+      state.overrides.fastModel = 'gemini-31-flash-lite'; state.overrides.smartRouting = false; const latNoRoute = computeMetrics().latencyP95;
+      assert('routing to the fast model lowers latency vs all-reasoning', latFL < latNoRoute);
       // parallel grounding takes the max, not the sum: adding web + on-prem alongside BigQuery does not change p95
       applyPreset('assistant', 'expert_copilot'); state.inputs.latencyPreset = 'agentic'; state.inputs.dataSources = ['doc_corpus', 'bigquery']; deriveOverrides(); const lp1 = computeMetrics().latencyP95;
       state.inputs.dataSources = ['doc_corpus', 'bigquery', 'web', 'onprem']; const lp3 = computeMetrics().latencyP95;
@@ -2622,6 +2658,10 @@
       // component explainer: BigQuery is registered and its info icon opens the doc in a new tab
       assert('BigQuery doc registered', COMPONENT_DOC['BigQuery'] === 'components/bigquery.html');
       assert('info icon opens doc in new tab', /href="components\/bigquery\.html"/.test(infoIcon(COMPONENT_DOC['BigQuery'], 'BigQuery')) && /target="_blank"/.test(infoIcon('x', 'y')));
+      // model cards: every model in the catalog has a registered card page, resolved via docFor and opened in a new tab
+      assert('every model has a card page', MODELS.every(m => /^components\/model-.*\.html$/.test(MODEL_DOC[m.name] || '')));
+      assert('docFor resolves models and components', docFor('Gemini 3.1 Flash-Lite') === 'components/model-gemini-31-flash-lite.html' && docFor('BigQuery') === 'components/bigquery.html' && docFor('nope') === null);
+      assert('model info icon opens in a new tab', /target="_blank"/.test(infoIcon(MODEL_DOC['Claude Opus 4.8'], 'Claude Opus 4.8')));
       // baseline diff: pinning then editing an input reports the ripple, incl. locked side-effects
       // (governance is read-only now, so the ripple comes from a performance lock: sub-second → single-agent)
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); lastMetrics = computeMetrics(); pinBaseline();

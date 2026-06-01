@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini 3 Pro in agentic systems</title>
+  <style>
+    :root { --bg:#0f1419; --panel:#161b22; --panel2:#1c2430; --border:#2a3441; --muted:#8b98a8; --text:#e6edf3; --accent:#4c9aff; --ok:#3fb950; --warn:#d29922; --err:#f85149; --data:#e6c84c; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; line-height:1.6; }
+    main { max-width:880px; margin:0 auto; padding:40px 24px 80px; }
+    .crumb { font-size:12px; color:var(--muted); margin-bottom:18px; }
+    .crumb a { color:var(--accent); text-decoration:none; }
+    .crumb a:hover { text-decoration:underline; }
+    .tag { display:inline-block; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--data); border:1px solid var(--border); border-radius:4px; padding:2px 8px; margin-bottom:12px; }
+    h1 { font-size:28px; margin:0 0 8px; }
+    h2 { font-size:18px; margin:34px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+    h3 { font-size:14px; margin:18px 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    p, li { font-size:14.5px; }
+    .lead { font-size:16px; }
+    .lead b { color:#fff; }
+    code { background:var(--panel2); border:1px solid var(--border); border-radius:4px; padding:1px 5px; font-size:12.5px; font-family:ui-monospace,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+    thead th { color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; }
+    .spec td:first-child { color:var(--muted); width:42%; }
+    .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media (max-width:680px) { .cols { grid-template-columns:1fr; } }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px 16px; }
+    .card.use { border-left:3px solid var(--ok); }
+    .card.avoid { border-left:3px solid var(--err); }
+    .card h3 { margin-top:0; }
+    ul { margin:6px 0; padding-left:20px; }
+    li { margin:3px 0; }
+    .note { background:rgba(76,154,255,.08); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:6px; padding:10px 14px; font-size:13.5px; color:var(--muted); margin:14px 0; }
+    .note b { color:var(--text); }
+    a.src { color:var(--accent); text-decoration:none; }
+    a.src:hover { text-decoration:underline; }
+    .sources { font-size:12.5px; color:var(--muted); }
+    .sources li { margin:4px 0; }
+    footer { margin-top:40px; padding-top:16px; border-top:1px solid var(--border); font-size:12px; color:var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Models / Gemini 3 Pro</div>
+    <span class="tag">Google · Gemini 3 family · frontier reasoning</span>
+    <h1>Gemini 3 Pro in agentic systems</h1>
+    <p class="lead">The <b>highest-quality Gemini</b> in this lineup, for the hardest reasoning, long-context synthesis,
+      and judging. It costs more and starts slower than the Flash tiers. The design rule that follows: reach for it only
+      on the steps where quality clearly outranks cost and latency, not as a default for every call.</p>
+
+    <h2>Spec at a glance</h2>
+    <table class="spec">
+      <tbody>
+        <tr><td>Provider</td><td>Google (Gemini API / Vertex AI)</td></tr>
+        <tr><td>Modality</td><td>Multimodal input (text, image, audio, video), text output</td></tr>
+        <tr><td>Context window</td><td>About 1M tokens or more</td></tr>
+        <tr><td>Input price</td><td>$2.00 per 1M tokens</td></tr>
+        <tr><td>Output price</td><td>$12.00 per 1M tokens</td></tr>
+        <tr><td>Cached input price</td><td>$0.20 per 1M tokens</td></tr>
+        <tr><td>Integrated search tool</td><td>Yes, Google Search grounding (about $14 per 1k calls). Drives live web grounding when this is the reasoning model</td></tr>
+        <tr><td>Context cache rate</td><td>$0.20 per 1M reused input tokens</td></tr>
+        <tr><td>Latency</td><td>Slowest Gemini here. Time to first token around 550 ms (illustrative); highest answer quality</td></tr>
+        <tr><td>Best role in this tool</td><td>Reasoning model, when quality outranks cost</td></tr>
+      </tbody>
+    </table>
+
+    <h2>When to pick it</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>The hardest reasoning, planning, and long-context synthesis steps.</li>
+          <li>A judge or verifier in a quality gate, where a stronger model checks a cheaper one.</li>
+          <li>Complex multimodal tasks that the Flash tiers cannot carry alone.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Sub-second SLOs and high-frequency, simple traffic: use Flash-Lite or Flash.</li>
+          <li>As the fast lane in smart routing: its price and time to first token defeat the point.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>How it maps to this tool</h2>
+    <ul>
+      <li><b>Reasoning model for quality-first designs.</b> Because the <b>Generation</b> stage is model-aware, choosing
+        it raises the modelled time to first token and the blended generation latency, and its higher output price shows
+        in the cost panel. Keep Flash-Lite as the fast lane.</li>
+      <li><b>Integrated search tool: yes.</b> Google Search grounding, so live web grounding runs when a web source is
+        added, billed about $14 per 1k searches.</li>
+      <li><b>Cross-model judge.</b> A strong pick for <code>Cross-model judge diversity</code>, where a stronger model
+        checks a cheaper one in the quality gate.</li>
+    </ul>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://ai.google.dev/gemini-api/docs/pricing">Gemini Developer API pricing (Google AI for Developers)</a></li>
+      <li><a class="src" href="https://cloud.google.com/vertex-ai/generative-ai/pricing">Vertex AI generative AI pricing (Google Cloud)</a></li>
+      <li><a class="src" href="https://deepmind.google/models/gemini/">Gemini models overview (Google DeepMind)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current vendor docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>
