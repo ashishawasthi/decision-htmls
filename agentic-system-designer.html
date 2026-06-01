@@ -1493,7 +1493,7 @@
       // Vertex AI Search (managed RAG): ~$3 per 1k search queries + index storage $/GiB-mo + a website data store base.
       vais: { perQuery: 0.003, storageGiB: 5, websiteBase: 30 },
       hnsw: { a: 0.5, b: 120, baseMs: 8 },
-      lat: { gateway: 40, retrieval: 70, rerank: 80, bigqueryScan: 1200, webGround: 600, onpremCall: 400, guardrails: 30, qualityGate: 80 },
+      lat: { retrieval: 70, rerank: 80, bigqueryScan: 1200, webGround: 600, onpremCall: 400, qualityGate: 80 },   // gateway/guardrails latency now per-chip in IN_LAT / OUT_LAT
     };
     const modelById = id => MODELS.find(m => m.id === id) || MODELS[0];
 
@@ -1533,7 +1533,7 @@
     const state = {
       purpose: 'assistant', preset: 'expert_copilot', custom: false,
       inputs: {}, overrides: {}, locks: {}, governance: [], baseline: null,
-      componentInputs: { gateway: { aggregateQPS: null, tenantApps: 1, providers: 1 }, ingestion: { docsPerDay: null, backfillDocs: 0, docPages: 40, reindexSLOmin: 5 } },
+      componentInputs: { edge: { aggregateQPS: null, tenantApps: 1, providers: 1 }, model: { callsPerReq: null }, ingestion: { docsPerDay: null, backfillDocs: 0, docPages: 40, reindexSLOmin: 5 } },
       costOverrides: {},   // BOM component name → user-entered $/mo (overrides any estimate)
       ui: { openModal: null },
     };
@@ -1546,6 +1546,40 @@
     const fmt = (n, d = 0) => { if (n == null || isNaN(n)) return '-'; const a = Math.abs(n); if (a >= 1e9) return (n / 1e9).toFixed(d || 1) + 'B'; if (a >= 1e6) return (n / 1e6).toFixed(d || 1) + 'M'; if (a >= 1e3) return (n / 1e3).toFixed(d || 1) + 'k'; return n.toFixed(d); };
     const money = n => { if (n == null || isNaN(n)) return '-'; if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M'; if (n >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'k'; return '$' + n.toFixed(2); };
     const sens = s => ({ internal_low: { aud: 'internal', lvl: 0 }, internal_regulated: { aud: 'internal', lvl: 2 }, internal_strictpii: { aud: 'internal', lvl: 3 }, external_enterprise: { aud: 'external', lvl: 1 }, external_regulated: { aud: 'external', lvl: 2 }, public_strictpii: { aud: 'public', lvl: 3 } }[s]);
+
+    /* ===================== Control-plane split (Edge gateway / Model gateway) ===================== */
+    // The gateway and the guardrails each divide into a request-side (inbound) half and a
+    // response-side (outbound) half. The halves merge into one Edge gateway box at ingress and one
+    // Model gateway box on the agent→model leg. A chip shows only when its derived control is on, so
+    // each box rewrites its own label from the inputs. Latency maps are per-chip milliseconds.
+    const IN_LAT = { 'auth': 8, 'rate-limit': 2, 'PII redact': 8, 'injection screen': 20 };
+    const OUT_LAT = { 'route': 4, 'cache': 4, 'fan-out': 3, 'PII redact': 8, 'output filter': 20, 'audit': 3 };
+    function inboundControls(o, i) {
+      const { lvl } = sens(i.audienceSensitivity); const c = [];
+      if (o.gateway) { c.push('auth'); c.push('rate-limit'); }   // authenticate caller + per-tenant quota
+      if (lvl >= 3) c.push('PII redact');                        // strip inbound PII before the agent sees it
+      if (o.guardrails) c.push('injection screen');              // prompt-injection / jailbreak screen
+      return c;
+    }
+    function outboundControls(o, i) {
+      const { lvl } = sens(i.audienceSensitivity); const c = [];
+      if (o.gateway) c.push('route');                            // model routing + fallback
+      if (o.semanticCache) c.push('cache');                      // semantic response cache
+      if (o.gateway) c.push('fan-out');                          // provider fan-out
+      if (lvl >= 3) c.push('PII redact');                        // redact before tokens leave to a provider
+      if (o.guardrails) c.push('output filter');                 // toxicity / leak screen on model output
+      if (o.auditLog) c.push('audit');                           // per-call prompt/completion + token meter
+      return c;
+    }
+    const edgeLabel = c => `Edge gateway ⊕<br/>${c.join(' · ')}`;
+    const modelLabel = c => `Model gateway ⊕<br/>${c.join(' · ')}`;
+    // Model calls per request: the agent→model fan-out (agents × a damped ReAct loop). The Model
+    // gateway sees this many calls per user request, so it sizes on model-call QPS, not user QPS.
+    function modelCallsPerReq(o) {
+      const agents = o.pattern === 'multi' ? (o.numAgents || 1) : 1;
+      const iters = o.pattern === 'multi' ? Math.max(1, o.reactMaxIter || 1) : 1;
+      return Math.max(1, Math.round(agents * (1 + (iters - 1) * 0.5)));
+    }
 
     /* ===================== Preset application ===================== */
     function applyPreset(purpose, preset) {
@@ -1614,7 +1648,7 @@
       const G = [];
       const set = (key, label, on, why, cat) => { o[key] = on; G.push({ key, label, on, why, cat }); };
       // Access & gateway
-      set('gateway', 'LLM Gateway (Apigee)', lvl >= 2 || ext,
+      set('gateway', 'Edge + model gateway (IAP + Apigee)', lvl >= 2 || ext,
         lvl >= 2 ? 'regulated+' : ext ? (aud === 'public' ? 'public' : 'external') : 'not required', 'access');
       set('auditLog', 'Immutable audit log', lvl >= 2 || ext,
         lvl >= 2 ? 'regulated+' : ext ? 'external' : 'not required', 'access');
@@ -1704,18 +1738,23 @@
       if (i.dataSources.includes('onprem')) groundSubs.push({ label: 'On-prem call', ms: L.onpremCall });
       const grounding = groundSubs.length ? Math.max(...groundSubs.map(s => s.ms)) : 0;
       const parts = [];
-      if (o.gateway) parts.push({ label: 'Gateway', ms: L.gateway });
-      if (o.guardrails) parts.push({ label: 'Safety guardrails', ms: L.guardrails });
+      // Edge gateway is on the request path: counted once. Model gateway is on the model leg, so its
+      // latency rides every model call (genGw) and compounds with the ReAct loop / executor pool.
+      const inbChips = inboundControls(o, i), outbChips = outboundControls(o, i);
+      const inMs = inbChips.reduce((s, c) => s + (IN_LAT[c] || 0), 0);
+      const outMs = outbChips.reduce((s, c) => s + (OUT_LAT[c] || 0), 0);
+      const genGw = gen + outMs;
+      if (inbChips.length) parts.push({ label: 'Edge gateway', ms: inMs, note: inbChips.join(' · ') });
       if (state.purpose === 'automation') {
-        parts.push({ label: 'Planner', ms: rm.ttftMs + i.tokensOut * rm.msPerOutTok / 2, note: rm.name });
+        parts.push({ label: 'Planner', ms: rm.ttftMs + i.tokensOut * rm.msPerOutTok / 2 + outMs, note: rm.name });
         if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
-        parts.push({ label: `Executor pool (×${o.numAgents}, parallel)`, ms: gen, note: 'agents concurrent, slowest wins' });
+        parts.push({ label: `Executor pool (×${o.numAgents}, parallel)`, ms: genGw, note: 'agents concurrent, slowest wins' });
         parts.push({ label: 'Quality gate', ms: L.qualityGate });
       } else {
         if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
         if (o.retrieval === 'rerank') parts.push({ label: 'Rerank', ms: L.rerank });
-        parts.push({ label: 'Generation (TTFT + output)', ms: gen, note: genNote });
-        if (o.pattern === 'multi') parts.push({ label: `ReAct loop (×${o.reactMaxIter} iter)`, ms: ((o.retrieval === 'rerank' ? L.rerank : 0) + gen) * o.reactMaxIter * 0.12, note: 'sequential iterations' });
+        parts.push({ label: 'Generation (TTFT + output)', ms: genGw, note: outMs ? `${genNote} · +${Math.round(outMs)}ms model gateway` : genNote });
+        if (o.pattern === 'multi') parts.push({ label: `ReAct loop (×${o.reactMaxIter} iter)`, ms: ((o.retrieval === 'rerank' ? L.rerank : 0) + genGw) * o.reactMaxIter * 0.12, note: 'sequential iterations' });
       }
       m.latParts = parts;
       m.latencyP95 = parts.reduce((a, p) => a + p.ms, 0);
@@ -1809,9 +1848,9 @@
     const NODE_PURPOSE = {
       // assistant + shared
       Client: 'The user-facing app (web or chat) that sends queries and renders grounded, cited answers.',
-      GW: 'A single controlled choke point for all LLM traffic (auth, PII redaction, model routing, rate-limiting, semantic cache and audit), so governance and cost are enforced in one place.',
+      EdgeGW: 'The request-side control plane at the system edge: authenticates the caller (IAM + mTLS), enforces per-tenant rate limits, redacts inbound PII, and screens for prompt injection and jailbreaks before anything reaches the agent. Shows only the controls your inputs require. Sized on inbound user QPS.',
+      ModelGW: 'The model-side control plane on the agent→model leg: routes and fails over between models, serves the semantic cache, fans out to providers, redacts PII before egress, filters unsafe or leaking output, and meters every call. It sees every model call, so it sizes on model-call QPS (user QPS × fan-out), not user QPS.',
       Orch: 'Plans each request, calls tools and retrieval, and composes the final answer. Single agent or a multi-agent team depending on the pattern.',
-      Guard: 'Screens inputs and outputs for prompt injection, jailbreaks, and unsafe or leaking content, before and after the model.',
       Retr: 'Narrows candidates in stages (metadata pre-filter → dense + BM25 → rerank) so the model is grounded on only the most relevant passages.',
       Sand: 'Runs PII-sensitive or untrusted tool execution in an ephemeral, isolated instance that is wiped after each use, so sensitive data and side-effects never persist.',
       LLM: 'The reasoning and fast models. Smart routing sends easy lookups to the cheap model and hard queries to the reasoning model.',
@@ -1959,16 +1998,23 @@
       if (state.purpose === 'assistant') {
         L.push(node('Client', 'Client UI', 'client'));
         let head = 'Client';
-        if (o.gateway) { L.push(node('GW', 'LLM Gateway ⊕', 'gateway')); L.push('Client --> GW'); head = 'GW'; }
+        // Edge gateway: request-side halves of the gateway (auth, rate-limit) and the guardrails
+        // (injection screen), merged into one adaptive box. Drawn only when a control is derived on.
+        const inb = inboundControls(o, i);
+        if (inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
         L.push(node('Orch', o.pattern === 'multi' ? `Agent layer<br/>${roleList('assistant', o.numAgents)}` : 'Agent layer<br/>single agent', 'orch'));
-        if (o.guardrails) { L.push(node('Guard', 'Safety guardrails', 'gov')); L.push(`${head} --> Guard`); L.push('Guard --> Orch'); }
-        else { L.push(`${head} --> Orch`); }
+        L.push(`${head} --> Orch`);
         // Self-built draws an explicit retrieval funnel (dense + BM25 + rerank); managed Vertex AI
         // Search performs retrieval inside its store node, so the orchestrator reads the store directly.
         const showFunnel = ['hybrid', 'dense', 'rerank'].includes(o.retrieval) && o.ragEngine === 'selfbuilt';
         if (showFunnel) { L.push(node('Retr', 'Retrieval funnel ⊕', 'retr')); L.push('Orch --> Retr'); }
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Orch --> Sand'); }
-        L.push(node('LLM', 'Model(s)', 'orch')); L.push('Orch --> LLM');
+        // Model gateway: response-side halves on the agent→model leg (route, cache, fan-out, egress
+        // redact, output filter, audit). It sees every model call.
+        const outb = outboundControls(o, i);
+        L.push(node('LLM', 'Model(s)', 'orch'));
+        if (outb.length) { L.push(node('ModelGW', modelLabel(outb), 'gateway')); L.push('Orch --> ModelGW'); L.push('ModelGW --> LLM'); }
+        else { L.push('Orch --> LLM'); }
         // data plane: offline index (written by ingestion, read by retrieval) + live sources
         dataPlane(showFunnel ? 'Retr' : 'Orch', 'Orch');
         L.push(node('Obs', 'Observability', 'obs')); L.push('Orch --> Obs');
@@ -1977,12 +2023,17 @@
       } else {
         L.push(node('Trig', 'Trigger (ticket/event)', 'client'));
         let head = 'Trig';
-        if (o.gateway) { L.push(node('GW', 'LLM Gateway ⊕', 'gateway')); L.push(`${head} --> GW`); head = 'GW'; }
-        if (o.guardrails) { L.push(node('Guard', 'Safety guardrails', 'gov')); L.push(`${head} --> Guard`); head = 'Guard'; }
+        const inb = inboundControls(o, i);
+        if (inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
         L.push(node('Req', 'Requirement agent', 'orch')); L.push(`${head} --> Req`);
         L.push(node('Plan', 'Planner', 'orch')); L.push('Req --> Plan');
         L.push(node('Exec', `Executor pool<br/>${roleList('automation', o.numAgents)}`, 'orch')); L.push('Plan --> Exec');
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Exec --> Sand'); }
+        // model leg with the Model gateway, mirroring the assistant branch
+        const outb = outboundControls(o, i);
+        L.push(node('LLM', 'Model(s)', 'orch'));
+        if (outb.length) { L.push(node('ModelGW', modelLabel(outb), 'gateway')); L.push('Exec --> ModelGW'); L.push('ModelGW --> LLM'); }
+        else { L.push('Exec --> LLM'); }
         L.push(node('QG', 'Quality gate', 'retr')); L.push('Exec --> QG');
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human approval', 'gov')); L.push('QG --> Appr'); }
         dataPlane('Exec', 'Exec');
@@ -2001,7 +2052,8 @@
     }
     function buildComponentDiagram(key) {
       const map = {
-        gateway: 'flowchart LR\n A[Auth IAM+mTLS]-->B[PII redact]-->C[Route]-->D[Semantic cache]-->E[Rate limit]-->F[Audit log]-->G[Provider fan-out]',
+        edgegw: 'flowchart LR\n A[Auth IAM+mTLS]-->B[Tenant rate-limit]-->C[Input PII redact]-->D[Injection / jailbreak screen]',
+        modelgw: 'flowchart LR\n A[Model route + fallback]-->B[Semantic cache]-->C[Provider fan-out]-->D[Egress PII redact]-->E[Output safety filter]-->F[Audit + token meter]',
         ingestion: 'flowchart LR\n A[Docs + Website]-->B[Document AI / crawler]-->C[Chunker]-->D[Embeddings]-->E[Vector + BM25 + GCS]',
         vais: 'flowchart LR\n A[Docs + Website data store]-->B[Managed parse + chunk + embed]-->C[Managed index]-->D["RRF (semantic + keyword) + rerank"]-->E[Grounded answer + citations]',
         sandbox: 'flowchart LR\n A[Ephemeral instance + KMS]-->B[Entity resolution]-->C[Web/OSINT + risk rules]-->D[Memory wipe]-->E[Audit hash]',
@@ -2158,11 +2210,11 @@
     function obsHtml(m) {
       const i = state.inputs, o = state.overrides;
       const path = state.purpose === 'assistant'
-        ? ['client', o.gateway && 'gateway', 'agent layer', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', 'LLM'].filter(Boolean)
-        : ['trigger', 'planner', 'executor', 'quality-gate'];
+        ? ['client', inboundControls(o, i).length && 'edge gateway', 'agent layer', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', outboundControls(o, i).length && 'model gateway', 'LLM'].filter(Boolean)
+        : ['trigger', 'planner', 'executor', outboundControls(o, i).length && 'model gateway', 'quality-gate'].filter(Boolean);
       const crit = state.purpose === 'assistant' ? 'faithfulness + citation accuracy' : 'PR-success + rework rounds';
       const slo = i.latencyPreset === 'subsecond' ? 'p95 < 1s' : (i.latencyPreset === 'minutes' ? 'per-run < N min' : 'p95 < 2s start / 6s full');
-      const comps = [o.gateway && 'gateway', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
+      const comps = [inboundControls(o, i).length && 'edge gateway', outboundControls(o, i).length && 'model gateway', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
       const rows = [
         ['Live trace', path.join(' → '), comps.length ? comps : ['components']],
         ['Eval', `Vertex Eval on 5% async sample - ${crit}; drift > 2σ`, ['purpose']],
@@ -2179,7 +2231,7 @@
       if ((i.corpusSize || 0) * K.chunksPerDoc > 1e8) { bottleneck = 'vector index (shard by line × region)'; bdrv = ['corpus', 'scale']; }
       else if (o.retrieval === 'rerank' && m.volPeak > 10) { bottleneck = 'reranker latency (cascade small→medium)'; bdrv = ['rerank', 'volume']; }
       else if (o.stateStore.includes('spanner') && m.volPeak > 50) { bottleneck = 'Spanner write path (partition by key)'; bdrv = ['state store', 'volume']; }
-      else if (o.gateway && m.volPeak > 20) { bottleneck = 'gateway shard (per-region quota)'; bdrv = ['gateway', 'volume']; }
+      else if (o.gateway && m.volPeak * modelCallsPerReq(o) > 20) { bottleneck = 'model gateway shard (model-call QPS = user QPS × fan-out, per-region quota)'; bdrv = ['model gateway', 'fan-out']; }
       const spofs = ['agent layer → stateless autoscaled', o.retrieval !== 'none' && 'vector index → multi-region read failover', 'model → reasoning→fast→cached failover'].filter(Boolean);
       const rows = [
         ['What breaks at 10×', bottleneck, bdrv],
@@ -2207,7 +2259,7 @@
     function bomHtml() {
       const o = state.overrides, i = state.inputs, b = new Set();
       b.add(o.platform === 'adk' ? 'ADK + Agent Engine' : o.platform === 'studio' ? 'Agent Studio' : 'LangGraph');
-      if (o.gateway) b.add('Apigee'); if (o.auditLog) b.add('Cloud Logging (WORM)');
+      if (o.gateway) { b.add('Cloud IAP'); b.add('API Gateway'); b.add('Apigee'); } if (o.auditLog) b.add('Cloud Logging (WORM)');
       const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
       const hasIndex = i.dataSources.some(s => INDEXED_SRC.includes(s));
       if (ragOn && hasIndex && o.ragEngine === 'vais') {
@@ -2255,6 +2307,8 @@
         'Agent Studio': 40 + R * 0.0006,
         'LangGraph': R * 0.0004,
         'Apigee': 120 + R * 0.0003,
+        'Cloud IAP': 0,                                          // no per-request charge at this sizing (bundled with the edge LB)
+        'API Gateway': 3 + R * 0.000003,                         // ~$3 per million API calls
         'Cloud Logging (WORM)': 5 + (Tk / 1e6) * 0.05,
         'Vertex AI Vector Search': idxNodes * 438,
         'Vertex AI Search': R * K.vais.perQuery + (m.indexGB || 0) * K.vais.storageGiB + (i.dataSources.includes('website') ? K.vais.websiteBase : 0),
@@ -2325,7 +2379,7 @@
         }
         // drill-down on click (subset of boxes)
         let key = null;
-        if (/Gateway/.test(t)) key = 'gateway'; else if (/Vertex AI Search/.test(t)) key = 'vais'; else if (/Vector store/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
+        if (/Edge gateway/.test(t)) key = 'edgegw'; else if (/Model gateway/.test(t)) key = 'modelgw'; else if (/Vertex AI Search/.test(t)) key = 'vais'; else if (/Vector store/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
         if (key) { n.classList.add('drill'); n.style.cursor = 'pointer'; n.addEventListener('click', () => openModal(key)); }
       });
     }
@@ -2333,19 +2387,27 @@
     /* ===================== Drill-down modal ===================== */
     async function openModal(key) {
       state.ui.openModal = key;
-      const titles = { gateway: 'LLM Gateway', ingestion: 'Self-built ingestion pipeline', vais: 'Vertex AI Search', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
-      const purposeId = { gateway: 'GW', ingestion: 'Store', vais: 'Store', sandbox: 'Sand', funnel: 'Retr' };   // map modal key → node id in NODE_PURPOSE
-      const subcalc = key === 'gateway' || key === 'ingestion';
+      const titles = { edgegw: 'Edge gateway', modelgw: 'Model gateway', ingestion: 'Self-built ingestion pipeline', vais: 'Vertex AI Search', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
+      const purposeId = { edgegw: 'EdgeGW', modelgw: 'ModelGW', ingestion: 'Store', vais: 'Store', sandbox: 'Sand', funnel: 'Retr' };   // map modal key → node id in NODE_PURPOSE
+      const subcalc = key === 'edgegw' || key === 'modelgw' || key === 'ingestion';
       const root = $('#modal-root'), box = $('#modal');
       let inner = `<span class="close" id="modalClose">×</span><h2>${titles[key]} ${subcalc ? '· sub-calculator' : '· detail'}</h2>`;
       inner += `<div class="sub">${NODE_PURPOSE[purposeId[key]] || ''}${subcalc ? ' <em>Has its own sizing axis, independent of the main app.</em>' : ''}</div>`;
       inner += `<div class="mdiagram" id="mdiagram">rendering...</div>`;
-      if (key === 'gateway') {
-        const g = state.componentInputs.gateway; const agg = g.aggregateQPS ?? Math.max(1, Math.round(lastMetrics.volPeak));
+      if (key === 'edgegw') {
+        const g = state.componentInputs.edge; const agg = g.aggregateQPS ?? Math.max(1, Math.round(lastMetrics.volPeak));
         const regions = Math.max(1, Math.ceil(agg / (K.apigeeRpsPerRegion)));
         inner += `<div class="ctl"><label>Aggregate org-wide QPS (all apps)</label><input type="number" id="ciq" value="${agg}" min="1"></div>`;
         inner += `<div class="ctl"><label>Tenant apps</label><input type="number" id="cit" value="${g.tenantApps}" min="1"></div>`;
         inner += `<div class="metrics"><div class="metric"><div class="k">Regions</div><div class="v">${regions}</div></div><div class="metric"><div class="k">This app share</div><div class="v">${(100 * lastMetrics.volPeak / agg).toFixed(1)}%</div></div><div class="metric"><div class="k">DLP redaction QPS</div><div class="v">${fmt(agg, 1)}</div></div></div>`;
+      }
+      if (key === 'modelgw') {
+        const g = state.componentInputs.model; const fan = g.callsPerReq ?? modelCallsPerReq(state.overrides);
+        const modelQPS = lastMetrics.volPeak * fan;
+        const regions = Math.max(1, Math.ceil(modelQPS / (K.apigeeRpsPerRegion)));
+        inner += `<div class="ctl"><label>Model calls / request</label><input type="number" id="cmc" value="${fan}" min="1"></div>`;
+        inner += `<div style="font-size:11px;color:var(--muted);margin:2px 0 6px">The agent→model fan-out (agents × a damped ReAct loop). Edit to match your trace.</div>`;
+        inner += `<div class="metrics"><div class="metric"><div class="k">Model-call QPS</div><div class="v">${fmt(modelQPS, 1)} <small>= ${fmt(lastMetrics.volPeak, 1)} × ${fan}</small></div></div><div class="metric"><div class="k">Regions</div><div class="v">${regions}</div></div><div class="metric"><div class="k">Cache offload</div><div class="v">${state.overrides.semanticCache ? (100 * (lastMetrics.cacheHitEff || 0)).toFixed(0) + '%' : 'off'}</div></div></div>`;
       }
       if (key === 'ingestion') {
         const ing = state.componentInputs.ingestion; const docs = ing.docsPerDay ?? Math.round((state.inputs.corpusSize || 0) * 0.002);
@@ -2360,7 +2422,8 @@
       if (mermaidOK) { try { const { svg } = await mermaid.render('m' + (++renderSeq), buildComponentDiagram(key)); md.innerHTML = svg; } catch (e) { md.textContent = buildComponentDiagram(key); } }
       else md.innerHTML = '<pre>' + buildComponentDiagram(key).replace(/</g, '&lt;') + '</pre>';
       // wire sub-calc inputs
-      if (key === 'gateway') { $('#ciq').oninput = e => { state.componentInputs.gateway.aggregateQPS = +e.target.value; openModal('gateway'); }; $('#cit').oninput = e => { state.componentInputs.gateway.tenantApps = +e.target.value; }; }
+      if (key === 'edgegw') { $('#ciq').oninput = e => { state.componentInputs.edge.aggregateQPS = +e.target.value; openModal('edgegw'); }; $('#cit').oninput = e => { state.componentInputs.edge.tenantApps = +e.target.value; }; }
+      if (key === 'modelgw') { $('#cmc').oninput = e => { state.componentInputs.model.callsPerReq = +e.target.value; openModal('modelgw'); }; }
       if (key === 'ingestion') { $('#cid').oninput = e => { state.componentInputs.ingestion.docsPerDay = +e.target.value; openModal('ingestion'); }; }
     }
     function closeModal() { state.ui.openModal = null; $('#modal-root').classList.remove('open'); }
@@ -2547,6 +2610,20 @@
       applyPreset('assistant', 'highvol_qa'); state.inputs.latencyPreset = 'subsecond'; deriveOverrides(); assert('sub-second locks single-agent', state.overrides.pattern === 'single');
       // external derives guardrails
       applyPreset('assistant', 'customer_support'); deriveOverrides(); assert('external derives guardrails on', state.overrides.guardrails === true);
+      // control-plane split: the Edge + Model gateway boxes derive from the same booleans, one inbound, one on the model leg
+      assert('external splits into edge + model controls', inboundControls(state.overrides, state.inputs).length > 0 && outboundControls(state.overrides, state.inputs).length > 0);
+      assert('edge carries auth, model carries output filter', inboundControls(state.overrides, state.inputs).includes('auth') && outboundControls(state.overrides, state.inputs).includes('output filter'));
+      { const d = buildMainDiagram(); assert('diagram wires the model gateway onto the model leg', /Orch --> ModelGW/.test(d) && /ModelGW --> LLM/.test(d) && !/LLM Gateway/.test(d)); }
+      assert('latency: model gateway adds to each model call', (() => {
+        applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['doc_corpus'];
+        state.inputs.audienceSensitivity = 'internal_low'; deriveOverrides();
+        const g0 = computeMetrics().latParts.find(p => /Generation/.test(p.label)).ms;   // no outbound controls → no model-gateway latency
+        state.inputs.audienceSensitivity = 'external_regulated'; deriveOverrides();
+        const g1 = computeMetrics().latParts.find(p => /Generation/.test(p.label)).ms;   // outbound controls on → +outMs on the model call
+        return g1 > g0;
+      })());
+      applyPreset('automation', 'internal_lowstakes'); deriveOverrides();
+      assert('internal low-stakes draws neither gateway box', inboundControls(state.overrides, state.inputs).length === 0 && outboundControls(state.overrides, state.inputs).length === 0);
       // metrics sanity
       applyPreset('assistant', 'expert_copilot'); const m = computeMetrics(); assert('cost opt ≤ naive', m.costOpt <= m.costNaive); assert('peak ≥ avg', m.volPeak >= m.volAvg);
       // permalink round-trip: inputs, overrides, cost overrides, and the custom flag survive encode then decode
