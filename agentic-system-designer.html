@@ -1928,6 +1928,7 @@
       'ADK + Agent Engine': 'components/agent-engine.html',
       'Agent Studio': 'components/agent-studio.html',
       'LangGraph': 'components/langgraph.html',
+      'Self-managed infra + ops (LangGraph)': 'components/langgraph.html',
       // observability and governance
       'Cloud Logging (WORM)': 'components/cloud-logging.html',
       'Cloud Trace': 'components/cloud-trace.html',
@@ -2259,6 +2260,9 @@
     function bomHtml() {
       const o = state.overrides, i = state.inputs, b = new Set();
       b.add(o.platform === 'adk' ? 'ADK + Agent Engine' : o.platform === 'studio' ? 'Agent Studio' : 'LangGraph');
+      // LangGraph is open-source and free, so its platform line looks cheapest. But self-hosting means you
+      // run the infra and operations the managed runtimes bundle. Surface that as its own visible cost line.
+      if (o.platform === 'langgraph') b.add('Self-managed infra + ops (LangGraph)');
       if (o.gateway) { b.add('Cloud IAP'); b.add('API Gateway'); b.add('Apigee'); } if (o.auditLog) b.add('Cloud Logging (WORM)');
       const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
       const hasIndex = i.dataSources.some(s => INDEXED_SRC.includes(s));
@@ -2289,6 +2293,24 @@
         note: `~${K.bqScanMB} MB scanned/req`,
         why: `On-demand BigQuery at $${K.bqOnDemandPerTiB}/TiB scanned, assuming ~${K.bqScanMB} MB per request (the model already adds one BigQuery scan per request on the query path) after the 1 TiB/mo free tier, plus ~${K.bqStorageGB} GB stored at $${K.storageBQ}/GB-mo. Partitioning and clustering can push the scan well below this; type your own $/mo to override.`,
       },
+      // Platform lines: make the build-vs-run cost difference legible. The managed runtimes bundle the
+      // infrastructure and operations; LangGraph is the free framework with that cost broken out separately.
+      'ADK + Agent Engine': {
+        note: 'managed runtime bundled',
+        why: 'Bundles the managed runtime on Vertex AI: sessions, state, autoscaling, and tracing. You do not provision or monitor that infrastructure yourself, unlike the self-hosted LangGraph path, so there is no separate ops line.',
+      },
+      'Agent Studio': {
+        note: 'managed runtime bundled',
+        why: 'Bundles the managed runtime on Vertex AI: sessions, state, autoscaling, and tracing. You do not provision or monitor that infrastructure yourself, unlike the self-hosted LangGraph path, so there is no separate ops line.',
+      },
+      'LangGraph': {
+        note: 'framework only (free OSS)',
+        why: 'The LangGraph library is open source (MIT), so this line is only the orchestration runtime you run. The infrastructure and operations it needs are shown on the separate Self-managed infra + ops line, because the managed runtimes fold those into their own price.',
+      },
+      'Self-managed infra + ops (LangGraph)': {
+        note: 'Postgres + Redis + compute + monitoring',
+        why: 'Illustrative floor for running LangGraph yourself: dedicated LangGraph Server compute, a PostgreSQL checkpoint store, Redis for streaming, and self-hosted monitoring, scaling with peak concurrency. ADK + Agent Engine and Agent Studio bundle this into their per-request price. Ops and on-call labor is additional and not dollarized here. Type your own $/mo to override.',
+      },
     };
     const unpricedReason = name => BOM_UNPRICED[name] || { short: 'usage not modeled', why: 'Spend is usage-dependent and not modeled here. Enter your own $/mo estimate.' };
     // Returns an estimated monthly $ for a BOM component, 0 if bundled/free, or
@@ -2306,6 +2328,10 @@
         'ADK + Agent Engine': 40 + R * 0.0006,
         'Agent Studio': 40 + R * 0.0006,
         'LangGraph': R * 0.0004,
+        // Illustrative floor for running LangGraph yourself: dedicated LangGraph Server compute, a PostgreSQL
+        // checkpoint store, Redis for streaming, and self-hosted monitoring, scaling with peak concurrency.
+        // The managed runtimes above bundle this into their per-request price; ops / on-call labor is extra.
+        'Self-managed infra + ops (LangGraph)': 500 + dbNodes * 150,
         'Apigee': 120 + R * 0.0003,
         'Cloud IAP': 0,                                          // no per-request charge at this sizing (bundled with the edge LB)
         'API Gateway': 3 + R * 0.000003,                         // ~$3 per million API calls
@@ -2753,6 +2779,14 @@
       // platform pages: all three Platform options resolve to a page that the BOM and the dropdown icon can open
       assert('every platform has a page', ['ADK + Agent Engine', 'Agent Studio', 'LangGraph'].every(n => /^components\/.+\.html$/.test(docFor(n) || '')));
       assert('Agent Studio + LangGraph docs registered', docFor('Agent Studio') === 'components/agent-studio.html' && docFor('LangGraph') === 'components/langgraph.html');
+      // LangGraph self-host: the hidden infra + ops cost the managed runtimes bundle is a visible BOM line,
+      // and once counted LangGraph is no longer the cheapest platform at the default scale.
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides(); const mPlat = computeMetrics();
+      state.overrides.platform = 'langgraph'; const bomLg = bomHtml(); const platLg = costSummary(mPlat).platMo;
+      state.overrides.platform = 'adk'; const bomAdk = bomHtml(); const platAdk = costSummary(mPlat).platMo;
+      assert('LangGraph adds a visible self-managed infra + ops line', bomLg.includes('Self-managed infra + ops (LangGraph)') && !bomAdk.includes('Self-managed infra + ops (LangGraph)'));
+      assert('the self-managed ops line carries a real cost', bomMonthlyCost('Self-managed infra + ops (LangGraph)', mPlat) > 0);
+      assert('LangGraph self-host TCO exceeds the managed runtime at default scale', platLg > platAdk);
       // baseline diff: pinning then editing an input reports the ripple, incl. locked side-effects
       // (governance is read-only now, so the ripple comes from a performance lock: sub-second → single-agent)
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); lastMetrics = computeMetrics(); pinBaseline();
