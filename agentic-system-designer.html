@@ -198,7 +198,7 @@
       gap: 4px
     }
 
-    .actions .mini > svg {
+    .actions .mini>svg {
       width: 12px;
       height: 12px
     }
@@ -266,7 +266,7 @@
       gap: 5px
     }
 
-    button.mini > svg {
+    button.mini>svg {
       flex: none
     }
 
@@ -437,7 +437,9 @@
       opacity: 1
     }
 
-    .bomlist a.info-i { margin-left: 1px; }
+    .bomlist a.info-i {
+      margin-left: 1px;
+    }
 
 
     .vis-count {
@@ -453,7 +455,9 @@
     }
 
     /* "What changed" baseline comparison strip */
-    .diff-strip { border-left: 3px solid var(--accent) }
+    .diff-strip {
+      border-left: 3px solid var(--accent)
+    }
 
     .diff-head {
       display: flex;
@@ -462,9 +466,13 @@
       margin-bottom: 6px
     }
 
-    .diff-head h3 { margin: 0 }
+    .diff-head h3 {
+      margin: 0
+    }
 
-    .diff-head .spacer { flex: 1 }
+    .diff-head .spacer {
+      flex: 1
+    }
 
     .diff-clear {
       cursor: pointer;
@@ -476,7 +484,9 @@
       padding: 2px 4px
     }
 
-    .diff-clear:hover { color: var(--text) }
+    .diff-clear:hover {
+      color: var(--text)
+    }
 
     .diff-grp {
       display: flex;
@@ -486,7 +496,7 @@
       margin: 5px 0
     }
 
-    .diff-grp > .dlabel {
+    .diff-grp>.dlabel {
       font-size: 10px;
       text-transform: uppercase;
       letter-spacing: .04em;
@@ -505,19 +515,35 @@
       font-size: 12px
     }
 
-    .dpill .dk { color: var(--muted) }
+    .dpill .dk {
+      color: var(--muted)
+    }
 
-    .dpill .dar { color: var(--muted) }
+    .dpill .dar {
+      color: var(--muted)
+    }
 
-    .dpill .dnew { font-weight: 600 }
+    .dpill .dnew {
+      font-weight: 600
+    }
 
-    .dpill.up { border-left: 2px solid var(--err) }
+    .dpill.up {
+      border-left: 2px solid var(--err)
+    }
 
-    .dpill.down { border-left: 2px solid var(--ok) }
+    .dpill.down {
+      border-left: 2px solid var(--ok)
+    }
 
-    .dpill .dlock { color: var(--warn); font-size: 11px }
+    .dpill .dlock {
+      color: var(--warn);
+      font-size: 11px
+    }
 
-    .diff-empty { color: var(--muted); font-size: 13px }
+    .diff-empty {
+      color: var(--muted);
+      font-size: 13px
+    }
 
     .panel {
       background: var(--panel);
@@ -637,7 +663,13 @@
     }
 
     /* panel-level header for the left config column; muted like Architecture, a level above the fieldset legends */
-    .config-head { margin: 0 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted) }
+    .config-head {
+      margin: 0 0 2px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted)
+    }
 
     .metrics {
       display: grid;
@@ -1045,13 +1077,13 @@
         column-gap: 14px
       }
 
-      section.output > * {
+      section.output>* {
         break-inside: avoid;
         margin-bottom: 14px
       }
 
-      section.output > .arch-wrap,
-      section.output > #diffStrip {
+      section.output>.arch-wrap,
+      section.output>#diffStrip {
         column-span: all
       }
     }
@@ -1060,8 +1092,14 @@
 
 <body>
   <header>
-    <a class="backlink" href="index.html" aria-label="Back to all tools" title="Back to all tools"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></a>
-    <h1>Agentic System Designer <span style="color:var(--muted);font-weight:400;font-size:13px">- design a GenAI system on Google Cloud</span></h1>
+    <a class="backlink" href="index.html" aria-label="Back to all tools" title="Back to all tools"><svg
+        viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M19 12H5" />
+        <path d="M12 19l-7-7 7-7" />
+      </svg></a>
+    <h1>Agentic System Designer <span style="color:var(--muted);font-weight:400;font-size:13px">- design a GenAI system
+        on Google Cloud</span></h1>
     <div class="legend">
       <span><i style="background:var(--client)"></i>client</span>
       <span><i style="background:var(--gateway)"></i>gateway</span>
@@ -1073,7 +1111,11 @@
       <span><b>⊕</b> drill in</span>
       <span><span class="tag" style="margin:0">blue</span> driving input</span>
     </div>
-    <button class="mini permalink-top" id="permalinkBtn" title="Copy permalink"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Permalink</span></button>
+    <button class="mini permalink-top" id="permalinkBtn" title="Copy permalink"><svg viewBox="0 0 24 24" width="13"
+        height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2" />
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+      </svg><span>Permalink</span></button>
   </header>
   <div id="testbar"></div>
 
@@ -1093,8 +1135,18 @@
       </div>
 
       <div class="actions">
-        <button class="mini" id="resetBtn" title="Reset to preset defaults"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span>Reset</span></button>
-        <button class="mini" id="pinBtn" title="Snapshot the current design, then see what changes against it"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Pin</span></button>
+        <button class="mini" id="resetBtn" title="Reset to preset defaults"><svg viewBox="0 0 24 24" width="13"
+            height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg><span>Reset</span></button>
+        <button class="mini" id="pinBtn" title="Snapshot the current design, then see what changes against it"><svg
+            viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+            <circle cx="12" cy="10" r="3" />
+          </svg><span>Pin</span></button>
       </div>
 
       <fieldset data-grp="workload">
@@ -1387,7 +1439,8 @@
   </main>
 
   <div class="foot">Deterministic design tool - advice is computed from formulas + rules, no runtime LLM. Illustrative
-    pricing/heuristics ~May 2026.<br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</div>
+    pricing/heuristics ~May 2026.<br>A personal project, provided as is and not affiliated with or endorsed by any
+    vendor. See the <a href="DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</div>
 
   <div id="modal-root">
     <div class="modal" id="modal"></div>
@@ -1447,7 +1500,7 @@
       assistant: {
         expert_copilot: { label: 'Expert copilot', inputs: { actors: 1000, actionsPerDay: 10, burst: 5, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 4000, tokensOut: 800, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'doc_corpus'], corpusSize: 2e6, freshness: 'eod', languages: ['en'] } },
         highvol_qa: { label: 'High-volume Q&A', inputs: { actors: 20000, actionsPerDay: 50, burst: 6, activeHoursPerWeek: 120, latencyPreset: 'subsecond', tokensIn: 3000, tokensOut: 500, audienceSensitivity: 'internal_regulated', dataSources: ['doc_corpus'], corpusSize: 1e7, freshness: 'static', languages: ['en'] } },
-        customer_support: { label: 'Customer support', inputs: { actors: 50000, actionsPerDay: 4, burst: 7, activeHoursPerWeek: 168, latencyPreset: 'agentic', tokensIn: 2500, tokensOut: 600, audienceSensitivity: 'external_enterprise', dataSources: ['doc_corpus'], corpusSize: 5e5, freshness: 'eod', languages: ['en', 'zh'] } },
+        customer_support: { label: 'Customer support', inputs: { actors: 50000, actionsPerDay: 4, burst: 7, activeHoursPerWeek: 168, latencyPreset: 'agentic', tokensIn: 2500, tokensOut: 600, audienceSensitivity: 'external_enterprise', dataSources: ['doc_corpus'], corpusSize: 5e5, freshness: 'eod', languages: ['en', 'zh', 'ja'] } },
         strictpii_verify: { label: 'Strict-PII verification', inputs: { actors: 300, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 6000, tokensOut: 1000, audienceSensitivity: 'internal_strictpii', dataSources: ['web', 'kg', 'onprem'], corpusSize: 0, freshness: 'realtime', languages: ['en'] } },
       },
       automation: {
@@ -1579,8 +1632,10 @@
       // Operations & approval
       const hitl = auto ? (lvl >= 3 ? 'dual' : 'maker_checker') : 'none';
       o.hitlApproval = hitl;
-      G.push({ key: 'hitlApproval', label: 'Human approval', on: hitl !== 'none', value: hitl, cat: 'ops',
-        why: hitl === 'dual' ? 'strict-PII automation' : hitl === 'maker_checker' ? 'automation merge' : 'assistant (no auto-action)' });
+      G.push({
+        key: 'hitlApproval', label: 'Human approval', on: hitl !== 'none', value: hitl, cat: 'ops',
+        why: hitl === 'dual' ? 'strict-PII automation' : hitl === 'maker_checker' ? 'automation merge' : 'assistant (no auto-action)'
+      });
       set('modelRiskGov', 'Model risk governance', lvl >= 2, lvl >= 2 ? 'regulated+' : 'not required', 'ops');
       set('safeRollout', 'Safe rollout + eval gates', lvl >= 2 || ext || highVol,
         lvl >= 2 ? 'regulated+' : ext ? 'external' : highVol ? 'high volume' : 'low blast radius', 'ops');
@@ -2413,7 +2468,7 @@
     }
     function renderDiffStrip() {
       const strip = $('#diffStrip'), pin = $('#pinBtn');
-      if (pin) { pin.classList.toggle('pinned', !!state.baseline); const s = pin.querySelector('span'); if (s) s.textContent = state.baseline ? 'Re-pin' : 'Pin'; }
+      if (pin) { pin.classList.toggle('pinned', !!state.baseline); const s = pin.querySelector('span'); if (s) s.textContent = state.baseline ? 'Re-pin Baseline' : 'Pin Baseline'; }
       if (!state.baseline) { strip.hidden = true; strip.innerHTML = ''; return; }
       const d = computeDiff();
       const grp = (label, pills) => pills.length ? `<div class="diff-grp"><span class="dlabel">${label}</span>${pills.join('')}</div>` : '';
