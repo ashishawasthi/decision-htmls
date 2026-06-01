@@ -204,7 +204,7 @@
       <tbody>
         <tr>
           <td>Hot data off the request path, low ms reads</td>
-          <td>Replicate or cache into AlloyDB, Spanner, or Bigtable</td>
+          <td>Replicate or cache into <a class="src" href="alloydb.html">AlloyDB</a>, <a class="src" href="spanner.html">Spanner</a>, or Bigtable</td>
           <td>single-digit ms</td>
         </tr>
         <tr>
@@ -214,7 +214,7 @@
         </tr>
         <tr>
           <td>Fresh changes streamed out of the legacy system</td>
-          <td>Change data capture into Pub/Sub, then a cloud store</td>
+          <td>Change data capture into <a class="src" href="pubsub.html">Pub/Sub</a>, then a cloud store</td>
           <td>near-real-time, pipeline cost</td>
         </tr>
         <tr>
@@ -238,9 +238,9 @@
     <h2>Integration patterns and tuning</h2>
     <ul>
       <li><b>Keep it off the hot path:</b> for an assistant, replicate or cache the hot, frequently read data into a
-        cloud store (AlloyDB, Spanner, or Bigtable) and read that synchronously. Reach the on-prem DB only when you must
+        cloud store (<a class="src" href="alloydb.html">AlloyDB</a>, <a class="src" href="spanner.html">Spanner</a>, or Bigtable) and read that synchronously. Reach the on-prem DB only when you must
         and the budget allows.</li>
-      <li><b>Stream, do not poll:</b> use change data capture into Pub/Sub to push fresh changes out of the legacy system
+      <li><b>Stream, do not poll:</b> use change data capture into <a class="src" href="pubsub.html">Pub/Sub</a> to push fresh changes out of the legacy system
         rather than having the agent reach back in on every request.</li>
       <li><b>Harden the link:</b> prefer Dedicated or Partner Interconnect for a predictable round-trip, and design for
         connectivity loss with a fallback or a clear degraded mode rather than a hard dependency.</li>

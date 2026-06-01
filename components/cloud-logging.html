@@ -164,8 +164,8 @@
           <li>General app debugging where standard, non-locked buckets are cheaper and stay flexible.</li>
           <li>Storing raw PII or secrets in the log body: a locked bucket means you cannot delete the bad entry. Redact
             first.</li>
-          <li>High-cardinality metrics or traces: use Cloud Monitoring and Cloud Trace, not the audit log.</li>
-          <li>As a queryable feature store or analytics warehouse. Route to BigQuery for analysis instead.</li>
+          <li>High-cardinality metrics or traces: use Cloud Monitoring and <a class="src" href="cloud-trace.html">Cloud Trace</a>, not the audit log.</li>
+          <li>As a queryable feature store or analytics warehouse. Route to <a class="src" href="bigquery.html">BigQuery</a> for analysis instead.</li>
         </ul>
       </div>
     </div>
@@ -217,14 +217,14 @@
     <ul>
       <li><b>Lock the retention, on purpose:</b> create a dedicated log bucket, set the retention period, then lock it.
         Locking is irreversible, so size the period to the longest applicable regulatory requirement before you commit.</li>
-      <li><b>Redact before it lands:</b> run log payloads through Cloud DLP (Sensitive Data Protection) de-identification
+      <li><b>Redact before it lands:</b> run log payloads through <a class="src" href="cloud-dlp.html">Cloud DLP</a> (Sensitive Data Protection) de-identification
         so PII is masked or tokenized before the immutable write. A locked bucket cannot delete a leaked secret, so the
         guardrail has to sit upstream.</li>
       <li><b>Separate audit from debug:</b> route audit and security events to the locked bucket with a log sink and
         filter, and keep noisy application logs in a standard, shorter-retention bucket to control cost.</li>
       <li><b>Tighten access:</b> restrict read access to the audit bucket with IAM, and enable Data Access audit logs so
         reads of the audit trail are themselves recorded.</li>
-      <li><b>Fan out where needed:</b> add an export sink to a SIEM or to BigQuery for correlation and analysis, while the
+      <li><b>Fan out where needed:</b> add an export sink to a SIEM or to <a class="src" href="bigquery.html">BigQuery</a> for correlation and analysis, while the
         locked bucket remains the authoritative untouched copy.</li>
     </ul>
 
@@ -233,7 +233,7 @@
       level, the rules engine locks this control on rather than leaving it optional, because at that sensitivity a
       tamper-evident trail is a hard requirement, not a nice-to-have.</p>
     <div class="note"><b>It travels with redaction.</b> The designer pairs the immutable audit log with PII redaction
-      (Cloud DLP) under regulated sensitivity, so the record you cannot edit is also a record that never captured raw
+      (<a class="src" href="cloud-dlp.html">Cloud DLP</a>) under regulated sensitivity, so the record you cannot edit is also a record that never captured raw
       PII in the first place.</div>
 
     <h2>Sources</h2>

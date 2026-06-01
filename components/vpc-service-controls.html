@@ -164,7 +164,7 @@
           <li>Low-sensitivity workloads where the operational cost of perimeter design and ingress and egress rules is not
             justified.</li>
           <li>Treating it as access control: it does not grant or scope permissions. That is IAM, which you still need.</li>
-          <li>Treating it as field-level privacy: it does not redact PII inside the data. That is Cloud DLP.</li>
+          <li>Treating it as field-level privacy: it does not redact PII inside the data. That is <a class="src" href="cloud-dlp.html">Cloud DLP</a>.</li>
           <li>Bolting it on late without planning ingress and egress rules: legitimate cross-project and partner flows can
             break, so design the boundary up front.</li>
         </ul>
@@ -203,7 +203,7 @@
         </tr>
         <tr>
           <td>Remove sensitive data from content</td>
-          <td>Cloud DLP (complementary)</td>
+          <td><a class="src" href="cloud-dlp.html">Cloud DLP</a> (complementary)</td>
           <td>per unit processed; redaction, not a network boundary</td>
         </tr>
       </tbody>
@@ -236,7 +236,7 @@
       boundary around the sensitive services in the architecture.</p>
     <div class="note"><b>Strict-PII locks it on.</b> When sensitivity is set to strict-PII, the rules engine forces the
       Data residency pin and VPC-SC on rather than leaving it optional, because residency and exfiltration control are
-      table stakes at that tier. It sits alongside, not in place of, IAM (identity and access) and Cloud DLP (field-level
+      table stakes at that tier. It sits alongside, not in place of, IAM (identity and access) and <a class="src" href="cloud-dlp.html">Cloud DLP</a> (field-level
       redaction): the perimeter keeps data in, IAM controls who reaches it, and DLP removes sensitive values from the
       content itself.</div>
 

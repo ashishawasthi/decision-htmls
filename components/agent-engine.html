@@ -161,8 +161,8 @@
       <div class="card avoid">
         <h3>Avoid</h3>
         <ul>
-          <li>Quick low-code starts where a builder UI gets a usable agent faster than writing framework code: use Agent
-            Studio.</li>
+          <li>Quick low-code starts where a builder UI gets a usable agent faster than writing framework code: use <a class="src" href="agent-studio.html">Agent
+            Studio</a>.</li>
           <li>Hard portability or no-lock-in mandates that require running the same agent across clouds or on-prem: an
             open-source framework you operate yourself fits better.</li>
           <li>Teams that explicitly want to own the runtime for deep customization rather than use a managed one.</li>
@@ -188,12 +188,12 @@
         </tr>
         <tr>
           <td>Fastest start, low-code, less control</td>
-          <td>Agent Studio</td>
+          <td><a class="src" href="agent-studio.html">Agent Studio</a></td>
           <td>builder UI; quicker to a working agent, less fine-grained control</td>
         </tr>
         <tr>
           <td>Portability and control, no lock-in</td>
-          <td>LangGraph (open source)</td>
+          <td><a class="src" href="langgraph.html">LangGraph</a> (open source)</td>
           <td>portable across environments, but you operate it yourself</td>
         </tr>
       </tbody>
@@ -218,12 +218,12 @@
         layer yourself, which is much of its value for an interactive assistant.</li>
       <li><b>Tracing and governance:</b> use the built-in tracing to debug agent runs and meet observability and
         governance requirements in production.</li>
-      <li><b>Portability path:</b> if no-lock-in is a hard requirement, choose LangGraph and accept that you own the
+      <li><b>Portability path:</b> if no-lock-in is a hard requirement, choose <a class="src" href="langgraph.html">LangGraph</a> and accept that you own the
         runtime, scaling, and observability that Agent Engine would otherwise provide.</li>
     </ul>
 
     <h2>How it maps to this tool</h2>
-    <p>This is the designer's <b>Platform</b> input: ADK + Agent Engine versus Agent Studio versus LangGraph. The choice
+    <p>This is the designer's <b>Platform</b> input: ADK + Agent Engine versus <a class="src" href="agent-studio.html">Agent Studio</a> versus <a class="src" href="langgraph.html">LangGraph</a>. The choice
       sets how the agent is built and where it runs.</p>
     <div class="note"><b>It is a governance and operations decision.</b> The tool frames Platform along the build-versus-run
       axis: the managed runtime (ADK + Agent Engine) for production governance and least operations, Agent Studio for the

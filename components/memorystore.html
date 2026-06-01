@@ -165,9 +165,9 @@
         <ul>
           <li>Durable per-request point lookups that must not be lost (profiles, entitlements, feature data at scale).
             Use Bigtable for single-digit ms lookups with durability.</li>
-          <li>A transactional system of record or anything needing strong durability guarantees. Use Spanner, AlloyDB,
+          <li>A transactional system of record or anything needing strong durability guarantees. Use <a class="src" href="spanner.html">Spanner</a>, <a class="src" href="alloydb.html">AlloyDB</a>,
             or Cloud SQL.</li>
-          <li>Large analytical scans. Use BigQuery, off the request path.</li>
+          <li>Large analytical scans. Use <a class="src" href="bigquery.html">BigQuery</a>, off the request path.</li>
           <li>Serving static assets to end users. A CDN is the right layer for that.</li>
         </ul>
       </div>
@@ -237,7 +237,7 @@
       short-circuits repeated model calls on the hot path.</p>
     <div class="note"><b>Durable point lookups belong on Bigtable.</b> Memorystore is a cache, so per-request key
       lookups that must be durable should land on Bigtable (single-digit ms, durable, at massive scale), not on an
-      in-memory cache and not on an analytical warehouse. This complements the guidance on the BigQuery page that
+      in-memory cache and not on an analytical warehouse. This complements the guidance on the <a class="src" href="bigquery.html">BigQuery</a> page that
       point lookups do not belong in BigQuery.</div>
 
     <h2>Sources</h2>

@@ -162,9 +162,9 @@
         <ul>
           <li>Fully synthetic or already-anonymized data with no personal information to protect.</li>
           <li>Treating it as a safety filter: it removes sensitive data but does not stop prompt injection, jailbreaks, or
-            malicious URLs. That is Model Armor.</li>
+            malicious URLs. That is <a class="src" href="model-armor.html">Model Armor</a>.</li>
           <li>Treating it as a network boundary: de-identification is not a perimeter. Data residency and exfiltration
-            control come from VPC Service Controls.</li>
+            control come from <a class="src" href="vpc-service-controls.html">VPC Service Controls</a>.</li>
           <li>Hard real-time paths with no budget for an inline inspection call, unless you scope the scan tightly or run
             it asynchronously.</li>
         </ul>
@@ -198,12 +198,12 @@
         </tr>
         <tr>
           <td>Stop unsafe content (injection, jailbreaks, leakage)</td>
-          <td>Model Armor (complementary)</td>
+          <td><a class="src" href="model-armor.html">Model Armor</a> (complementary)</td>
           <td>safety screening, not de-identification</td>
         </tr>
         <tr>
           <td>Keep data inside a residency or exfiltration boundary</td>
-          <td>VPC Service Controls (complementary)</td>
+          <td><a class="src" href="vpc-service-controls.html">VPC Service Controls</a> (complementary)</td>
           <td>network perimeter, not field-level redaction</td>
         </tr>
       </tbody>
@@ -220,11 +220,11 @@
 
     <h2>Integration patterns and tuning</h2>
     <ul>
-      <li><b>Redact at the gateway:</b> de-identify prompts on the way in and responses on the way out at the Apigee or
+      <li><b>Redact at the gateway:</b> de-identify prompts on the way in and responses on the way out at the <a class="src" href="apigee.html">Apigee</a> or
         orchestrator layer, so raw PII never reaches the model and never enters request logs.</li>
       <li><b>De-identify at ingestion:</b> scan and redact documents before they enter a corpus or vector store, so the
         retrieval path cannot surface sensitive data later.</li>
-      <li><b>Pair with Model Armor:</b> run both at the same seam. Guardrails stop unsafe content, DLP removes sensitive
+      <li><b>Pair with <a class="src" href="model-armor.html">Model Armor</a>:</b> run both at the same seam. Guardrails stop unsafe content, DLP removes sensitive
         data; together they cover safety and privacy on the same hop.</li>
       <li><b>Tuning:</b> select the infoTypes that matter for your jurisdiction, choose a transform (redact, mask,
         tokenize, or format-preserving encryption) per re-identification need, and scope scans to the smallest payload to
@@ -235,8 +235,8 @@
     <p>The designer applies <b>always-on DLP redaction at the gateway</b> and turns on PII handling whenever sensitivity is
       set to regulated or strict-PII. Enabling it places de-identification in front of the model and ahead of logging.</p>
     <div class="note"><b>It is a distinct control from its neighbors.</b> The tool separates three jobs that are easy to
-      conflate: Cloud DLP removes sensitive data, Model Armor (Safety guardrails) screens unsafe content, and VPC Service
-      Controls draws the network perimeter. A strict-PII design typically switches on all three, since each closes a gap
+      conflate: Cloud DLP removes sensitive data, <a class="src" href="model-armor.html">Model Armor</a> (Safety guardrails) screens unsafe content, and <a class="src" href="vpc-service-controls.html">VPC Service
+      Controls</a> draws the network perimeter. A strict-PII design typically switches on all three, since each closes a gap
       the others do not.</div>
 
     <h2>Sources</h2>

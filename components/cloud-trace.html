@@ -160,10 +160,10 @@
       <div class="card avoid">
         <h3>Avoid</h3>
         <ul>
-          <li>As your audit or compliance record: traces are sampled and short-lived. Use Cloud Logging with a locked
+          <li>As your audit or compliance record: traces are sampled and short-lived. Use <a class="src" href="cloud-logging.html">Cloud Logging</a> with a locked
             bucket for that.</li>
           <li>As a metrics or alerting system: use Cloud Monitoring for SLOs, dashboards, and alerts.</li>
-          <li>For output-quality questions like faithfulness or citation accuracy: that is Vertex AI Eval, not tracing.</li>
+          <li>For output-quality questions like faithfulness or citation accuracy: that is <a class="src" href="vertex-ai-eval.html">Vertex AI Eval</a>, not tracing.</li>
           <li>Expecting useful traces with zero instrumentation: without spans there is nothing to see.</li>
         </ul>
       </div>
@@ -222,7 +222,7 @@
         slow trace explains itself rather than just showing a duration.</li>
       <li><b>Tune sampling:</b> head-based sampling controls cost; keep a high rate in staging and on low-traffic paths,
         lower it on hot paths, and bias toward keeping slow or errored traces.</li>
-      <li><b>Correlate with logs and metrics:</b> carry the trace ID into Cloud Logging entries so you can jump from a log
+      <li><b>Correlate with logs and metrics:</b> carry the trace ID into <a class="src" href="cloud-logging.html">Cloud Logging</a> entries so you can jump from a log
         line to its full trace, and watch latency SLOs in Cloud Monitoring.</li>
     </ul>
 

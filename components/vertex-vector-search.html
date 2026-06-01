@@ -163,10 +163,10 @@
       <div class="card avoid">
         <h3>Avoid</h3>
         <ul>
-          <li>Rich SQL pre-filtering or joins against transactional rows before the vector step. Use AlloyDB pgvector so
+          <li>Rich SQL pre-filtering or joins against transactional rows before the vector step. Use <a class="src" href="alloydb.html">AlloyDB</a> pgvector so
             the filter and the vector live in one engine.</li>
           <li>Hybrid lexical plus vector ranking (BM25 fused with embeddings). Elasticsearch handles this natively.</li>
-          <li>Batch or cost-sensitive similarity over data already in the warehouse. Use BigQuery vector search, which is
+          <li>Batch or cost-sensitive similarity over data already in the warehouse. Use <a class="src" href="bigquery.html">BigQuery</a> vector search, which is
             not interactive.</li>
           <li>Tiny corpora where a single Postgres instance with pgvector is simpler and cheaper to run.</li>
         </ul>
@@ -185,7 +185,7 @@
       <tbody>
         <tr>
           <td>Postgres plus vector in one engine, SQL pre-filtering, transactional, moderate scale</td>
-          <td>AlloyDB (pgvector)</td>
+          <td><a class="src" href="alloydb.html">AlloyDB</a> (pgvector)</td>
           <td>low ms; per vCPU and storage</td>
         </tr>
         <tr>
@@ -195,7 +195,7 @@
         </tr>
         <tr>
           <td>Batch or cost-sensitive similarity over warehouse data</td>
-          <td>BigQuery vector search</td>
+          <td><a class="src" href="bigquery.html">BigQuery</a> vector search</td>
           <td>hundreds of ms to seconds; per TB scanned</td>
         </tr>
         <tr>

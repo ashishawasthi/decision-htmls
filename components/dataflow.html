@@ -215,7 +215,7 @@
 
     <h2>Integration patterns and tuning</h2>
     <ul>
-      <li><b>Separated ingestion pipeline:</b> Dataflow reads the corpus, parses (often via Document AI), chunks, calls
+      <li><b>Separated ingestion pipeline:</b> Dataflow reads the corpus, parses (often via <a class="src" href="document-ai.html">Document AI</a>), chunks, calls
         the embedding model, and writes vectors to the index, all as a job decoupled from serving.</li>
       <li><b>Reindex without downtime:</b> build a fresh index in a new job, then swap serving over to it, so live
         traffic never reads a half-built index.</li>

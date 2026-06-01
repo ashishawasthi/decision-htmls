@@ -165,9 +165,9 @@
         <ul>
           <li>Throwaway prototypes and demos where formal versioning and approvals add overhead without payoff.</li>
           <li>As a serving or inference engine: the registry governs versions; Vertex AI endpoints serve them.</li>
-          <li>As your evaluation system: it stores results and approvals but does not compute quality. Use Vertex AI
-            Eval.</li>
-          <li>As the audit log of runtime events: that is Cloud Logging. The registry governs artifacts, not request
+          <li>As your evaluation system: it stores results and approvals but does not compute quality. Use <a class="src" href="vertex-ai-eval.html">Vertex AI
+            Eval</a>.</li>
+          <li>As the audit log of runtime events: that is <a class="src" href="cloud-logging.html">Cloud Logging</a>. The registry governs artifacts, not request
             traffic.</li>
         </ul>
       </div>
@@ -200,7 +200,7 @@
         </tr>
         <tr>
           <td>Measuring quality of a version before promotion</td>
-          <td>Vertex AI Eval (feeds approval decisions)</td>
+          <td><a class="src" href="vertex-ai-eval.html">Vertex AI Eval</a> (feeds approval decisions)</td>
           <td>per eval run; judge-model tokens</td>
         </tr>
       </tbody>
@@ -220,7 +220,7 @@
     <ul>
       <li><b>Register every production candidate:</b> push each model and prompt version into the registry with metadata,
         rather than referencing a model by a loose string in app config.</li>
-      <li><b>Gate promotion on eval and approval:</b> require a passing Vertex AI Eval run and a recorded human approval
+      <li><b>Gate promotion on eval and approval:</b> require a passing <a class="src" href="vertex-ai-eval.html">Vertex AI Eval</a> run and a recorded human approval
         before a version is promoted to the production alias.</li>
       <li><b>Serve through an alias, not a hard-coded ID:</b> point the endpoint at a stable production alias so a
         rollback is repointing the alias to the previous version, fast and auditable.</li>
@@ -234,7 +234,7 @@
     <p>This component backs the <b>Model risk governance</b> override. When the scenario calls for model-risk controls,
       the rules engine turns this on so production models and prompts are pinned to registered, approved versions instead
       of floating on whatever config happens to be deployed.</p>
-    <div class="note"><b>It is the governance counterpart to eval.</b> The designer treats Vertex AI Eval as the measure
+    <div class="note"><b>It is the governance counterpart to eval.</b> The designer treats <a class="src" href="vertex-ai-eval.html">Vertex AI Eval</a> as the measure
       and the registry as the gate: eval scores a version, the registry records the approval and pins what ships, and
       together they give you a defensible, reversible promotion path.</div>
 

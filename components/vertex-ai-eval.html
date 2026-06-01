@@ -164,7 +164,7 @@
         <ul>
           <li>Synchronous, per-request gating: a judge-model call in the hot path adds seconds and cost. Sample async
             instead.</li>
-          <li>Latency or availability questions: that is Cloud Trace and Cloud Monitoring, not eval.</li>
+          <li>Latency or availability questions: that is <a class="src" href="cloud-trace.html">Cloud Trace</a> and Cloud Monitoring, not eval.</li>
           <li>As the sole arbiter on high-stakes output: keep a human-in-the-loop review for the riskiest decisions.</li>
           <li>Grading 100% of traffic with a large judge model: the token bill scales with volume; sample.</li>
         </ul>
@@ -198,7 +198,7 @@
         </tr>
         <tr>
           <td>Latency, errors, and availability, not quality</td>
-          <td>Cloud Trace and Cloud Monitoring</td>
+          <td><a class="src" href="cloud-trace.html">Cloud Trace</a> and Cloud Monitoring</td>
           <td>per span / per time series</td>
         </tr>
       </tbody>

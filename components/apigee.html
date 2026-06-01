@@ -184,7 +184,7 @@
             gain.</li>
           <li>Ultra-tight latency budgets where even a thin proxy hop is unacceptable, unless you keep policies minimal.</li>
           <li>Early prototypes: start direct, add the gateway when more than one consumer or a compliance need appears.</li>
-          <li>Using it as a safety or redaction engine on its own. It is the choke point; Model Armor and Cloud DLP do the
+          <li>Using it as a safety or redaction engine on its own. It is the choke point; <a class="src" href="model-armor.html">Model Armor</a> and <a class="src" href="cloud-dlp.html">Cloud DLP</a> do the
             screening and redaction behind it.</li>
         </ul>
       </div>
@@ -239,7 +239,7 @@
         JWT, so identity and quota live in one policy set instead of scattered code.</li>
       <li><b>Model routing and fan-out:</b> route by model name, tenant, or cost tier behind a stable endpoint, with
         failover across providers. Apps stay decoupled from which model actually serves the request.</li>
-      <li><b>Safety and redaction seam:</b> call Model Armor and Cloud DLP from the proxy flow so unsafe content is
+      <li><b>Safety and redaction seam:</b> call <a class="src" href="model-armor.html">Model Armor</a> and <a class="src" href="cloud-dlp.html">Cloud DLP</a> from the proxy flow so unsafe content is
         screened and PII is redacted before the prompt reaches the model and before anything lands in logs.</li>
       <li><b>Tuning:</b> enable response or semantic caching for common prompts, set per-tenant quota and spike arrest, and
         keep the interactive policy chain short. Push expensive checks to the asynchronous or automation path where added

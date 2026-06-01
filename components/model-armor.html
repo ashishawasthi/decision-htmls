@@ -183,7 +183,7 @@
         <ul>
           <li>Fully internal, low-risk tools with only trusted inputs, where the added hop buys little.</li>
           <li>Treating it as PII removal: it flags and blocks unsafe content but is not the de-identification engine. Pair
-            it with Cloud DLP.</li>
+            it with <a class="src" href="cloud-dlp.html">Cloud DLP</a>.</li>
           <li>Hard real-time paths with no budget for a synchronous screening call, unless you accept the latency or screen
             asynchronously.</li>
           <li>Assuming it replaces system-prompt hygiene, least-privilege tools, and output validation. It is one layer of
@@ -224,7 +224,7 @@
         </tr>
         <tr>
           <td>Remove PII from prompts and logs</td>
-          <td>Cloud DLP (complementary, not a substitute)</td>
+          <td><a class="src" href="cloud-dlp.html">Cloud DLP</a> (complementary, not a substitute)</td>
           <td>per-unit processed; redaction, not safety screening</td>
         </tr>
       </tbody>
@@ -243,9 +243,9 @@
     <ul>
       <li><b>Both sides of the model:</b> sanitize the prompt before the model sees it and screen the response before it
         reaches the user or downstream system. One-sided screening leaves a gap.</li>
-      <li><b>At the gateway or orchestrator:</b> placing it in the Apigee flow or the agent orchestrator gives one
+      <li><b>At the gateway or orchestrator:</b> placing it in the <a class="src" href="apigee.html">Apigee</a> flow or the agent orchestrator gives one
         consistent enforcement point across apps instead of per-app filters.</li>
-      <li><b>Pair with Cloud DLP:</b> guardrails stop unsafe content, DLP removes sensitive data. Run DLP redaction
+      <li><b>Pair with <a class="src" href="cloud-dlp.html">Cloud DLP</a>:</b> guardrails stop unsafe content, DLP removes sensitive data. Run DLP redaction
         alongside Model Armor so prompts are both safe and de-identified before the model and before logging.</li>
       <li><b>Tuning:</b> set category thresholds and block or sanitize actions per risk tolerance, log detections for
         review, and combine with least-privilege tools and output validation so screening is one layer of defense in
@@ -257,7 +257,7 @@
       model in the architecture. Enabling it adds the screening layer that an external or regulated design needs.</p>
     <div class="note"><b>The rules engine locks it on for exposed audiences.</b> When the audience is external or public,
       the tool forces Safety guardrails on rather than leaving it optional, because an untrusted caller is the case Model
-      Armor exists for. PII redaction (Cloud DLP) is shown as a separate, complementary override: guardrails stop unsafe
+      Armor exists for. PII redaction (<a class="src" href="cloud-dlp.html">Cloud DLP</a>) is shown as a separate, complementary override: guardrails stop unsafe
       content, DLP removes sensitive data, and a regulated design typically wants both.</div>
 
     <h2>Sources</h2>

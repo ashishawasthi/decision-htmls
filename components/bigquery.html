@@ -178,7 +178,7 @@
         <h3>Avoid</h3>
         <ul>
           <li>Any sub-second interactive path: an analytical scan will exceed the budget.</li>
-          <li>Per-request point lookups (profile, session, feature flags). Use Bigtable, AlloyDB, or Spanner.</li>
+          <li>Per-request point lookups (profile, session, feature flags). Use Bigtable, <a class="src" href="alloydb.html">AlloyDB</a>, or <a class="src" href="spanner.html">Spanner</a>.</li>
           <li>Synchronous RAG retrieval over a corpus. Use a dedicated vector store.</li>
           <li>Relying on BI Engine to speed up vector or <code>SEARCH</code> retrieval. It does not.</li>
         </ul>
@@ -197,12 +197,12 @@
       <tbody>
         <tr>
           <td>Point lookup by key (profile, session, flags)</td>
-          <td>Bigtable, AlloyDB, or Spanner</td>
+          <td>Bigtable, <a class="src" href="alloydb.html">AlloyDB</a>, or <a class="src" href="spanner.html">Spanner</a></td>
           <td>single-digit ms</td>
         </tr>
         <tr>
           <td>Semantic retrieval for RAG</td>
-          <td>Vertex AI Vector Search</td>
+          <td><a class="src" href="vertex-vector-search.html">Vertex AI Vector Search</a></td>
           <td>around 12 ms</td>
         </tr>
         <tr>

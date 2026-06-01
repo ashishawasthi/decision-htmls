@@ -181,10 +181,10 @@
       <div class="card avoid">
         <h3>Avoid</h3>
         <ul>
-          <li>You need a custom chunker, a specific embedding model, or fine ANN tuning (HNSW M and efSearch). Use Vertex
-            AI Vector Search with your own pipeline.</li>
+          <li>You need a custom chunker, a specific embedding model, or fine ANN tuning (HNSW M and efSearch). Use <a class="src" href="vertex-vector-search.html">Vertex
+            AI Vector Search</a> with your own pipeline.</li>
           <li>You run on-prem or self-host the stack. Managed Vertex AI Search is a Google Cloud service.</li>
-          <li>You already operate a vector database (AlloyDB pgvector, Elasticsearch) and want to keep retrieval
+          <li>You already operate a vector database (<a class="src" href="alloydb.html">AlloyDB</a> pgvector, Elasticsearch) and want to keep retrieval
             there.</li>
           <li>Purely transactional or analytical lookups with no semantic retrieval. Use the right database instead.</li>
         </ul>
@@ -203,12 +203,12 @@
       <tbody>
         <tr>
           <td>Full control of chunking, embeddings, and ANN tuning</td>
-          <td>Vertex AI Vector Search + Document AI pipeline</td>
+          <td><a class="src" href="vertex-vector-search.html">Vertex AI Vector Search</a> + <a class="src" href="document-ai.html">Document AI</a> pipeline</td>
           <td>around 12 ms; per index node-hour plus pipeline</td>
         </tr>
         <tr>
           <td>Postgres plus vector in one engine, SQL pre-filtering</td>
-          <td>AlloyDB (pgvector)</td>
+          <td><a class="src" href="alloydb.html">AlloyDB</a> (pgvector)</td>
           <td>low ms; per vCPU and storage</td>
         </tr>
         <tr>
@@ -250,8 +250,8 @@
     <p>In the designer this is the <b>Indexing and retrieval engine</b> input, set to <b>Managed: Vertex AI Search</b> by
       default whenever retrieval is on. The architecture diagram shows it as the store that retrieval reads, fed by a
       dashed offline branch from the index sources (documents and website). Switching the engine to <b>Self-built</b>
-      reveals the Vector DB, HNSW, and ingestion-separation knobs and swaps the bill of materials to Document AI,
-      Dataflow, a vector database, and BM25.</p>
+      reveals the Vector DB, HNSW, and ingestion-separation knobs and swaps the bill of materials to <a class="src" href="document-ai.html">Document AI</a>,
+      <a class="src" href="dataflow.html">Dataflow</a>, a vector database, and BM25.</p>
     <div class="note"><b>Default for RAG.</b> Because every RAG system must index its data first, the tool defaults to
       managed Vertex AI Search when retrieval is on, and treats the self-built Vector Search pipeline as the opt-in
       alternative for teams that need the extra control.</div>

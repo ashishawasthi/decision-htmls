@@ -162,9 +162,9 @@
         <h3>Avoid</h3>
         <ul>
           <li>Small, single-region workloads where a single primary is plenty. Cloud SQL is cheaper and simpler.</li>
-          <li>Postgres-compatible HTAP or in-engine vector retrieval. Use AlloyDB.</li>
+          <li>Postgres-compatible HTAP or in-engine vector retrieval. Use <a class="src" href="alloydb.html">AlloyDB</a>.</li>
           <li>Massive key-value point lookups with no need for SQL or multi-row transactions. Use Bigtable.</li>
-          <li>Large analytical scans and aggregation. Use BigQuery, and keep it off the request path.</li>
+          <li>Large analytical scans and aggregation. Use <a class="src" href="bigquery.html">BigQuery</a>, and keep it off the request path.</li>
         </ul>
       </div>
     </div>
@@ -186,7 +186,7 @@
         </tr>
         <tr>
           <td>Postgres-compatible with HTAP and pgvector</td>
-          <td>AlloyDB</td>
+          <td><a class="src" href="alloydb.html">AlloyDB</a></td>
           <td>low ms; per vCPU and storage</td>
         </tr>
         <tr>
