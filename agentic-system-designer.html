@@ -1130,8 +1130,8 @@
         <div class="ctl" data-ov="deployment"><label>Deployment</label>
           <select data-bind="overrides.deployment">
             <option value="gcp">GCP</option>
-            <option value="hybrid">Hybrid</option>
-            <option value="onprem">On-prem</option>
+            <option value="hybrid">Hybrid (WIP)</option>
+            <option value="onprem">On-prem (WIP)</option>
           </select>
         </div>
         <div class="ctl" data-ov="multiRegion"><label>Multi-region active-active</label>
@@ -1403,19 +1403,19 @@
     /* ===================== Presets (primary-input bundles) ===================== */
     const PRESETS = {
       assistant: {
-        expert_copilot: { label: 'Expert copilot', inputs: { actors: 1000, actionsPerDay: 10, burst: 5, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 4000, tokensOut: 800, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'doc_corpus'], corpusSize: 2e6, freshness: 'eod', languages: ['en'] } },
-        highvol_qa: { label: 'High-volume Q&A', inputs: { actors: 20000, actionsPerDay: 50, burst: 6, activeHoursPerWeek: 120, latencyPreset: 'subsecond', tokensIn: 3000, tokensOut: 500, audienceSensitivity: 'internal_regulated', dataSources: ['doc_corpus'], corpusSize: 1e7, freshness: 'static', languages: ['en'] } },
-        customer_support: { label: 'Customer support', inputs: { actors: 50000, actionsPerDay: 4, burst: 7, activeHoursPerWeek: 168, latencyPreset: 'agentic', tokensIn: 2500, tokensOut: 600, audienceSensitivity: 'external_enterprise', dataSources: ['doc_corpus'], corpusSize: 5e5, freshness: 'eod', languages: ['en', 'zh', 'ja'] } },
-        strictpii_verify: { label: 'Strict-PII verification', inputs: { actors: 300, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 6000, tokensOut: 1000, audienceSensitivity: 'internal_strictpii', dataSources: ['web', 'kg', 'onprem'], corpusSize: 0, freshness: 'realtime', languages: ['en'] } },
+        expert_copilot: { label: 'Expert copilot', desc: 'Internal expert copilot that answers from a document corpus and BigQuery at agentic speed.', inputs: { actors: 1000, actionsPerDay: 10, burst: 5, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 4000, tokensOut: 800, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'doc_corpus'], corpusSize: 2e6, freshness: 'eod', languages: ['en'] } },
+        highvol_qa: { label: 'High-volume Q&A', desc: 'Very high-volume Q&A over a large document corpus, tuned for sub-second latency and low cost per query.', inputs: { actors: 20000, actionsPerDay: 50, burst: 6, activeHoursPerWeek: 120, latencyPreset: 'subsecond', tokensIn: 3000, tokensOut: 500, audienceSensitivity: 'internal_regulated', dataSources: ['doc_corpus'], corpusSize: 1e7, freshness: 'static', languages: ['en'] } },
+        customer_support: { label: 'Customer support', desc: 'External, multilingual customer support grounded on a support corpus at agentic latency.', inputs: { actors: 50000, actionsPerDay: 4, burst: 7, activeHoursPerWeek: 168, latencyPreset: 'agentic', tokensIn: 2500, tokensOut: 600, audienceSensitivity: 'external_enterprise', dataSources: ['doc_corpus'], corpusSize: 5e5, freshness: 'eod', languages: ['en', 'zh', 'ja'] } },
+        strictpii_verify: { label: 'Strict-PII verification', desc: 'Low-volume, strict-PII verification that grounds live on web, knowledge graph, and on-prem data in real time.', inputs: { actors: 300, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 6000, tokensOut: 1000, audienceSensitivity: 'internal_strictpii', dataSources: ['web', 'kg', 'onprem'], corpusSize: 0, freshness: 'realtime', languages: ['en'] } },
       },
       automation: {
         // Presets differ by trust tier (audience & sensitivity), the one input that
         // changes the automation design: each tier mandates a different governance
         // posture (gateway / guardrails / sandbox / residency), visible in the diagram.
-        internal_lowstakes: { label: 'Internal · low-stakes', inputs: { actors: 300, actionsPerDay: 6, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_low', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
-        regulated: { label: 'Regulated enterprise', inputs: { actors: 800, actionsPerDay: 6, burst: 4, activeHoursPerWeek: 80, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
-        strictpii: { label: 'Strict-PII / high-stakes', inputs: { actors: 400, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 60, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_strictpii', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
-        external_facing: { label: 'External-facing', inputs: { actors: 1500, actionsPerDay: 4, burst: 5, activeHoursPerWeek: 120, latencyPreset: 'minutes', tokensIn: 6000, tokensOut: 1500, audienceSensitivity: 'external_regulated', dataSources: ['bigquery'], corpusSize: 0, freshness: 'eod', languages: ['en', 'zh'] } },
+        internal_lowstakes: { label: 'Internal · low-stakes', desc: 'Internal low-stakes automation with light governance, running at minutes-scale latency.', inputs: { actors: 300, actionsPerDay: 6, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_low', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
+        regulated: { label: 'Regulated enterprise', desc: 'Regulated internal automation that adds model-risk governance and safe rollout controls.', inputs: { actors: 800, actionsPerDay: 6, burst: 4, activeHoursPerWeek: 80, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
+        strictpii: { label: 'Strict-PII / high-stakes', desc: 'Strict-PII, high-stakes automation that mandates a sandbox, model gateway, and data residency.', inputs: { actors: 400, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 60, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_strictpii', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
+        external_facing: { label: 'External-facing', desc: 'External-facing automation with stronger guardrails for untrusted users and multilingual output.', inputs: { actors: 1500, actionsPerDay: 4, burst: 5, activeHoursPerWeek: 120, latencyPreset: 'minutes', tokensIn: 6000, tokensOut: 1500, audienceSensitivity: 'external_regulated', dataSources: ['bigquery'], corpusSize: 0, freshness: 'eod', languages: ['en', 'zh'] } },
       }
     };
 
@@ -2399,7 +2399,7 @@
     function renderChips() {
       const chips = PRESETS[state.purpose];
       const active = state.preset && !state.custom;
-      const pills = Object.entries(chips).map(([k, v]) => `<span class="chip ${active && state.preset === k ? 'active' : ''}" data-preset="${k}">${v.label}</span>`).join('');
+      const pills = Object.entries(chips).map(([k, v]) => `<span class="chip ${active && state.preset === k ? 'active' : ''}" data-preset="${k}" title="${v.desc || ''}">${v.label}</span>`).join('');
       const fromLabel = state.preset ? (PRESETS[state.purpose]?.[state.preset]?.label || '') : '';
       const custom = state.custom ? `<span class="chip custom" title="Edited${fromLabel ? ' from ' + fromLabel : ''}. Click a preset to reload it.">Custom${fromLabel ? ' (from ' + fromLabel + ')' : ''}</span>` : '';
       $('#presetChips').innerHTML = pills + custom;
@@ -2416,7 +2416,15 @@
     /* ===================== Wiring ===================== */
     function onInput() {
       const prevLatency = state.inputs.latencyPreset;
+      const prevFreshness = state.inputs.freshness;
       readControls();
+      // Switching freshness to real-time / streaming implies a live streaming feed: auto-check the
+      // Streaming source once, so the data-source selection matches the freshness requirement. One time,
+      // so the user can uncheck it afterward.
+      if (state.inputs.freshness === 'realtime' && prevFreshness !== 'realtime' && !state.inputs.dataSources.includes('stream')) {
+        state.inputs.dataSources.push('stream');
+        syncControlsFromState();
+      }
       // Any hand edit diverges from the named preset: drop the active-chip highlight and show a
       // 'Custom' tag. The preset is remembered, so Reset or clicking a chip reloads it.
       if (state.preset) state.custom = true;
@@ -2592,6 +2600,7 @@
       assert('governance descriptor populated with reasons', Array.isArray(state.governance) && state.governance.length === 12 && state.governance.every(g => g.why));
       // editing diverges from the preset → Custom; applying a preset clears it
       state.custom = true; applyPreset('assistant', 'expert_copilot'); assert('applying a preset clears Custom', state.custom === false);
+      assert('every preset has an intent tooltip', ['assistant', 'automation'].every(p => Object.values(PRESETS[p]).every(v => typeof v.desc === 'string' && v.desc.length > 0)));
       // BOM costing: platform adds to GenAI; BigQuery is volume-modeled (scales with requests); all derived read-only
       applyPreset('assistant', 'expert_copilot'); const cs0 = costSummary(computeMetrics());
       assert('platform cost > 0', cs0.platMo > 0 && cs0.totalYr > computeMetrics().costOpt);
@@ -2603,6 +2612,13 @@
       // sub-second adjust: prunes slow sources, ensures an indexed source, biases routing to the fast model
       applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['bigquery', 'onprem']; state.overrides.routingSplit = 50; applySubSecondAdjust();
       assert('sub-second prunes slow sources + ensures indexed source', !state.inputs.dataSources.includes('bigquery') && !state.inputs.dataSources.includes('onprem') && state.inputs.dataSources.includes('doc_corpus') && state.overrides.routingSplit >= 85);
+      // switching freshness to real-time / streaming auto-checks the Streaming source, once
+      applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['doc_corpus']; state.inputs.freshness = 'eod'; syncControlsFromState();
+      $('[data-bind="inputs.freshness"]').value = 'realtime'; onInput();
+      assert('real-time freshness auto-checks Streaming source', state.inputs.freshness === 'realtime' && state.inputs.dataSources.includes('stream'));
+      // and it is one-time: unchecking Streaming while still real-time does not re-add it
+      state.inputs.dataSources = state.inputs.dataSources.filter(s => s !== 'stream'); syncControlsFromState(); onInput();
+      assert('real-time auto-check is one-time, not sticky', !state.inputs.dataSources.includes('stream'));
       // forcing a slow source back exceeds the SLO budget and warns on Latency p95 (not the source)
       applyPreset('assistant', 'expert_copilot'); state.inputs.latencyPreset = 'subsecond'; state.inputs.dataSources = ['doc_corpus', 'bigquery']; deriveOverrides();
       const mBq = computeMetrics();
