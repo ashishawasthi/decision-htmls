@@ -1887,6 +1887,8 @@
       'Dataflow': 'components/dataflow.html',
       'vLLM on GKE': 'components/vllm-gke.html',
       'ADK + Agent Engine': 'components/agent-engine.html',
+      'Agent Studio': 'components/agent-studio.html',
+      'LangGraph': 'components/langgraph.html',
       // observability and governance
       'Cloud Logging (WORM)': 'components/cloud-logging.html',
       'Cloud Trace': 'components/cloud-trace.html',
@@ -1914,6 +1916,17 @@
     const infoIcon = (doc, name) => `<a class="info-i" href="${doc}" target="_blank" rel="noopener" title="About ${name} (opens in new tab)" aria-label="About ${name}">${INFO_SVG}</a>`;
     // Explainer page for a display name: a Google Cloud component page or a model card, whichever exists.
     const docFor = name => COMPONENT_DOC[name] || MODEL_DOC[name] || null;
+    // Attach (or update) an info icon right after a <select>, linking to the named entity's page in a new tab.
+    // Used for the model and platform dropdowns so the icon follows the current selection.
+    function attachSelectInfoIcon(sel, name) {
+      if (!sel) return;
+      const doc = docFor(name);
+      let ic = sel.parentElement.querySelector('a.info-i');
+      if (doc) {
+        if (ic) { ic.setAttribute('href', doc); ic.setAttribute('title', `About ${name} (opens in new tab)`); ic.setAttribute('aria-label', `About ${name}`); }
+        else sel.insertAdjacentHTML('afterend', ' ' + infoIcon(doc, name));
+      } else if (ic) { ic.remove(); }
+    }
     function buildMainDiagram() {
       const i = state.inputs, o = state.overrides; const L = [];
       // LR reads as a left-to-right request lifecycle on normal screens; fall back to TD on the
@@ -2382,13 +2395,11 @@
         const sel = $(`[data-bind="overrides.${role}"]`); if (!sel) return;
         if (!sel.dataset.filled) { sel.innerHTML = MODELS.map(m => `<option value="${m.id}">${m.name}</option>`).join(''); sel.dataset.filled = '1'; }
         sel.value = state.overrides[role];
-        const name = modelById(state.overrides[role]).name, doc = docFor(name);
-        let ic = sel.parentElement.querySelector('a.info-i');
-        if (doc) {
-          if (!ic) { sel.insertAdjacentHTML('afterend', ' ' + infoIcon(doc, name)); }
-          else { ic.setAttribute('href', doc); ic.setAttribute('title', `About ${name} (opens in new tab)`); ic.setAttribute('aria-label', `About ${name}`); }
-        } else if (ic) { ic.remove(); }
+        attachSelectInfoIcon(sel, modelById(state.overrides[role]).name);
       });
+      // platform dropdown: same following info icon, linked to the selected platform's page
+      const pf = $('[data-bind="overrides.platform"]');
+      if (pf) attachSelectInfoIcon(pf, pf.options[pf.selectedIndex] ? pf.options[pf.selectedIndex].text : '');
       // preset chips
       renderChips();
     }
@@ -2662,6 +2673,9 @@
       assert('every model has a card page', MODELS.every(m => /^components\/model-.*\.html$/.test(MODEL_DOC[m.name] || '')));
       assert('docFor resolves models and components', docFor('Gemini 3.1 Flash-Lite') === 'components/model-gemini-31-flash-lite.html' && docFor('BigQuery') === 'components/bigquery.html' && docFor('nope') === null);
       assert('model info icon opens in a new tab', /target="_blank"/.test(infoIcon(MODEL_DOC['Claude Opus 4.8'], 'Claude Opus 4.8')));
+      // platform pages: all three Platform options resolve to a page that the BOM and the dropdown icon can open
+      assert('every platform has a page', ['ADK + Agent Engine', 'Agent Studio', 'LangGraph'].every(n => /^components\/.+\.html$/.test(docFor(n) || '')));
+      assert('Agent Studio + LangGraph docs registered', docFor('Agent Studio') === 'components/agent-studio.html' && docFor('LangGraph') === 'components/langgraph.html');
       // baseline diff: pinning then editing an input reports the ripple, incl. locked side-effects
       // (governance is read-only now, so the ripple comes from a performance lock: sub-second → single-agent)
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); lastMetrics = computeMetrics(); pinBaseline();

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LangGraph in agentic systems</title>
+  <style>
+    :root { --bg:#0f1419; --panel:#161b22; --panel2:#1c2430; --border:#2a3441; --muted:#8b98a8; --text:#e6edf3; --accent:#4c9aff; --ok:#3fb950; --warn:#d29922; --err:#f85149; --data:#e6c84c; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; line-height:1.6; }
+    main { max-width:880px; margin:0 auto; padding:40px 24px 80px; }
+    .crumb { font-size:12px; color:var(--muted); margin-bottom:18px; }
+    .crumb a { color:var(--accent); text-decoration:none; }
+    .crumb a:hover { text-decoration:underline; }
+    .tag { display:inline-block; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--data); border:1px solid var(--border); border-radius:4px; padding:2px 8px; margin-bottom:12px; }
+    h1 { font-size:28px; margin:0 0 8px; }
+    h2 { font-size:18px; margin:34px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+    h3 { font-size:14px; margin:18px 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    p, li { font-size:14.5px; }
+    .lead { font-size:16px; }
+    .lead b { color:#fff; }
+    code { background:var(--panel2); border:1px solid var(--border); border-radius:4px; padding:1px 5px; font-size:12.5px; font-family:ui-monospace,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+    thead th { color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; }
+    .spec td:first-child { color:var(--muted); width:42%; }
+    td.fit-strong { color:var(--ok); font-weight:600; }
+    td.fit-cond { color:var(--warn); font-weight:600; }
+    .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media (max-width:680px) { .cols { grid-template-columns:1fr; } }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px 16px; }
+    .card.use { border-left:3px solid var(--ok); }
+    .card.avoid { border-left:3px solid var(--err); }
+    .card h3 { margin-top:0; }
+    ul { margin:6px 0; padding-left:20px; }
+    li { margin:3px 0; }
+    .note { background:rgba(76,154,255,.08); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:6px; padding:10px 14px; font-size:13.5px; color:var(--muted); margin:14px 0; }
+    .note b { color:var(--text); }
+    a.src { color:var(--accent); text-decoration:none; }
+    a.src:hover { text-decoration:underline; }
+    .sources { font-size:12.5px; color:var(--muted); }
+    .sources li { margin:4px 0; }
+    footer { margin-top:40px; padding-top:16px; border-top:1px solid var(--border); font-size:12px; color:var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Platforms / LangGraph</div>
+    <span class="tag">Open source · LangChain · portable</span>
+    <h1>LangGraph in agentic systems</h1>
+    <p class="lead">An <b>open-source orchestration framework</b> where you lay out the agent as an explicit graph of nodes
+      and edges, a state machine you control. It runs <b>anywhere</b>: any cloud or on-prem, with no managed runtime to
+      buy. The design rule that follows: pick it for portability and control, and accept that you operate the runtime.</p>
+
+    <h2>Spec at a glance</h2>
+    <table class="spec">
+      <tbody>
+        <tr><td>Provider</td><td>LangChain (open source, MIT licence)</td></tr>
+        <tr><td>Build model</td><td>Code-first explicit graph (nodes, edges, shared state)</td></tr>
+        <tr><td>Control level</td><td>Maximum; explicit state, control flow, and human-in-the-loop</td></tr>
+        <tr><td>Runtime</td><td>You operate it; LangGraph Server adds scaling and background jobs</td></tr>
+        <tr><td>Portability</td><td>Multi-cloud, on-prem, no lock-in</td></tr>
+        <tr><td>Observability</td><td>LangSmith: checkpointing, streaming, time-travel debugging</td></tr>
+        <tr><td>Platform cost line</td><td>No managed base; lower per-request charge, but you pay in operations</td></tr>
+        <tr><td>Best role in this tool</td><td>Platform = LangGraph</td></tr>
+      </tbody>
+    </table>
+
+    <h2>When to pick it</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Multi-cloud, on-prem, or no-lock-in mandates where the agent must run anywhere.</li>
+          <li>Complex, stateful workflows that benefit from explicit graph control and checkpointing.</li>
+          <li>Teams already fluent in LangChain who want the mature ecosystem and LangSmith tracing.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Teams without the operations capacity to run and scale the runtime themselves.</li>
+          <li>Fastest possible start: a low-code builder reaches a working agent sooner.</li>
+          <li>Designs that assume autoscaling out of the box; true concurrency needs LangGraph Server.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Choosing LangGraph vs. alternatives</h2>
+    <table>
+      <thead>
+        <tr><th>What you need</th><th>Use instead</th><th>Trade-off</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Portability and control, no lock-in</td><td>LangGraph</td><td class="fit-strong">Runs anywhere, but you operate the runtime</td></tr>
+        <tr><td>Least operations with production governance</td><td>ADK + Agent Engine</td><td class="fit-cond">Managed runtime on Vertex AI, less portable</td></tr>
+        <tr><td>Fastest low-code start</td><td>Agent Studio</td><td class="fit-cond">Builder UI, tied to Vertex AI</td></tr>
+      </tbody>
+    </table>
+
+    <h2>How it maps to this tool</h2>
+    <ul>
+      <li><b>It is the Platform input.</b> Choosing LangGraph sets the build-and-run layer to the portable, self-operated
+        framework.</li>
+      <li><b>Cost line.</b> In the cost panel the Platform line drops the managed-runtime base that ADK + Agent Engine and
+        Agent Studio carry, and uses a lower per-request rate. The saving is real on paper; you pay it back in the
+        operations the managed runtimes would otherwise cover.</li>
+      <li><b>Portability is the reason.</b> The tool frames it as the no-lock-in choice; pick it when running the same
+        agent across clouds or on-prem outranks offloading operations.</li>
+    </ul>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://www.langchain.com/langgraph">LangGraph (LangChain)</a></li>
+      <li><a class="src" href="https://langchain-ai.github.io/langgraph/">LangGraph documentation</a></li>
+      <li><a class="src" href="https://www.zenml.io/blog/google-adk-vs-langgraph">Google ADK vs LangGraph: which develops and deploys AI agents better (ZenML)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current vendor docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

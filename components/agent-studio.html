@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Studio in agentic systems</title>
+  <style>
+    :root { --bg:#0f1419; --panel:#161b22; --panel2:#1c2430; --border:#2a3441; --muted:#8b98a8; --text:#e6edf3; --accent:#4c9aff; --ok:#3fb950; --warn:#d29922; --err:#f85149; --data:#e6c84c; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; line-height:1.6; }
+    main { max-width:880px; margin:0 auto; padding:40px 24px 80px; }
+    .crumb { font-size:12px; color:var(--muted); margin-bottom:18px; }
+    .crumb a { color:var(--accent); text-decoration:none; }
+    .crumb a:hover { text-decoration:underline; }
+    .tag { display:inline-block; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--data); border:1px solid var(--border); border-radius:4px; padding:2px 8px; margin-bottom:12px; }
+    h1 { font-size:28px; margin:0 0 8px; }
+    h2 { font-size:18px; margin:34px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+    h3 { font-size:14px; margin:18px 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    p, li { font-size:14.5px; }
+    .lead { font-size:16px; }
+    .lead b { color:#fff; }
+    code { background:var(--panel2); border:1px solid var(--border); border-radius:4px; padding:1px 5px; font-size:12.5px; font-family:ui-monospace,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+    thead th { color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; }
+    .spec td:first-child { color:var(--muted); width:42%; }
+    td.fit-strong { color:var(--ok); font-weight:600; }
+    td.fit-cond { color:var(--warn); font-weight:600; }
+    .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media (max-width:680px) { .cols { grid-template-columns:1fr; } }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px 16px; }
+    .card.use { border-left:3px solid var(--ok); }
+    .card.avoid { border-left:3px solid var(--err); }
+    .card h3 { margin-top:0; }
+    ul { margin:6px 0; padding-left:20px; }
+    li { margin:3px 0; }
+    .note { background:rgba(76,154,255,.08); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:6px; padding:10px 14px; font-size:13.5px; color:var(--muted); margin:14px 0; }
+    .note b { color:var(--text); }
+    a.src { color:var(--accent); text-decoration:none; }
+    a.src:hover { text-decoration:underline; }
+    .sources { font-size:12.5px; color:var(--muted); }
+    .sources li { margin:4px 0; }
+    footer { margin-top:40px; padding-top:16px; border-top:1px solid var(--border); font-size:12px; color:var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Platforms / Agent Studio</div>
+    <span class="tag">Google · Vertex AI Agent Builder · low-code</span>
+    <h1>Agent Studio in agentic systems</h1>
+    <p class="lead">A <b>low-code visual builder</b> inside Vertex AI Agent Builder: you assemble an agent, its tools, and
+      its flow through a UI instead of writing framework code. It is the <b>fastest path to a working agent</b>. The
+      design rule that follows: prototype here, then graduate to ADK when you need code-level control for production.</p>
+
+    <h2>Spec at a glance</h2>
+    <table class="spec">
+      <tbody>
+        <tr><td>Provider</td><td>Google (Vertex AI Agent Builder)</td></tr>
+        <tr><td>Build model</td><td>Low-code visual builder (UI driven)</td></tr>
+        <tr><td>Control level</td><td>Guided; less fine-grained than code-first ADK</td></tr>
+        <tr><td>Runtime</td><td>Managed on Vertex AI (sessions, scaling, tracing handled for you)</td></tr>
+        <tr><td>Portability</td><td>Google Cloud; tied to Vertex AI</td></tr>
+        <tr><td>Best users</td><td>Product managers, business users, fast prototyping</td></tr>
+        <tr><td>Platform cost line</td><td>Managed base plus a small per-request charge, same as ADK + Agent Engine</td></tr>
+        <tr><td>Best role in this tool</td><td>Platform = Agent Studio</td></tr>
+      </tbody>
+    </table>
+
+    <h2>When to pick it</h2>
+    <div class="cols">
+      <div class="card use">
+        <h3>Good fit</h3>
+        <ul>
+          <li>Getting a usable agent stood up quickly, without writing framework code.</li>
+          <li>Non-engineers and product teams shaping agent behaviour and tools in a UI.</li>
+          <li>Prototypes and internal pilots on Google Cloud that can graduate to ADK later.</li>
+        </ul>
+      </div>
+      <div class="card avoid">
+        <h3>Avoid</h3>
+        <ul>
+          <li>Production systems needing precise, code-level control of orchestration and tools.</li>
+          <li>Multi-cloud or on-prem mandates: it is tied to Vertex AI.</li>
+          <li>Complex multi-agent handoffs better expressed explicitly in code.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Choosing Agent Studio vs. alternatives</h2>
+    <table>
+      <thead>
+        <tr><th>What you need</th><th>Use instead</th><th>Trade-off</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Fastest low-code start on Google Cloud</td><td>Agent Studio</td><td class="fit-strong">Quick to a working agent, less fine-grained control</td></tr>
+        <tr><td>Code-level control with a managed runtime</td><td>ADK + Agent Engine</td><td class="fit-cond">More control, more code, still managed on Vertex AI</td></tr>
+        <tr><td>Portability and no lock-in</td><td>LangGraph</td><td class="fit-cond">Runs anywhere, but you operate the runtime</td></tr>
+      </tbody>
+    </table>
+
+    <h2>How it maps to this tool</h2>
+    <ul>
+      <li><b>It is the Platform input.</b> Picking Agent Studio sets the build-and-run layer to the low-code builder on a
+        managed Vertex AI runtime.</li>
+      <li><b>Cost line.</b> In the cost panel it carries the same managed base plus per-request charge as ADK + Agent
+        Engine, since both run on the managed Vertex AI runtime.</li>
+      <li><b>Graduation path.</b> The tool frames it as the fastest start; move to ADK + Agent Engine when you need
+        code-level control, or LangGraph when portability is the priority.</li>
+    </ul>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://cloud.google.com/products/agent-builder">Vertex AI Agent Builder (Google Cloud)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/dialogflow/vertex/docs/concept/agent-builder">Build agents with Vertex AI Agent Builder and Agent Studio (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://uibakery.io/blog/vertex-ai-agent-builder">Vertex AI Agent Builder: 2026 guide to Google's enterprise AI agent platform (UI Bakery)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+      against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>
