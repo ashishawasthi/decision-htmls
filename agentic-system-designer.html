@@ -100,33 +100,6 @@
       margin-top: 2px
     }
 
-    .banner {
-      margin: 10px 20px 0;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-left: 3px solid var(--accent);
-      border-radius: 6px;
-      background: var(--panel2);
-      font-size: 12.5px;
-      color: var(--muted)
-    }
-
-    .banner b {
-      color: var(--text)
-    }
-
-    .banner .x {
-      float: right;
-      cursor: pointer;
-      color: var(--muted);
-      font-weight: 700;
-      padding: 0 4px
-    }
-
-    .banner.warn {
-      border-left-color: var(--warn)
-    }
-
     .legend {
       display: flex;
       flex-wrap: wrap;
@@ -378,13 +351,6 @@
       font-weight: 700
     }
 
-    .ctl .hint {
-      flex-basis: 100%;
-      font-size: 11px;
-      color: var(--muted);
-      margin: 2px 0 0
-    }
-
     input[type=range] {
       flex: 1;
       min-width: 90px;
@@ -412,15 +378,6 @@
       color: var(--text);
       font-size: 12.5px;
       cursor: help
-    }
-
-    .checks label.flag {
-      color: var(--warn)
-    }
-
-    .checks label.flag::after {
-      content: '\26A0';
-      font-size: 10px
     }
 
     a.info-i {
@@ -581,24 +538,19 @@
     }
 
     .sev.conflict,
-    .sev.privacy,
-    .sev.safety,
-    .sev.residency {
+    .sev.privacy {
       background: #3a1d22;
       color: var(--err);
       border: 1px solid var(--err)
     }
 
-    .sev.scaling,
-    .sev.access,
-    .sev.governance {
+    .sev.scaling {
       background: #3a2f1a;
       color: var(--warn);
       border: 1px solid var(--warn)
     }
 
     .sev.cost,
-    .sev.quality,
     .sev.freshness,
     .sev.caching {
       background: #16302a;
@@ -691,21 +643,6 @@
       font-size: 15px;
       font-weight: 600;
       font-variant-numeric: tabular-nums
-    }
-
-    .metric.warn {
-      border-left-color: var(--err)
-    }
-
-    .metric.warn .v {
-      color: var(--err)
-    }
-
-    .metric .over {
-      font-size: 10px;
-      font-weight: 600;
-      color: var(--err);
-      margin-left: 4px
     }
 
     .metric .v small {
@@ -801,42 +738,8 @@
       letter-spacing: 0
     }
 
-    .cost-in {
-      width: 72px;
-      background: var(--panel2);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 2px 5px;
-      font-size: 12px;
-      text-align: right;
-      font-family: ui-monospace, monospace
-    }
-
-    .cost-in:focus {
-      outline: none;
-      border-color: var(--accent)
-    }
-
-    .cost-in.red {
-      border-color: var(--err);
-      color: var(--err);
-      background: rgba(248, 81, 73, .07)
-    }
-
-    .cost-in.red::placeholder {
-      color: var(--err);
-      opacity: .8
-    }
-
     .cost-row.red .cl {
       color: var(--err)
-    }
-
-    .cost-row .permo {
-      color: var(--muted);
-      font-size: 10.5px;
-      margin-left: 3px
     }
 
     .cost-row .cred {
@@ -1470,7 +1373,7 @@
     ];
     const K = {
       dim: 768, chunksPerDoc: 5, bytesPerFloat: 4,
-      apigeeRpsPerRegion: 30000, embedTokPerWorkerDay: 2.0e9, caseDurationSec: 90,
+      apigeeRpsPerRegion: 30000, embedTokPerWorkerDay: 2.0e9,
       hoursMo: 730,
       // Self-host fleet sizing (mirrors agent-infra-cost-calculator throughput model).
       // nodeTokPerSec = decode tok/s for a 70B-active model at FP8 on one 8-accelerator node.
@@ -1486,7 +1389,7 @@
           tpu: { tpsMult: 1.3, costHr: { on_demand: 64.00, cud_3y: 32.00, spot: 24.00 } },
         },
       },
-      storageBQ: 0.02, storageGCS: 0.02, egress: 0.10, vsNodeHr: 0.6,
+      storageBQ: 0.02, storageGCS: 0.02,
       // BigQuery on-demand query-time scan: assume ~50 MB scanned per request (the latency model already adds one
       // BigQuery scan per request), billed at $6.25/TiB after the 1 TiB/mo free tier, plus a fixed dataset size.
       bqScanMB: 50, bqStorageGB: 200, bqOnDemandPerTiB: 6.25,
@@ -1533,8 +1436,7 @@
     const state = {
       purpose: 'assistant', preset: 'expert_copilot', custom: false,
       inputs: {}, overrides: {}, locks: {}, governance: [], baseline: null,
-      componentInputs: { edge: { aggregateQPS: null, tenantApps: 1, providers: 1 }, model: { callsPerReq: null }, ingestion: { docsPerDay: null, backfillDocs: 0, docPages: 40, reindexSLOmin: 5 } },
-      costOverrides: {},   // BOM component name → user-entered $/mo (overrides any estimate)
+      componentInputs: { edge: { aggregateQPS: null, tenantApps: 1 }, model: { callsPerReq: null }, ingestion: { docsPerDay: null, docPages: 40, reindexSLOmin: 5 } },
       ui: { openModal: null },
     };
 
@@ -1598,7 +1500,6 @@
       // A sub-second assistant drops slow grounding sources the same way a manual switch does,
       // so both routes to a sub-second design land in the same place.
       if (purpose === 'assistant' && state.inputs.latencyPreset === 'subsecond') applySubSecondAdjust();
-      state.costOverrides = {};
     }
 
     /* ===================== Rules engine: derive overrides + locks ===================== */
@@ -1776,9 +1677,7 @@
         const nodeTPS = Math.max(1, Math.round(g.nodeTokPerSec * (g.precMult[o.quant] || 1) * ac.tpsMult * (g.baseActiveB / g.refActiveB) * g.moePenalty / 2));
         const util = Math.min(1, Math.max(0.2, (o.gpuUtil || 70) / 100));
         const peakOutTPS = m.volPeak * i.tokensOut;            // decode-bound sizing
-        m.nodeTPS = nodeTPS;
         m.gpuNodes = Math.max(1, Math.ceil(peakOutTPS / (nodeTPS * util)));
-        m.gpuCount = m.gpuNodes * 8;                            // 8 accelerators / node
         const hourly = (ac.costHr[o.gpuTier] != null) ? ac.costHr[o.gpuTier] : ac.costHr.on_demand;
         m.gpuTierLabel = (o.gpuTier || 'cud_3y').replace('_', ' ').toUpperCase();
         m.gpuUtilPct = Math.round(util * 100);
@@ -1929,6 +1828,7 @@
       'Agent Studio': 'components/agent-studio.html',
       'LangGraph': 'components/langgraph.html',
       'Self-managed infra + ops (LangGraph)': 'components/langgraph.html',
+      'LangGraph Platform Enterprise (self-host license)': 'components/langgraph.html',
       // observability and governance
       'Cloud Logging (WORM)': 'components/cloud-logging.html',
       'Cloud Trace': 'components/cloud-trace.html',
@@ -2077,7 +1977,6 @@
       $$('#dataSources label').forEach(lab => {
         const cb = lab.querySelector('input'); if (!cb) return;
         lab.setAttribute('title', dataSourceRoleText(cb.value));
-        lab.classList.remove('flag');
         // info icon for GCP-backed sources that have an explainer (clicking the <a> does not toggle the checkbox)
         const comp = DS_COMPONENT[cb.value]; const doc = comp && COMPONENT_DOC[comp];
         if (doc && !lab.querySelector('.info-i')) lab.insertAdjacentHTML('beforeend', ' ' + infoIcon(doc, comp));
@@ -2086,7 +1985,6 @@
       const issues = lastIssues || [];
       $$('.ctl[data-ov]').forEach(el => {
         const k = el.dataset.ov; const lockInfo = state.locks[k];
-        el.classList.toggle('locked', !!lockInfo);
         const ctrl = el.querySelector('[data-bind]');
         if (ctrl) { ctrl.disabled = !!lockInfo; }
         let lk = el.querySelector('.lock');
@@ -2152,7 +2050,7 @@
 
     function metricCards(m) {
       const o = state.overrides;
-      const card = (k, v, t, cls) => `<div class="metric${cls ? ' ' + cls : ''}" title="${(t || '').replace(/"/g, '&quot;')}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+      const card = (k, v, t) => `<div class="metric" title="${(t || '').replace(/"/g, '&quot;')}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
       const cards = [];
       cards.push(card(m.volLabel + ' avg / peak', `${fmt(m.volAvg, 2)} <small>/ ${fmt(m.volPeak, 2)}</small>`, 'actors × actions/day over the active window, × burst'));
       cards.push(card('Tokens / day', fmt(m.tokensDay, 1), 'daily actions × (in+out)'));
@@ -2195,12 +2093,11 @@
         rows.push(row('GPU fleet', `${money(m.gpuMo)}/mo`, `${m.gpuNodes}×8 ${(o.accelerator || 'h100').toUpperCase()} · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util`));
         rows.push(row('Inference $/yr', money(m.gpuYr), '', true));
       }
-      // ---- platform & infrastructure: every BOM component, editable; unpriced ones red ----
+      // ---- platform & infrastructure: every BOM component, derived read-only; unpriced ones flagged ----
       const s = costSummary(m);
-      const costInput = (name, val, red) => `<input class="cost-in${red ? ' red' : ''}" data-cost="${name.replace(/"/g, '&quot;')}" type="number" min="0" step="1" value="${val != null ? Math.round(val) : ''}" placeholder="enter" aria-label="${name} monthly cost"><span class="permo">/mo</span>`;
-      rows.push(grp('Platform &amp; infrastructure <small>($ / mo · editable)</small>'));
-      s.priced.forEach(x => { const en = x.src === 'manual' ? null : BOM_EST_NOTE[x.name]; rows.push(`<div class="cost-row"><span class="cl"${en ? ` title="${en.why.replace(/"/g, '&quot;')}"` : ''}>${x.name} <small>${x.src === 'manual' ? 'manual' : ('est.' + (en ? ' · ' + en.note : ''))}</small></span><span class="cn">${costInput(x.name, x.mo, false)}</span></div>`); });
-      s.red.forEach(x => rows.push(`<div class="cost-row red"><span class="cl" title="${(x.why || '').replace(/"/g, '&quot;')}">${x.name} <small>${x.short} · enter $/mo</small></span><span class="cn">${costInput(x.name, null, true)}</span></div>`));
+      rows.push(grp('Platform &amp; infrastructure <small>($ / mo · derived)</small>'));
+      s.priced.forEach(x => { const en = BOM_EST_NOTE[x.name]; const tag = x.mo === 0 ? (en ? en.note : 'free') : ('est.' + (en ? ' · ' + en.note : '')); rows.push(`<div class="cost-row"><span class="cl"${en ? ` title="${en.why.replace(/"/g, '&quot;')}"` : ''}>${x.name} <small>${tag}</small></span><span class="cn">${money(x.mo)}/mo</span></div>`); });
+      s.red.forEach(x => rows.push(`<div class="cost-row red"><span class="cl" title="${(x.why || '').replace(/"/g, '&quot;')}">${x.name} <small>${x.short} · not modeled</small></span><span class="cn">n/a</span></div>`));
       if (s.free.length) rows.push(`<div class="cost-row"><span class="cl">Included at no charge <small>${s.free.join(' · ')}</small></span><span class="cn">$0</span></div>`);
       rows.push(row('Platform $/mo', money(s.platMo) + (s.red.length ? ` <span class="cred">+${s.red.length} unpriced</span>` : ''), s.priced.length + ' priced', true));
       // ---- combined run-rate ----
@@ -2260,9 +2157,10 @@
     function bomHtml() {
       const o = state.overrides, i = state.inputs, b = new Set();
       b.add(o.platform === 'adk' ? 'ADK + Agent Engine' : o.platform === 'studio' ? 'Agent Studio' : 'LangGraph');
-      // LangGraph is open-source and free, so its platform line looks cheapest. But self-hosting means you
-      // run the infra and operations the managed runtimes bundle. Surface that as its own visible cost line.
-      if (o.platform === 'langgraph') b.add('Self-managed infra + ops (LangGraph)');
+      // LangGraph is open-source and free, so its platform line looks cheapest. But the supported self-hosted
+      // path adds the cloud infra/ops the managed runtimes bundle, plus a LangGraph Platform Enterprise contract
+      // (self-hosting is an Enterprise add-on). Surface both as their own visible cost lines.
+      if (o.platform === 'langgraph') { b.add('Self-managed infra + ops (LangGraph)'); b.add('LangGraph Platform Enterprise (self-host license)'); }
       if (o.gateway) { b.add('Cloud IAP'); b.add('API Gateway'); b.add('Apigee'); } if (o.auditLog) b.add('Cloud Logging (WORM)');
       const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
       const hasIndex = i.dataSources.some(s => INDEXED_SRC.includes(s));
@@ -2291,7 +2189,7 @@
     const BOM_EST_NOTE = {
       'BigQuery': {
         note: `~${K.bqScanMB} MB scanned/req`,
-        why: `On-demand BigQuery at $${K.bqOnDemandPerTiB}/TiB scanned, assuming ~${K.bqScanMB} MB per request (the model already adds one BigQuery scan per request on the query path) after the 1 TiB/mo free tier, plus ~${K.bqStorageGB} GB stored at $${K.storageBQ}/GB-mo. Partitioning and clustering can push the scan well below this; type your own $/mo to override.`,
+        why: `On-demand BigQuery at $${K.bqOnDemandPerTiB}/TiB scanned, assuming ~${K.bqScanMB} MB per request (the model already adds one BigQuery scan per request on the query path) after the 1 TiB/mo free tier, plus ~${K.bqStorageGB} GB stored at $${K.storageBQ}/GB-mo. Partitioning and clustering can push the scan well below this illustrative figure.`,
       },
       // Platform lines: make the build-vs-run cost difference legible. The managed runtimes bundle the
       // infrastructure and operations; LangGraph is the free framework with that cost broken out separately.
@@ -2305,14 +2203,18 @@
       },
       'LangGraph': {
         note: 'framework only (free OSS)',
-        why: 'The LangGraph library is open source (MIT), so this line is only the orchestration runtime you run. The infrastructure and operations it needs are shown on the separate Self-managed infra + ops line, because the managed runtimes fold those into their own price.',
+        why: 'The LangGraph library is open source (MIT), so the framework itself is free ($0). The compute that runs it, plus storage and monitoring, is the Self-managed infra + ops line; the supported self-hosted path also needs the LangGraph Platform Enterprise line. The managed runtimes fold all of that into their own per-request price.',
       },
       'Self-managed infra + ops (LangGraph)': {
-        note: 'Postgres + Redis + compute + monitoring',
-        why: 'Illustrative floor for running LangGraph yourself: dedicated LangGraph Server compute, a PostgreSQL checkpoint store, Redis for streaming, and self-hosted monitoring, scaling with peak concurrency. ADK + Agent Engine and Agent Studio bundle this into their per-request price. Ops and on-call labor is additional and not dollarized here. Type your own $/mo to override.',
+        note: 'K8s + Postgres + Redis + monitoring',
+        why: 'Illustrative floor for running LangGraph yourself: a Kubernetes cluster (cited 16+ vCPU, 64+ GB), a PostgreSQL checkpoint store, Redis for streaming, and self-hosted monitoring. A fixed floor that scales with peak concurrency, plus the per-request compute that executes each run (moved here from the framework line). Lands near the cited ~$1,000/mo minimum for a small deployment. ADK + Agent Engine and Agent Studio bundle this into their per-request price. Ops and on-call labor is additional and not dollarized here.',
+      },
+      'LangGraph Platform Enterprise (self-host license)': {
+        note: 'custom, ~$2k-5k/mo (illustrative $5k)',
+        why: 'Self-hosting LangGraph is a LangGraph Platform / LangSmith Enterprise add-on. LangChain does not publish Enterprise pricing; it is custom, negotiated, and invoiced annually upfront. Third-party estimates put mid-size contracts around $2,000 to $5,000 per month, scaling with trace volume and support; this defaults to the upper end for a scaled deployment. A managed Plus SaaS deployment or pure open-source self-management avoids this line. Contact LangChain sales for a real quote.',
       },
     };
-    const unpricedReason = name => BOM_UNPRICED[name] || { short: 'usage not modeled', why: 'Spend is usage-dependent and not modeled here. Enter your own $/mo estimate.' };
+    const unpricedReason = name => BOM_UNPRICED[name] || { short: 'usage not modeled', why: 'Spend is usage-dependent and not modeled here, so this line is shown as not modeled.' };
     // Returns an estimated monthly $ for a BOM component, 0 if bundled/free, or
     // null if the tool can't size its spend (→ shown red for manual entry; see BOM_UNPRICED).
     function bomMonthlyCost(name, m) {
@@ -2327,11 +2229,15 @@
       const P = {
         'ADK + Agent Engine': 40 + R * 0.0006,
         'Agent Studio': 40 + R * 0.0006,
-        'LangGraph': R * 0.0004,
-        // Illustrative floor for running LangGraph yourself: dedicated LangGraph Server compute, a PostgreSQL
-        // checkpoint store, Redis for streaming, and self-hosted monitoring, scaling with peak concurrency.
-        // The managed runtimes above bundle this into their per-request price; ops / on-call labor is extra.
-        'Self-managed infra + ops (LangGraph)': 500 + dbNodes * 150,
+        'LangGraph': 0,            // the framework itself is open source (MIT) and free; real costs are the two lines below
+        // Illustrative floor for running LangGraph yourself: a Kubernetes cluster (cited 16+ vCPU, 64+ GB), a
+        // PostgreSQL checkpoint store, Redis for streaming, and self-hosted monitoring. A fixed floor that scales
+        // with peak concurrency (dbNodes) plus the per-request compute that executes each run (R x 0.0004, moved
+        // here from the framework line). Lands near the cited ~$1,000/mo minimum for a small deployment; ops / on-call labor is extra.
+        'Self-managed infra + ops (LangGraph)': 850 + dbNodes * 150 + R * 0.0004,
+        // Self-hosting LangGraph is a LangGraph Platform / LangSmith Enterprise add-on. Pricing is custom and not
+        // published (cited ~$2k-5k/mo, invoiced annually); default to the upper end for a scaled deployment. Editable.
+        'LangGraph Platform Enterprise (self-host license)': 5000,
         'Apigee': 120 + R * 0.0003,
         'Cloud IAP': 0,                                          // no per-request charge at this sizing (bundled with the edge LB)
         'API Gateway': 3 + R * 0.000003,                         // ~$3 per million API calls
@@ -2360,7 +2266,7 @@
       return (name in P) ? P[name] : null;
     }
     // Pure aggregator: splits the BOM into priced / unpriced(red) / free, sums platform $,
-    // and returns the combined annual run-rate. costOverrides win over estimates.
+    // and returns the combined annual run-rate. All component costs are derived (no manual overrides).
     function costSummary(m) {
       const o = state.overrides;
       const genai = (m.costOpt || 0) + (m.gpuYr || 0);          // models + self-host GPU
@@ -2368,12 +2274,10 @@
       const comps = bomHtml().filter(n => !models.has(n));
       const priced = [], red = [], free = [];
       comps.forEach(name => {
-        const ov = state.costOverrides[name];
         const est = bomMonthlyCost(name, m);
-        if (ov != null) priced.push({ name, mo: ov, src: 'manual' });
-        else if (est == null) red.push({ name, ...unpricedReason(name) });
-        else if (est === 0) free.push(name);
-        else priced.push({ name, mo: est, src: 'est' });
+        if (est == null) red.push({ name, ...unpricedReason(name) });
+        else if (est === 0 && name !== 'LangGraph') free.push(name);   // keep the free LangGraph framework as its own $0 line
+        else priced.push({ name, mo: est });
       });
       const platMo = priced.reduce((s, x) => s + x.mo, 0);
       return { genai, priced, red, free, platMo, platYr: platMo * 12, totalYr: genai + platMo * 12 };
@@ -2504,8 +2408,8 @@
     /* ===================== Permalink ===================== */
     let plTimer = null;
     function schedulePermalink() { clearTimeout(plTimer); plTimer = setTimeout(() => { try { location.replace('#' + encodeState()); } catch (e) { } }, 120); }
-    function encodeState() { return btoa(unescape(encodeURIComponent(JSON.stringify({ p: state.purpose, pr: state.preset, c: state.custom, i: state.inputs, o: state.overrides, co: state.costOverrides })))); }
-    function decodeState(h) { try { const d = JSON.parse(decodeURIComponent(escape(atob(h)))); if (d.p) { state.purpose = d.p; state.preset = d.pr; state.custom = !!d.c; state.inputs = d.i; state.overrides = d.o; state.costOverrides = d.co || {}; return true; } } catch (e) { } return false; }
+    function encodeState() { return btoa(unescape(encodeURIComponent(JSON.stringify({ p: state.purpose, pr: state.preset, c: state.custom, i: state.inputs, o: state.overrides })))); }
+    function decodeState(h) { try { const d = JSON.parse(decodeURIComponent(escape(atob(h)))); if (d.p) { state.purpose = d.p; state.preset = d.pr; state.custom = !!d.c; state.inputs = d.i; state.overrides = d.o; return true; } } catch (e) { } return false; }
     // Build the link from live state at click time and flush the pending debounce, so the copied URL is never stale.
     function currentPermalink() { clearTimeout(plTimer); const base = location.href.split('#')[0]; const h = '#' + encodeState(); try { location.replace(h); } catch (e) { } return base + h; }
 
@@ -2529,6 +2433,7 @@
     // Snapshot the current design; the strip then shows everything that differs from it,
     // refreshed on every edit, until the baseline is re-pinned or cleared.
     function pinBaseline() {
+      const cs = costSummary(lastMetrics);
       state.baseline = {
         label: PRESETS[state.purpose]?.[state.preset]?.label || state.preset,
         purpose: state.purpose,
@@ -2537,11 +2442,11 @@
         dataSources: [...state.inputs.dataSources],
         languages: [...(state.inputs.languages || [])],
         metrics: structuredClone(lastMetrics),
+        cost: { genaiYr: lastMetrics.costOpt || 0, platYr: cs.platYr, totalYr: cs.totalYr, lines: cs.priced.map(x => ({ name: x.name, mo: x.mo })) },
       };
     }
     // Curated metrics shown as before→after deltas (badUp: an increase is the worse direction → red).
     const DIFF_METRICS = [
-      { k: 'costOpt', label: 'GenAI $/yr', fmt: money, badUp: true },
       { k: 'latencyP95', label: 'Latency p95', fmt: v => v >= 1000 ? (v / 1000).toFixed(1) + 's' : Math.round(v) + 'ms', badUp: true },
       { k: 'tokensDay', label: 'Tokens/day', fmt: v => fmt(v, 1), badUp: true },
       { k: 'volPeak', label: 'Peak', fmt: v => fmt(v, 2), badUp: false },
@@ -2569,7 +2474,7 @@
     function computeDiff() {
       const b = state.baseline; if (!b) return null;
       const cur = state.inputs, co = state.overrides;
-      const inputs = [], config = [], data = [], metrics = [];
+      const inputs = [], config = [], data = [], cost = [], metrics = [];
       if (b.purpose !== state.purpose) inputs.push(diffPill('Purpose', pathValueLabel('purpose', b.purpose), pathValueLabel('purpose', state.purpose)));
       for (const k of DIFF_INPUTS) { const p = 'inputs.' + k; if (b.inputs[k] !== cur[k]) inputs.push(diffPill(pathLabel(p), pathValueLabel(p, b.inputs[k]), pathValueLabel(p, cur[k]))); }
       const listDiff = (label, was, now, vl) => {
@@ -2585,12 +2490,24 @@
         const lock = state.locks[k], p = 'overrides.' + k;
         config.push(diffPill(pathLabel(p), pathValueLabel(p, b.overrides[k]), pathValueLabel(p, co[k]), lock ? ` <span class="dlock">🔒 ${lock.cause}</span>` : ''));
       }
+      // cost deltas (all derived): GenAI / Platform / Total aggregates, then each platform line whose $/mo moved
+      const cc = costSummary(lastMetrics), bc = b.cost || { genaiYr: 0, platYr: 0, totalYr: 0, lines: [] };
+      const dollarPill = (label, a, c, suffix) => { a = a || 0; c = c || 0; if (Math.abs(a - c) < Math.max(1, Math.abs(a) * 0.005)) return; cost.push(diffPill(label, money(a) + (suffix || ''), money(c) + (suffix || ''), '', c > a ? 'up' : 'down')); };
+      dollarPill('GenAI $/yr', bc.genaiYr, lastMetrics.costOpt);
+      dollarPill('Platform $/yr', bc.platYr, cc.platYr);
+      dollarPill('Total $/yr', bc.totalYr, cc.totalYr);
+      const bL = Object.fromEntries((bc.lines || []).map(l => [l.name, l.mo])), cL = Object.fromEntries(cc.priced.map(l => [l.name, l.mo]));
+      for (const name of new Set([...Object.keys(bL), ...Object.keys(cL)])) {
+        const a = bL[name] || 0, c = cL[name] || 0;
+        if (Math.abs(a - c) < Math.max(1, Math.abs(a) * 0.005)) continue;
+        cost.push(diffPill(name, a ? money(a) + '/mo' : 'none', c ? money(c) + '/mo' : 'none', '', c > a ? 'up' : 'down'));
+      }
       for (const dm of DIFF_METRICS) {
         const a = b.metrics?.[dm.k] || 0, c = lastMetrics?.[dm.k] || 0;
         if (Math.abs(a - c) < Math.max(1e-9, Math.abs(a) * 0.005)) continue;
         metrics.push(diffPill(dm.label, dm.fmt(a), dm.fmt(c), '', (c > a) === dm.badUp ? 'up' : 'down'));
       }
-      return { inputs, config, data, metrics, total: inputs.length + config.length + data.length + metrics.length };
+      return { inputs, config, data, cost, metrics, total: inputs.length + config.length + data.length + cost.length + metrics.length };
     }
     function renderDiffStrip() {
       const strip = $('#diffStrip'), pin = $('#pinBtn');
@@ -2598,7 +2515,7 @@
       if (!state.baseline) { strip.hidden = true; strip.innerHTML = ''; return; }
       const d = computeDiff();
       const grp = (label, pills) => pills.length ? `<div class="diff-grp"><span class="dlabel">${label}</span>${pills.join('')}</div>` : '';
-      const body = d.total ? grp('Inputs', d.inputs) + grp('Config', d.config) + grp('Data', d.data) + grp('Metrics', d.metrics)
+      const body = d.total ? grp('Inputs', d.inputs) + grp('Config', d.config) + grp('Data', d.data) + grp('Cost', d.cost) + grp('Metrics', d.metrics)
         : '<div class="diff-empty">Matches baseline - change an input or preset to see the impact.</div>';
       strip.innerHTML = `<div class="diff-head"><h3>Changed since baseline <span class="vis-count">${state.baseline.label}</span></h3><span class="spacer"></span><button class="diff-clear" id="diffClear" title="Remove the pinned baseline">clear ×</button></div>${body}`;
       strip.hidden = false;
@@ -2606,14 +2523,7 @@
     $('#pinBtn').addEventListener('click', () => { pinBaseline(); render(); });
     $('#diffStrip').addEventListener('click', e => { if (e.target.closest('#diffClear')) { state.baseline = null; render(); } });
     document.querySelector('main').addEventListener('input', e => { if (e.target.dataset.cost != null || e.target.closest('#modal')) return; onInput(); });
-    document.querySelector('main').addEventListener('change', e => { if (e.target.dataset.cost != null || e.target.id === 'purpose' || e.target.closest('#modal')) return; onInput(); });
-    // editable BOM cost line items (commit on blur/enter so typing doesn't rebuild the panel)
-    $('#cost').addEventListener('change', e => {
-      const t = e.target; if (t.dataset.cost == null) return;
-      const v = t.value === '' ? null : Math.max(0, +t.value);
-      if (v == null || isNaN(v)) delete state.costOverrides[t.dataset.cost]; else state.costOverrides[t.dataset.cost] = v;
-      render(); schedulePermalink();
-    });
+    document.querySelector('main').addEventListener('change', e => { if (e.target.id === 'purpose' || e.target.closest('#modal')) return; onInput(); });
     const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
     $('#copyMermaid').addEventListener('click', () => { navigator.clipboard?.writeText(diagSrc); $('#copyMermaid').textContent = '✓'; setTimeout(() => $('#copyMermaid').innerHTML = COPY_ICON, 1200); });
     $('#permalinkBtn').addEventListener('click', () => { navigator.clipboard?.writeText(currentPermalink()); const s = $('#permalinkBtn').querySelector('span'); s.textContent = 'Copied'; setTimeout(() => s.textContent = 'Permalink', 1200); });
@@ -2652,11 +2562,11 @@
       assert('internal low-stakes draws neither gateway box', inboundControls(state.overrides, state.inputs).length === 0 && outboundControls(state.overrides, state.inputs).length === 0);
       // metrics sanity
       applyPreset('assistant', 'expert_copilot'); const m = computeMetrics(); assert('cost opt ≤ naive', m.costOpt <= m.costNaive); assert('peak ≥ avg', m.volPeak >= m.volAvg);
-      // permalink round-trip: inputs, overrides, cost overrides, and the custom flag survive encode then decode
-      applyPreset('assistant', 'expert_copilot'); state.custom = true; state.costOverrides = { BigQuery: 1234 }; state.overrides.routingSplit = 55;
-      const snap = JSON.stringify({ c: state.custom, i: state.inputs, o: state.overrides, co: state.costOverrides });
+      // permalink round-trip: inputs, overrides, and the custom flag survive encode then decode
+      applyPreset('assistant', 'expert_copilot'); state.custom = true; state.overrides.routingSplit = 55;
+      const snap = JSON.stringify({ c: state.custom, i: state.inputs, o: state.overrides });
       decodeState(encodeState());
-      assert('permalink round-trip', JSON.stringify({ c: state.custom, i: state.inputs, o: state.overrides, co: state.costOverrides }) === snap);
+      assert('permalink round-trip', JSON.stringify({ c: state.custom, i: state.inputs, o: state.overrides }) === snap);
       // hnsw moves a number
       applyPreset('assistant', 'highvol_qa'); state.overrides.hnswEf = 64; const r1 = computeMetrics().hnswRecall; state.overrides.hnswEf = 512; const r2 = computeMetrics().hnswRecall; assert('efSearch raises recall', r2 > r1);
       // context-cache split: higher reuse % lowers optimized cost
@@ -2682,16 +2592,14 @@
       assert('governance descriptor populated with reasons', Array.isArray(state.governance) && state.governance.length === 12 && state.governance.every(g => g.why));
       // editing diverges from the preset → Custom; applying a preset clears it
       state.custom = true; applyPreset('assistant', 'expert_copilot'); assert('applying a preset clears Custom', state.custom === false);
-      // BOM costing: platform adds to GenAI; BigQuery is volume-modeled (scales with requests); override still wins
-      applyPreset('assistant', 'expert_copilot'); state.costOverrides = {}; const cs0 = costSummary(computeMetrics());
+      // BOM costing: platform adds to GenAI; BigQuery is volume-modeled (scales with requests); all derived read-only
+      applyPreset('assistant', 'expert_copilot'); const cs0 = costSummary(computeMetrics());
       assert('platform cost > 0', cs0.platMo > 0 && cs0.totalYr > computeMetrics().costOpt);
       assert('BigQuery is volume-modeled, not unpriced', cs0.priced.some(x => x.name === 'BigQuery') && !cs0.red.some(x => x.name === 'BigQuery'));
       const bqLo = bomMonthlyCost('BigQuery', computeMetrics());
       state.inputs.actionsPerDay *= 10; const bqHi = bomMonthlyCost('BigQuery', computeMetrics()); state.inputs.actionsPerDay /= 10;
       assert('BigQuery scan cost scales with request volume', bqLo > 0 && bqHi > bqLo);
-      state.costOverrides['BigQuery'] = 1e6; const cs1 = costSummary(computeMetrics());
-      assert('cost override wins over estimate', cs1.totalYr > cs0.totalYr && cs1.priced.find(x => x.name === 'BigQuery').src === 'manual');
-      state.costOverrides = {};
+      assert('cost lines are derived read-only (no editable inputs)', !/data-cost=/.test(costPanelHtml(computeMetrics())) && !/cost-in/.test(costPanelHtml(computeMetrics())));
       // sub-second adjust: prunes slow sources, ensures an indexed source, biases routing to the fast model
       applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['bigquery', 'onprem']; state.overrides.routingSplit = 50; applySubSecondAdjust();
       assert('sub-second prunes slow sources + ensures indexed source', !state.inputs.dataSources.includes('bigquery') && !state.inputs.dataSources.includes('onprem') && state.inputs.dataSources.includes('doc_corpus') && state.overrides.routingSplit >= 85);
@@ -2787,6 +2695,15 @@
       assert('LangGraph adds a visible self-managed infra + ops line', bomLg.includes('Self-managed infra + ops (LangGraph)') && !bomAdk.includes('Self-managed infra + ops (LangGraph)'));
       assert('the self-managed ops line carries a real cost', bomMonthlyCost('Self-managed infra + ops (LangGraph)', mPlat) > 0);
       assert('LangGraph self-host TCO exceeds the managed runtime at default scale', platLg > platAdk);
+      assert('LangGraph shows the enterprise self-host license line', bomLg.includes('LangGraph Platform Enterprise (self-host license)') && !bomAdk.includes('LangGraph Platform Enterprise (self-host license)'));
+      assert('enterprise license defaults to the cited upper-end $5k/mo', bomMonthlyCost('LangGraph Platform Enterprise (self-host license)', mPlat) === 5000);
+      // the open-source framework line is free ($0); the per-request compute it implies lives on the infra line, which scales with volume
+      assert('LangGraph framework line is free ($0)', bomMonthlyCost('LangGraph', mPlat) === 0);
+      const infraLo = bomMonthlyCost('Self-managed infra + ops (LangGraph)', mPlat);
+      state.inputs.actionsPerDay *= 10; const infraHi = bomMonthlyCost('Self-managed infra + ops (LangGraph)', computeMetrics()); state.inputs.actionsPerDay /= 10;
+      assert('self-host compute scales with request volume', infraHi > infraLo);
+      state.overrides.platform = 'langgraph';
+      assert('the free LangGraph line still renders on its own row', costSummary(mPlat).priced.some(x => x.name === 'LangGraph' && x.mo === 0));
       // baseline diff: pinning then editing an input reports the ripple, incl. locked side-effects
       // (governance is read-only now, so the ripple comes from a performance lock: sub-second → single-agent)
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); lastMetrics = computeMetrics(); pinBaseline();
@@ -2794,6 +2711,12 @@
       const bdiff = computeDiff();
       assert('baseline diff captures the edited input', !!bdiff && bdiff.inputs.length > 0);
       assert('baseline diff surfaces a locked ripple', bdiff.config.some(s => /🔒/.test(s)));
+      // changing the platform now surfaces the cost impact (totals + the changed line items) in the diff
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides(); lastMetrics = computeMetrics(); pinBaseline();
+      state.overrides.platform = 'langgraph'; lastMetrics = computeMetrics();
+      const cdiff = computeDiff();
+      assert('platform change shows cost totals in the diff', cdiff.cost.some(s => /Total \$\/yr/.test(s)) && cdiff.cost.some(s => /Platform \$\/yr/.test(s)));
+      assert('platform change shows the changed cost line items', cdiff.cost.some(s => /LangGraph Platform Enterprise/.test(s)));
       state.baseline = null;
       const pass = results.every(r => r[1]);
       const bar = $('#testbar'); bar.style.display = 'block'; bar.className = pass ? 'pass' : 'fail';
@@ -2850,7 +2773,7 @@
       issues: 'Automated design checks, levers, and nudges from your current inputs.',
       metrics: 'Derived scale and sizing figures computed from the inputs.',
       latency: 'Estimated p95 critical-path latency, broken down by stage.',
-      cost: 'Estimated GenAI and platform run-rate, editable per line.',
+      cost: 'Estimated GenAI and platform run-rate, derived from your inputs.',
       observability: 'What to trace, evaluate, and alert on for this design.',
       risk: 'Likely bottleneck at scale, single points of failure, and alerting.',
       governance: 'Controls the design enforces, derived from audience, sensitivity, and data.',
