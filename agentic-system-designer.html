@@ -829,6 +829,17 @@
       padding: 6px 0
     }
 
+    details.diff-lines {
+      margin: 2px 0 4px 70px
+    }
+
+    details.diff-lines summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 11px;
+      padding: 2px 0
+    }
+
     .foot {
       padding: 0 20px 30px;
       color: var(--muted);
@@ -1010,8 +1021,8 @@
         <legend>Workload &amp; SLO <span class="vis-count" id="visCount"></span></legend>
         <div class="ctl" data-vis="always"><label>Latency SLO</label>
           <select data-bind="inputs.latencyPreset">
-            <option value="subsecond">Sub-second (deterministic)</option>
-            <option value="agentic">&lt;2s start / &lt;6s full (agentic)</option>
+            <option value="subsecond" data-purpose="assistant">Sub-second (deterministic)</option>
+            <option value="agentic" data-purpose="assistant">&lt;2s start / &lt;6s full (agentic)</option>
             <option value="batch">5-10s batch</option>
             <option value="minutes">Per-run minutes (automation)</option>
           </select>
@@ -1403,9 +1414,9 @@
     const money = n => { if (n == null || isNaN(n)) return '-'; return '$' + Math.round(n).toLocaleString('en-US'); };
     const sens = s => ({ internal_low: { aud: 'internal', lvl: 0 }, internal_regulated: { aud: 'internal', lvl: 2 }, internal_strictpii: { aud: 'internal', lvl: 3 }, external_enterprise: { aud: 'external', lvl: 1 }, external_regulated: { aud: 'external', lvl: 2 }, public_strictpii: { aud: 'public', lvl: 3 } }[s]);
 
-    /* ===================== Control-plane split (Edge gateway / Model gateway) ===================== */
+    /* ===================== Control-plane split (API Gateway / Model gateway) ===================== */
     // The gateway and the guardrails each divide into a request-side (inbound) half and a
-    // response-side (outbound) half. The halves merge into one Edge gateway box at ingress and one
+    // response-side (outbound) half. The halves merge into one API Gateway box at ingress and one
     // Model gateway box on the agent→model leg. A chip shows only when its derived control is on, so
     // each box rewrites its own label from the inputs. Latency maps are per-chip milliseconds.
     const IN_LAT = { 'auth': 8, 'rate-limit': 2, 'PII redact': 8, 'injection screen': 20 };
@@ -1427,7 +1438,7 @@
       if (o.auditLog) c.push('audit');                           // per-call prompt/completion + token meter
       return c;
     }
-    const edgeLabel = c => `Edge gateway ⊕<br/>${c.join(' · ')}`;
+    const edgeLabel = c => `API Gateway ⊕<br/>${c.join(' · ')}`;
     const modelLabel = c => `Model gateway ⊕<br/>${c.join(' · ')}`;
     // Model calls per request: the agent→model fan-out (agents × a damped ReAct loop). The Model
     // gateway sees this many calls per user request, so it sizes on model-call QPS, not user QPS.
@@ -1460,6 +1471,9 @@
     function deriveOverrides() {
       const o = state.overrides, i = state.inputs, locks = {};
       const lock = (k, v, reason, cause) => { o[k] = v; locks[k] = { reason, cause }; };
+      // Task automation runs are async (seconds-to-minutes); the interactive Sub-second and agentic SLOs
+      // do not apply, so coerce a stale or hand-set value to per-run minutes before the locks evaluate.
+      if (state.purpose === 'automation' && (i.latencyPreset === 'subsecond' || i.latencyPreset === 'agentic')) i.latencyPreset = 'minutes';
       // performance locks
       if (i.latencyPreset === 'subsecond') { lock('pattern', 'single', 'Sub-second → single-agent path', 'sub-second'); lock('retrieval', o.retrieval === 'rerank' ? 'hybrid' : o.retrieval, 'Sub-second → drop reranker', 'sub-second'); }
       // scale locks
@@ -1503,7 +1517,7 @@
       const G = [];
       const set = (key, label, on, why, cat) => { o[key] = on; G.push({ key, label, on, why, cat }); };
       // Access & gateway
-      set('gateway', 'Edge + model gateway (IAP + Apigee)', lvl >= 2 || ext,
+      set('gateway', 'API + model gateway (IAP + Apigee)', lvl >= 2 || ext,
         lvl >= 2 ? 'regulated+' : ext ? (aud === 'public' ? 'public' : 'external') : 'not required', 'access');
       set('auditLog', 'Immutable audit log', lvl >= 2 || ext,
         lvl >= 2 ? 'regulated+' : ext ? 'external' : 'not required', 'access');
@@ -1593,13 +1607,13 @@
       if (i.dataSources.includes('onprem')) groundSubs.push({ label: 'On-prem call', ms: L.onpremCall });
       const grounding = groundSubs.length ? Math.max(...groundSubs.map(s => s.ms)) : 0;
       const parts = [];
-      // Edge gateway is on the request path: counted once. Model gateway is on the model leg, so its
+      // API Gateway is on the request path: counted once. Model gateway is on the model leg, so its
       // latency rides every model call (genGw) and compounds with the ReAct loop / executor pool.
       const inbChips = inboundControls(o, i), outbChips = outboundControls(o, i);
       const inMs = inbChips.reduce((s, c) => s + (IN_LAT[c] || 0), 0);
       const outMs = outbChips.reduce((s, c) => s + (OUT_LAT[c] || 0), 0);
       const genGw = gen + outMs;
-      if (inbChips.length) parts.push({ label: 'Edge gateway', ms: inMs, note: inbChips.join(' · ') });
+      if (inbChips.length) parts.push({ label: 'API Gateway', ms: inMs, note: inbChips.join(' · ') });
       if (state.purpose === 'automation') {
         parts.push({ label: 'Planner', ms: rm.ttftMs + i.tokensOut * rm.msPerOutTok / 2 + outMs, note: rm.name });
         if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
@@ -1693,14 +1707,14 @@
     const INDEXED_SRC = ['doc_corpus', 'website'];
     const LIVE_SRC = ['bigquery', 'onprem', 'kg', 'stream'];
     const INDEXED_LABEL = { doc_corpus: 'Docs', website: 'Site' };
-    const AGENT_ROLES = { assistant: ['Q&A', 'summarize', 'draft', 'policy', 'compare', 'extract', 'plan', 'translate'], automation: ['code-gen', 'review', 'test', 'docs', 'migrate', 'plan'] };
+    const AGENT_ROLES = { assistant: ['Q&A', 'summarize', 'draft', 'policy', 'compare', 'extract', 'plan', 'translate'], automation: ['generation', 'review', 'test', 'docs', 'migrate', 'plan'] };
     const roleList = (p, n) => { const r = AGENT_ROLES[p]; return n <= r.length ? r.slice(0, n).join(' · ') : r.join(' · ') + ` +${n - r.length}`; };
     // One-line purpose per box, keyed by the node id used in buildMainDiagram. Shown on
     // hover (native SVG <title>) and reused as the drill-down modal subtitle.
     const NODE_PURPOSE = {
       // assistant + shared
       Client: 'The user-facing app (web or chat) that sends queries and renders grounded, cited answers.',
-      EdgeGW: 'The request-side control plane at the system edge: authenticates the caller (IAM + mTLS), enforces per-tenant rate limits, redacts inbound PII, and screens for prompt injection and jailbreaks before anything reaches the agent. Shows only the controls your inputs require. Sized on inbound user QPS.',
+      EdgeGW: 'The request-side API gateway at the system edge: authenticates the caller (IAM + mTLS), enforces per-tenant rate limits, redacts inbound PII, and screens for prompt injection and jailbreaks before anything reaches the agent. Implemented by Apigee, Cloud API Gateway, or a third-party gateway such as Kong. Shows only the controls your inputs require. Sized on inbound user QPS.',
       ModelGW: 'The model-side control plane on the agent→model leg: routes and fails over between models, serves the semantic cache, fans out to providers, redacts PII before egress, filters unsafe or leaking output, and meters every call. It sees every model call, so it sizes on model-call QPS (user QPS × fan-out), not user QPS.',
       Orch: 'Plans each request, calls tools and retrieval, and composes the final answer. Single agent or a multi-agent team depending on the pattern.',
       Retr: 'Narrows candidates in stages (metadata pre-filter → dense + BM25 → rerank) so the model is grounded on only the most relevant passages.',
@@ -1713,13 +1727,12 @@
       DocAI: 'Parses source documents and pages into clean structured text (layout, tables, OCR) before chunking and embedding.',
       Emb: 'Splits parsed content into chunks, embeds them, and writes the vectors plus a BM25 index into the store.',
       Obs: 'Traces, logs, and evals for every step, so quality, latency, and cost stay measurable and regressions get caught.',
-      Appr: 'A human review step (maker-checker or dual-control) before a high-stakes action is committed.',
+      Appr: 'A human review step (maker-checker or dual-control) before a high-stakes action is committed. Async: the run pauses here and resumes only when a reviewer approves.',
       Fb: 'Captures thumbs and reasons from users and feeds them into the eval set, so quality does not silently decay.',
       // automation
       Trig: 'The event that starts a run: a ticket, a webhook, or a scheduled job.',
-      Req: 'Reads the trigger and turns it into a clear, structured task specification for the planner.',
-      Plan: 'Breaks the task into ordered steps and assigns them to the executor agents.',
-      Exec: 'The specialist agents that do the work (code-gen, review, test, docs, migrate), running in parallel where possible.',
+      Plan: 'Reads the trigger and turns it into a clear, structured task spec, then breaks that into ordered steps and assigns them to the executor agents. It also sets the acceptance criteria the quality gate enforces.',
+      Exec: 'The specialist agents that do the work (generation, review, test, docs, migrate), running in parallel where possible.',
       QG: 'Automated checks (tests, linters, policy rules) that must pass before the result moves to approval.',
       State: 'Durable run state and history, so long workflows can resume and stay auditable.',
     };
@@ -1852,7 +1865,7 @@
       if (state.purpose === 'assistant') {
         L.push(node('Client', 'Client UI', 'client'));
         let head = 'Client';
-        // Edge gateway: request-side halves of the gateway (auth, rate-limit) and the guardrails
+        // API Gateway: request-side halves of the gateway (auth, rate-limit) and the guardrails
         // (injection screen), merged into one adaptive box. Drawn only when a control is derived on.
         const inb = inboundControls(o, i);
         if (inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
@@ -1879,8 +1892,7 @@
         let head = 'Trig';
         const inb = inboundControls(o, i);
         if (inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
-        L.push(node('Req', 'Requirement agent', 'orch')); L.push(`${head} --> Req`);
-        L.push(node('Plan', 'Planner', 'orch')); L.push('Req --> Plan');
+        L.push(node('Plan', 'Planner', 'orch')); L.push(`${head} --> Plan`);
         L.push(node('Exec', `Executor pool<br/>${roleList('automation', o.numAgents)}`, 'orch')); L.push('Plan --> Exec');
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Exec --> Sand'); }
         // model leg with the Model gateway, mirroring the assistant branch
@@ -1888,8 +1900,8 @@
         L.push(node('LLM', 'Model(s)', 'orch'));
         if (outb.length) { L.push(node('ModelGW', modelLabel(outb), 'gateway')); L.push('Exec --> ModelGW'); L.push('ModelGW --> LLM'); }
         else { L.push('Exec --> LLM'); }
-        L.push(node('QG', 'Quality gate', 'retr')); L.push('Exec --> QG');
-        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human approval', 'gov')); L.push('QG --> Appr'); }
+        L.push(node('QG', 'Quality gate', 'retr')); L.push('Exec --> QG'); L.push('Plan --> QG');
+        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human approval', 'gov')); L.push('QG -. await human .-> Appr'); L.push('Appr -. resume on approve .-> Exec'); }
         dataPlane('Exec', 'Exec');
         L.push(node('State', 'State store (Spanner)', 'data', 'cyl')); L.push('Exec --> State');
         L.push(node('Obs', 'Observability', 'obs')); L.push('Exec --> Obs');
@@ -1903,6 +1915,20 @@
       L.push('classDef gov fill:#3a1a2a,stroke:#ff6b9d,color:#ffd6e6;');
       L.push(...cls);
       return L.join('\n');
+    }
+    // Parse the box nodes out of a mermaid source string for the baseline diff. The node() helper
+    // emits only two shapes, ID["label"] and ID[("label")], so this regex covers every box. Returns
+    // a Map(id -> readable label) with the ⊕ marker and <br/> line breaks normalized away.
+    function diagramNodeMap(src) {
+      const m = new Map();
+      if (!src) return m;
+      const re = /(\w+)\[\(?"([^"]*)"\)?\]/g;
+      let g;
+      while ((g = re.exec(src)) !== null) {
+        const label = g[2].replace(/\s*⊕/g, '').replace(/<br\/?>/g, ' ').replace(/\s+/g, ' ').trim();
+        m.set(g[1], label);
+      }
+      return m;
     }
     function buildComponentDiagram(key) {
       const map = {
@@ -1925,6 +1951,8 @@
       $$('.ctl[data-vis]').forEach(el => { total++; const key = el.dataset.vis; const ok = vis[key] !== false; el.classList.toggle('hidden', !ok); if (ok) shown++; });
       $$('fieldset[data-vis]').forEach(el => { const key = el.dataset.vis; el.style.display = vis[key] === false ? 'none' : ''; });
       $('#visCount').textContent = `(${shown}/${total} shown)`;
+      // Sub-second and agentic are interactive-assistant SLOs; hide them from the Latency dropdown for Task automation.
+      $$('select[data-bind="inputs.latencyPreset"] option[data-purpose="assistant"]').forEach(opt => { opt.hidden = state.purpose === 'automation'; });
       // data-source role tooltips (purpose-aware) + info icons. No per-source warning flag: a slow
       // source forced onto a sub-second path is flagged on the Latency p95 metric instead.
       $$('#dataSources label').forEach(lab => {
@@ -2062,11 +2090,11 @@
     function obsHtml(m) {
       const i = state.inputs, o = state.overrides;
       const path = state.purpose === 'assistant'
-        ? ['client', inboundControls(o, i).length && 'edge gateway', 'agent layer', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', outboundControls(o, i).length && 'model gateway', 'LLM'].filter(Boolean)
+        ? ['client', inboundControls(o, i).length && 'API Gateway', 'agent layer', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', outboundControls(o, i).length && 'model gateway', 'LLM'].filter(Boolean)
         : ['trigger', 'planner', 'executor', outboundControls(o, i).length && 'model gateway', 'quality-gate'].filter(Boolean);
       const crit = state.purpose === 'assistant' ? 'faithfulness + citation accuracy' : 'PR-success + rework rounds';
       const slo = i.latencyPreset === 'subsecond' ? 'p95 < 1s' : (i.latencyPreset === 'minutes' ? 'per-run < N min' : 'p95 < 2s start / 6s full');
-      const comps = [inboundControls(o, i).length && 'edge gateway', outboundControls(o, i).length && 'model gateway', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
+      const comps = [inboundControls(o, i).length && 'API Gateway', outboundControls(o, i).length && 'model gateway', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
       const rows = [
         ['Live trace', path.join(' → '), comps.length ? comps : ['components']],
         ['Eval', `Vertex Eval on 5% async sample - ${crit}; drift > 2σ`, ['purpose']],
@@ -2115,7 +2143,7 @@
       // path adds the cloud infra/ops the managed runtimes bundle, plus a LangGraph Platform Enterprise contract
       // (self-hosting is an Enterprise add-on). Surface both as their own visible cost lines.
       if (o.platform === 'langgraph') { b.add('Self-managed infra + ops (LangGraph)'); b.add('LangGraph Platform Enterprise (self-host license)'); }
-      if (o.gateway) { b.add('Cloud IAP'); b.add('API Gateway'); b.add('Apigee'); } if (o.auditLog) b.add('Cloud Logging (WORM)');
+      if (o.gateway) { b.add('Cloud IAP'); b.add('Cloud API Gateway'); b.add('Apigee'); } if (o.auditLog) b.add('Cloud Logging (WORM)');
       const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
       const hasIndex = i.dataSources.some(s => INDEXED_SRC.includes(s));
       if (ragOn && hasIndex && o.ragEngine === 'vais') {
@@ -2194,7 +2222,7 @@
         'LangGraph Platform Enterprise (self-host license)': 5000,
         'Apigee': 120 + R * 0.0003,
         'Cloud IAP': 0,                                          // no per-request charge at this sizing (bundled with the edge LB)
-        'API Gateway': 3 + R * 0.000003,                         // ~$3 per million API calls
+        'Cloud API Gateway': 3 + R * 0.000003,                   // ~$3 per million API calls
         'Cloud Logging (WORM)': 5 + (Tk / 1e6) * 0.05,
         'Vertex AI Vector Search': idxNodes * 438,
         'Vertex AI Search': R * K.vais.perQuery + (m.indexGB || 0) * K.vais.storageGiB + (i.dataSources.includes('website') ? K.vais.websiteBase : 0),
@@ -2263,7 +2291,7 @@
         }
         // drill-down on click (subset of boxes)
         let key = null;
-        if (/Edge gateway/.test(t)) key = 'edgegw'; else if (/Model gateway/.test(t)) key = 'modelgw'; else if (/Vertex AI Search/.test(t)) key = 'vais'; else if (/Vector store/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
+        if (/API Gateway/.test(t)) key = 'edgegw'; else if (/Model gateway/.test(t)) key = 'modelgw'; else if (/Vertex AI Search/.test(t)) key = 'vais'; else if (/Vector store/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
         if (key) { n.classList.add('drill'); n.style.cursor = 'pointer'; n.addEventListener('click', () => openModal(key)); }
       });
     }
@@ -2271,7 +2299,7 @@
     /* ===================== Drill-down modal ===================== */
     async function openModal(key) {
       state.ui.openModal = key;
-      const titles = { edgegw: 'Edge gateway', modelgw: 'Model gateway', ingestion: 'Self-built ingestion pipeline', vais: 'Vertex AI Search', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
+      const titles = { edgegw: 'API Gateway', modelgw: 'Model gateway', ingestion: 'Self-built ingestion pipeline', vais: 'Vertex AI Search', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
       const purposeId = { edgegw: 'EdgeGW', modelgw: 'ModelGW', ingestion: 'Store', vais: 'Store', sandbox: 'Sand', funnel: 'Retr' };   // map modal key → node id in NODE_PURPOSE
       const subcalc = key === 'edgegw' || key === 'modelgw' || key === 'ingestion';
       const root = $('#modal-root'), box = $('#modal');
@@ -2405,6 +2433,7 @@
         languages: [...(state.inputs.languages || [])],
         metrics: structuredClone(lastMetrics),
         cost: { genaiMo: lastMetrics.costOpt || 0, platMo: cs.platMo, totalMo: cs.totalMo, lines: cs.priced.map(x => ({ name: x.name, mo: x.mo })) },
+        diagram: buildMainDiagram(),
       };
     }
     // Curated metrics shown as before→after deltas (badUp: an increase is the worse direction → red).
@@ -2436,7 +2465,7 @@
     function computeDiff() {
       const b = state.baseline; if (!b) return null;
       const cur = state.inputs, co = state.overrides;
-      const inputs = [], config = [], data = [], cost = [], metrics = [];
+      const inputs = [], config = [], data = [], diagram = [], cost = [], costLines = [], metrics = [];
       if (b.purpose !== state.purpose) inputs.push(diffPill('Purpose', pathValueLabel('purpose', b.purpose), pathValueLabel('purpose', state.purpose)));
       for (const k of DIFF_INPUTS) { const p = 'inputs.' + k; if (b.inputs[k] !== cur[k]) inputs.push(diffPill(pathLabel(p), pathValueLabel(p, b.inputs[k]), pathValueLabel(p, cur[k]))); }
       const listDiff = (label, was, now, vl) => {
@@ -2452,6 +2481,14 @@
         const lock = state.locks[k], p = 'overrides.' + k;
         config.push(diffPill(pathLabel(p), pathValueLabel(p, b.overrides[k]), pathValueLabel(p, co[k]), lock ? ` <span class="dlock">🔒 ${lock.cause}</span>` : ''));
       }
+      // diagram (architecture) box additions / removals since baseline: a box appearing or disappearing
+      if (b.diagram) {
+        const wasN = diagramNodeMap(b.diagram), nowN = diagramNodeMap(buildMainDiagram());
+        const added = [...nowN.keys()].filter(id => !wasN.has(id)).map(id => nowN.get(id));
+        const removed = [...wasN.keys()].filter(id => !nowN.has(id)).map(id => wasN.get(id));
+        if (added.length) diagram.push(`<span class="dpill down"><span class="dk">Box +</span> ${added.join(', ')}</span>`);
+        if (removed.length) diagram.push(`<span class="dpill up"><span class="dk">Box −</span> ${removed.join(', ')}</span>`);
+      }
       // cost deltas (all derived): GenAI / Platform / Total aggregates, then each platform line whose $/mo moved
       const cc = costSummary(lastMetrics), bc = b.cost || { genaiMo: 0, platMo: 0, totalMo: 0, lines: [] };
       const dollarPill = (label, a, c, suffix) => { a = a || 0; c = c || 0; if (Math.abs(a - c) < Math.max(1, Math.abs(a) * 0.005)) return; cost.push(diffPill(label, money(a) + (suffix || ''), money(c) + (suffix || ''), '', c > a ? 'up' : 'down')); };
@@ -2462,14 +2499,14 @@
       for (const name of new Set([...Object.keys(bL), ...Object.keys(cL)])) {
         const a = bL[name] || 0, c = cL[name] || 0;
         if (Math.abs(a - c) < Math.max(1, Math.abs(a) * 0.005)) continue;
-        cost.push(diffPill(name, a ? money(a) : 'none', c ? money(c) : 'none', '', c > a ? 'up' : 'down'));
+        costLines.push(diffPill(name, a ? money(a) : 'none', c ? money(c) : 'none', '', c > a ? 'up' : 'down'));
       }
       for (const dm of DIFF_METRICS) {
         const a = b.metrics?.[dm.k] || 0, c = lastMetrics?.[dm.k] || 0;
         if (Math.abs(a - c) < Math.max(1e-9, Math.abs(a) * 0.005)) continue;
         metrics.push(diffPill(dm.label, dm.fmt(a), dm.fmt(c), '', (c > a) === dm.badUp ? 'up' : 'down'));
       }
-      return { inputs, config, data, cost, metrics, total: inputs.length + config.length + data.length + cost.length + metrics.length };
+      return { inputs, config, data, diagram, cost, costLines, metrics, total: inputs.length + config.length + data.length + diagram.length + cost.length + costLines.length + metrics.length };
     }
     function renderDiffStrip() {
       const strip = $('#diffStrip'), pin = $('#pinBtn');
@@ -2477,7 +2514,9 @@
       if (!state.baseline) { strip.hidden = true; strip.innerHTML = ''; return; }
       const d = computeDiff();
       const grp = (label, pills) => pills.length ? `<div class="diff-grp"><span class="dlabel">${label}</span>${pills.join('')}</div>` : '';
-      const body = d.total ? grp('Inputs', d.inputs) + grp('Config', d.config) + grp('Data', d.data) + grp('Cost', d.cost) + grp('Metrics', d.metrics)
+      // Cost totals stay visible; the per-line cost changes are collapsed by default to cut clutter.
+      const costLinesBlock = d.costLines.length ? `<details class="diff-lines"><summary>${d.costLines.length} cost line item${d.costLines.length > 1 ? 's' : ''} changed</summary><div class="diff-grp">${d.costLines.join('')}</div></details>` : '';
+      const body = d.total ? grp('Inputs', d.inputs) + grp('Data', d.data) + grp('Config', d.config) + grp('Diagram', d.diagram) + grp('Metrics', d.metrics) + grp('Cost', d.cost) + costLinesBlock
         : '<div class="diff-empty">Matches baseline - change an input or preset to see the impact.</div>';
       strip.innerHTML = `<div class="diff-head"><h3>Changed since baseline <span class="vis-count">${state.baseline.label}</span></h3><span class="spacer"></span><button class="diff-clear" id="diffClear" title="Remove the pinned baseline">clear ×</button></div>${body}`;
       strip.hidden = false;
@@ -2606,6 +2645,19 @@
       applyPreset('automation', 'regulated'); deriveOverrides();
       assert('automation diagram shows live data sources', /Live data/.test(buildMainDiagram()));
       assert('automation state store renders as a datastore cylinder', /State\[\(/.test(buildMainDiagram()));
+      // Task automation: Requirement agent merged into the Planner (no separate box), planner feeds the
+      // quality gate directly, and the executor's lead role is 'generation' (renamed from code-gen).
+      const dgAuto = buildMainDiagram();
+      assert('automation merges requirement agent into the planner', !/Requirement agent/.test(dgAuto) && /Planner/.test(dgAuto));
+      assert('automation planner feeds the quality gate', /Plan --> QG/.test(dgAuto));
+      assert('automation executor lead role renamed code-gen to generation', /generation/.test(dgAuto) && !/code-gen/.test(dgAuto));
+      // async human approval: the run awaits a reviewer, then resumes on approval
+      applyPreset('automation', 'strictpii'); deriveOverrides();
+      const dgHitl = buildMainDiagram();
+      assert('async approval shows await + resume edges', /QG -\. await human \.-> Appr/.test(dgHitl) && /Appr -\. resume on approve \.-> Exec/.test(dgHitl));
+      // Sub-second and agentic SLOs do not apply to automation: a stale value coerces to per-run minutes
+      applyPreset('automation', 'regulated'); state.inputs.latencyPreset = 'subsecond'; deriveOverrides();
+      assert('automation coerces interactive SLO to per-run minutes', state.inputs.latencyPreset === 'minutes');
       // RAG defaults to managed Vertex AI Search; the engine drives the diagram, BOM, and knobs
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
       assert('RAG engine defaults to managed Vertex AI Search', state.overrides.ragEngine === 'vais' && bomHtml().includes('Vertex AI Search'));
@@ -2691,8 +2743,15 @@
       state.overrides.platform = 'langgraph'; lastMetrics = computeMetrics();
       const cdiff = computeDiff();
       assert('platform change shows cost totals in the diff', cdiff.cost.some(s => /Total \$\/mo/.test(s)) && cdiff.cost.some(s => /Platform \$\/mo/.test(s)));
-      assert('platform change shows the changed cost line items', cdiff.cost.some(s => /LangGraph Platform Enterprise/.test(s)));
+      assert('changed cost line items are split into the collapsible costLines', cdiff.costLines.some(s => /LangGraph Platform Enterprise/.test(s)) && cdiff.cost.every(s => !/LangGraph Platform Enterprise/.test(s)));
+      // the renamed BOM line is 'Cloud API Gateway'; the old 'API Gateway' key no longer prices
+      assert('BOM API Gateway line renamed to Cloud API Gateway', typeof bomMonthlyCost('Cloud API Gateway', mPlat) === 'number' && bomMonthlyCost('API Gateway', mPlat) === null);
       state.baseline = null;
+      // diagram diff: a box appearing since baseline is reported in the Diagram group
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides(); state.overrides.sandbox = false; lastMetrics = computeMetrics(); pinBaseline();
+      state.overrides.sandbox = true; lastMetrics = computeMetrics();
+      assert('diagram diff reports an added box', computeDiff().diagram.some(s => /sandbox/i.test(s)));
+      state.overrides.sandbox = false; state.baseline = null;
       const pass = results.every(r => r[1]);
       const bar = $('#testbar'); bar.style.display = 'block'; bar.className = pass ? 'pass' : 'fail';
       bar.innerHTML = (pass ? '✓ all self-tests pass - ' : '✗ FAILURES - ') + results.map(r => `${r[1] ? '✓' : '✗'} ${r[0]}`).join(' · ');
