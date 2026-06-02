@@ -289,47 +289,7 @@
       min-width: 120px
     }
 
-    /* subtle cue that a label or panel header has an explanatory tooltip */
-    .ctl>label.has-help {
-      text-decoration: underline dotted var(--muted);
-      text-underline-offset: 3px;
-      text-decoration-thickness: 1px;
-      cursor: help;
-      position: relative
-    }
-
-    h3.has-help {
-      cursor: help;
-      text-decoration: underline dotted var(--border);
-      text-underline-offset: 4px;
-      text-decoration-thickness: 1px;
-      position: relative
-    }
-
-    /* instant styled tooltip from data-tip (native title is unreliable across browsers) */
-    .has-help:hover::after {
-      content: attr(data-tip);
-      position: absolute;
-      left: 0;
-      top: calc(100% + 5px);
-      z-index: 60;
-      width: max-content;
-      max-width: 240px;
-      background: var(--panel2);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 6px 9px;
-      font-size: 11.5px;
-      font-weight: 400;
-      line-height: 1.45;
-      letter-spacing: 0;
-      text-transform: none;
-      text-decoration: none;
-      white-space: normal;
-      box-shadow: 0 6px 22px rgba(0, 0, 0, .5);
-      pointer-events: none
-    }
+    /* Tooltips use the native browser title attribute only: one standard hover, no cursor or underline cue. */
 
     .ctl.hidden {
       display: none
@@ -341,13 +301,11 @@
       border: 1px solid var(--warn);
       border-radius: 4px;
       padding: 0 4px;
-      margin-left: 4px;
-      cursor: help
+      margin-left: 4px
     }
 
     .ctl .warnmark {
       color: var(--warn);
-      cursor: help;
       font-weight: 700
     }
 
@@ -376,8 +334,7 @@
       align-items: center;
       gap: 5px;
       color: var(--text);
-      font-size: 12.5px;
-      cursor: help
+      font-size: 12.5px
     }
 
     a.info-i {
@@ -651,9 +608,6 @@
       color: var(--muted)
     }
 
-    .metric[title] {
-      cursor: help
-    }
 
     .costbox {
       display: flex;
@@ -1446,7 +1400,7 @@
     const getPath = (o, p) => p.split('.').reduce((a, k) => a == null ? a : a[k], o);
     const setPath = (o, p, v) => { const ks = p.split('.'); const last = ks.pop(); let t = o; for (const k of ks) { t = t[k] ?? (t[k] = {}); } t[last] = v; };
     const fmt = (n, d = 0) => { if (n == null || isNaN(n)) return '-'; const a = Math.abs(n); if (a >= 1e9) return (n / 1e9).toFixed(d || 1) + 'B'; if (a >= 1e6) return (n / 1e6).toFixed(d || 1) + 'M'; if (a >= 1e3) return (n / 1e3).toFixed(d || 1) + 'k'; return n.toFixed(d); };
-    const money = n => { if (n == null || isNaN(n)) return '-'; if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M'; if (n >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'k'; return '$' + n.toFixed(2); };
+    const money = n => { if (n == null || isNaN(n)) return '-'; return '$' + Math.round(n).toLocaleString('en-US'); };
     const sens = s => ({ internal_low: { aud: 'internal', lvl: 0 }, internal_regulated: { aud: 'internal', lvl: 2 }, internal_strictpii: { aud: 'internal', lvl: 3 }, external_enterprise: { aud: 'external', lvl: 1 }, external_regulated: { aud: 'external', lvl: 2 }, public_strictpii: { aud: 'public', lvl: 3 } }[s]);
 
     /* ===================== Control-plane split (Edge gateway / Model gateway) ===================== */
@@ -1607,14 +1561,14 @@
       const groundPerCall = i.dataSources.includes('web') ? (rm.webSearch || 0) / 1000 : 0;
       // Naive baseline: reasoning model, no context cache, no routing, no response cache.
       const naiveTok = i.tokensIn * rm.in / 1e6 + i.tokensOut * rm.out / 1e6;
-      m.costNaive = dailyActions * (naiveTok + groundPerCall) * 365;
+      m.costNaive = dailyActions * (naiveTok + groundPerCall) * 30.4;   // $/month
       // Optimized: smart-routing blend + context-cache split + response-cache hit.
       const f = o.smartRouting ? o.routingSplit / 100 : 0;
       const rc = callCost(rm), fc = callCost(fm);
       const blend = k => f * fc[k] + (1 - f) * rc[k];
       const respHit = Math.min(0.8, (o.cacheHit || 0) / 100 + (o.autocomplete ? 0.25 : 0) + (o.warming ? 0.1 : 0));
       m.cacheHitEff = respHit;
-      const billed = dailyActions * (1 - respHit) * 365;          // calls still hitting inference
+      const billed = dailyActions * (1 - respHit) * 30.4;         // calls still hitting inference, per month
       m.costParts = {
         fresh: billed * blend('fresh'),
         cached: billed * blend('cached'),
@@ -1682,7 +1636,6 @@
         m.gpuTierLabel = (o.gpuTier || 'cud_3y').replace('_', ' ').toUpperCase();
         m.gpuUtilPct = Math.round(util * 100);
         m.gpuMo = m.gpuNodes * hourly * K.hoursMo;
-        m.gpuYr = m.gpuMo * 12;
       }
       // storage
       m.storageMo = m.indexGB * K.storageGCS + (m.tokensDay / 1e6 * 0.001 * 30);
@@ -2034,7 +1987,8 @@
       // cost breakdown
       $('#latency').innerHTML = latencyPanelHtml(m);
       $('#cost').innerHTML = costPanelHtml(m);
-      $('#costHead').textContent = state.overrides.deployment === 'onprem' ? '(self-host)' : (state.overrides.deployment === 'hybrid' ? '(API + self-host)' : '(managed API)');
+      const depTag = state.overrides.deployment === 'onprem' ? 'self-host' : (state.overrides.deployment === 'hybrid' ? 'API + self-host' : 'managed API');
+      $('#costHead').textContent = `(${depTag}) · all values $ / month`;
       // observability / risk / bom
       $('#observability').innerHTML = obsHtml(m);
       $('#risk').innerHTML = riskHtml(m);
@@ -2081,27 +2035,27 @@
       const rows = [];
       const apiActive = o.deployment !== 'onprem';            // onprem locks model to open weights → no token-metered API
       if (apiActive) {
-        rows.push(grp('GenAI · managed inference <small>($ / yr)</small>'));
+        rows.push(grp('GenAI · managed inference'));
         rows.push(row('Input · fresh', money(cp.fresh)));
         rows.push(row('Input · cached', money(cp.cached), 'billed at model cache-read rate'));
         rows.push(row('Output', money(cp.output)));
         if (cp.grounding > 0) rows.push(row('Web grounding', money(cp.grounding), 'live web search · $/1k calls'));
-        rows.push(row('GenAI $/yr', money(m.costOpt), '', true));
+        rows.push(row('GenAI', money(m.costOpt), '', true));
       }
-      if (m.gpuYr) {
-        rows.push(grp('GenAI · self-host on GPUs <small>($ / yr)</small>'));
-        rows.push(row('GPU fleet', `${money(m.gpuMo)}/mo`, `${m.gpuNodes}×8 ${(o.accelerator || 'h100').toUpperCase()} · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util`));
-        rows.push(row('Inference $/yr', money(m.gpuYr), '', true));
+      if (m.gpuMo) {
+        rows.push(grp('GenAI · self-host on GPUs'));
+        rows.push(row('GPU fleet', money(m.gpuMo), `${m.gpuNodes}×8 ${(o.accelerator || 'h100').toUpperCase()} · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util`));
+        rows.push(row('Inference', money(m.gpuMo), '', true));
       }
       // ---- platform & infrastructure: every BOM component, derived read-only; unpriced ones flagged ----
       const s = costSummary(m);
-      rows.push(grp('Platform &amp; infrastructure <small>($ / mo · derived)</small>'));
-      s.priced.forEach(x => { const en = BOM_EST_NOTE[x.name]; const tag = x.mo === 0 ? (en ? en.note : 'free') : ('est.' + (en ? ' · ' + en.note : '')); rows.push(`<div class="cost-row"><span class="cl"${en ? ` title="${en.why.replace(/"/g, '&quot;')}"` : ''}>${x.name} <small>${tag}</small></span><span class="cn">${money(x.mo)}/mo</span></div>`); });
+      rows.push(grp('Platform &amp; infrastructure <small>(derived)</small>'));
+      s.priced.forEach(x => { const en = BOM_EST_NOTE[x.name]; const tag = x.mo === 0 ? (en ? en.note : 'free') : ('est.' + (en ? ' · ' + en.note : '')); rows.push(`<div class="cost-row"><span class="cl"${en ? ` title="${en.why.replace(/"/g, '&quot;')}"` : ''}>${x.name} <small>${tag}</small></span><span class="cn">${money(x.mo)}</span></div>`); });
       s.red.forEach(x => rows.push(`<div class="cost-row red"><span class="cl" title="${(x.why || '').replace(/"/g, '&quot;')}">${x.name} <small>${x.short} · not modeled</small></span><span class="cn">n/a</span></div>`));
       if (s.free.length) rows.push(`<div class="cost-row"><span class="cl">Included at no charge <small>${s.free.join(' · ')}</small></span><span class="cn">$0</span></div>`);
-      rows.push(row('Platform $/mo', money(s.platMo) + (s.red.length ? ` <span class="cred">+${s.red.length} unpriced</span>` : ''), s.priced.length + ' priced', true));
+      rows.push(row('Platform', money(s.platMo) + (s.red.length ? ` <span class="cred">+${s.red.length} unpriced</span>` : ''), s.priced.length + ' priced', true));
       // ---- combined run-rate ----
-      rows.push(row('Total run-rate $/yr', money(s.totalYr), `GenAI + platform×12${s.red.length ? ' · excludes unpriced' : ''}`, true));
+      rows.push(row('Total run-rate', money(s.totalMo), `GenAI + platform${s.red.length ? ' · excludes unpriced' : ''}`, true));
       return `<div class="costbox">${rows.join('')}</div>`;
     }
     function driverTags(drv) { return drv ? drv.map(d => `<span class="tag" title="driven by ${d}">${d}</span>`).join(' ') : '<span class="tag static" title="same for every config">fixed</span>'; }
@@ -2266,10 +2220,10 @@
       return (name in P) ? P[name] : null;
     }
     // Pure aggregator: splits the BOM into priced / unpriced(red) / free, sums platform $,
-    // and returns the combined annual run-rate. All component costs are derived (no manual overrides).
+    // and returns the combined monthly run-rate. All component costs are derived (no manual overrides).
     function costSummary(m) {
       const o = state.overrides;
-      const genai = (m.costOpt || 0) + (m.gpuYr || 0);          // models + self-host GPU
+      const genai = (m.costOpt || 0) + (m.gpuMo || 0);          // models + self-host GPU, $/month
       const models = new Set([modelById(o.reasoningModel).name, modelById(o.fastModel).name]);
       const comps = bomHtml().filter(n => !models.has(n));
       const priced = [], red = [], free = [];
@@ -2280,7 +2234,7 @@
         else priced.push({ name, mo: est });
       });
       const platMo = priced.reduce((s, x) => s + x.mo, 0);
-      return { genai, priced, red, free, platMo, platYr: platMo * 12, totalYr: genai + platMo * 12 };
+      return { genai, priced, red, free, platMo, totalMo: genai + platMo };
     }
 
     let diagSrc = '';
@@ -2450,7 +2404,7 @@
         dataSources: [...state.inputs.dataSources],
         languages: [...(state.inputs.languages || [])],
         metrics: structuredClone(lastMetrics),
-        cost: { genaiYr: lastMetrics.costOpt || 0, platYr: cs.platYr, totalYr: cs.totalYr, lines: cs.priced.map(x => ({ name: x.name, mo: x.mo })) },
+        cost: { genaiMo: lastMetrics.costOpt || 0, platMo: cs.platMo, totalMo: cs.totalMo, lines: cs.priced.map(x => ({ name: x.name, mo: x.mo })) },
       };
     }
     // Curated metrics shown as before→after deltas (badUp: an increase is the worse direction → red).
@@ -2499,16 +2453,16 @@
         config.push(diffPill(pathLabel(p), pathValueLabel(p, b.overrides[k]), pathValueLabel(p, co[k]), lock ? ` <span class="dlock">🔒 ${lock.cause}</span>` : ''));
       }
       // cost deltas (all derived): GenAI / Platform / Total aggregates, then each platform line whose $/mo moved
-      const cc = costSummary(lastMetrics), bc = b.cost || { genaiYr: 0, platYr: 0, totalYr: 0, lines: [] };
+      const cc = costSummary(lastMetrics), bc = b.cost || { genaiMo: 0, platMo: 0, totalMo: 0, lines: [] };
       const dollarPill = (label, a, c, suffix) => { a = a || 0; c = c || 0; if (Math.abs(a - c) < Math.max(1, Math.abs(a) * 0.005)) return; cost.push(diffPill(label, money(a) + (suffix || ''), money(c) + (suffix || ''), '', c > a ? 'up' : 'down')); };
-      dollarPill('GenAI $/yr', bc.genaiYr, lastMetrics.costOpt);
-      dollarPill('Platform $/yr', bc.platYr, cc.platYr);
-      dollarPill('Total $/yr', bc.totalYr, cc.totalYr);
+      dollarPill('GenAI $/mo', bc.genaiMo, lastMetrics.costOpt);
+      dollarPill('Platform $/mo', bc.platMo, cc.platMo);
+      dollarPill('Total $/mo', bc.totalMo, cc.totalMo);
       const bL = Object.fromEntries((bc.lines || []).map(l => [l.name, l.mo])), cL = Object.fromEntries(cc.priced.map(l => [l.name, l.mo]));
       for (const name of new Set([...Object.keys(bL), ...Object.keys(cL)])) {
         const a = bL[name] || 0, c = cL[name] || 0;
         if (Math.abs(a - c) < Math.max(1, Math.abs(a) * 0.005)) continue;
-        cost.push(diffPill(name, a ? money(a) + '/mo' : 'none', c ? money(c) + '/mo' : 'none', '', c > a ? 'up' : 'down'));
+        cost.push(diffPill(name, a ? money(a) : 'none', c ? money(c) : 'none', '', c > a ? 'up' : 'down'));
       }
       for (const dm of DIFF_METRICS) {
         const a = b.metrics?.[dm.k] || 0, c = lastMetrics?.[dm.k] || 0;
@@ -2580,7 +2534,7 @@
       // context-cache split: higher reuse % lowers optimized cost
       applyPreset('assistant', 'expert_copilot'); state.overrides.contextCache = true; state.overrides.reuseInputPct = 0; const k0 = computeMetrics().costOpt; state.overrides.reuseInputPct = 80; const k1 = computeMetrics().costOpt; assert('higher reuse % lowers cost', k1 < k0);
       // indexing a company website adds crawl/index cost in the BOM; live web grounding adds a per-search GenAI cost
-      applyPreset('assistant', 'expert_copilot'); deriveOverrides(); const wc0 = costSummary(computeMetrics()).totalYr; state.inputs.dataSources = [...state.inputs.dataSources, 'website']; const wc1 = costSummary(computeMetrics()).totalYr; assert('indexing a company website adds cost', wc1 > wc0);
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides(); const wc0 = costSummary(computeMetrics()).totalMo; state.inputs.dataSources = [...state.inputs.dataSources, 'website']; const wc1 = costSummary(computeMetrics()).totalMo; assert('indexing a company website adds cost', wc1 > wc0);
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); const wg0 = computeMetrics().costParts.grounding; state.inputs.dataSources = [...state.inputs.dataSources, 'web']; const wg1 = computeMetrics().costParts.grounding; assert('live web grounding adds a per-search cost', wg0 === 0 && wg1 > 0);
       // self-host: int4 fleet < bf16 fleet at a volume that needs multiple nodes; on-prem zeroes token cost
       applyPreset('automation', 'regulated'); state.inputs.actors = 50000; state.inputs.actionsPerDay = 60; state.inputs.tokensOut = 2000; state.overrides.deployment = 'onprem'; deriveOverrides();
@@ -2601,9 +2555,14 @@
       // editing diverges from the preset → Custom; applying a preset clears it
       state.custom = true; applyPreset('assistant', 'expert_copilot'); assert('applying a preset clears Custom', state.custom === false);
       assert('every preset has an intent tooltip', ['assistant', 'automation'].every(p => Object.values(PRESETS[p]).every(v => typeof v.desc === 'string' && v.desc.length > 0)));
+      // tooltips are standardized: single native-title mechanism (no leftover styled-tooltip duplicate), and the bare inputs now carry one
+      assert('no duplicate tooltip mechanism remains', document.querySelectorAll('[data-tip]').length === 0 && document.querySelectorAll('.has-help').length === 0);
+      assert('bare inputs now have a native-title tooltip', ['inputs.actors', 'inputs.actionsPerDay', 'inputs.tokensIn', 'inputs.corpusSize'].every(pth => { const el = document.querySelector(`[data-bind="${pth}"]`); const lab = el && el.closest('.ctl') && el.closest('.ctl').querySelector(':scope > label'); return !!(lab && lab.getAttribute('title')); }));
       // BOM costing: platform adds to GenAI; BigQuery is volume-modeled (scales with requests); all derived read-only
       applyPreset('assistant', 'expert_copilot'); const cs0 = costSummary(computeMetrics());
-      assert('platform cost > 0', cs0.platMo > 0 && cs0.totalYr > computeMetrics().costOpt);
+      assert('platform cost > 0', cs0.platMo > 0 && cs0.totalMo > computeMetrics().costOpt);
+      // all cost numbers are monthly: the run-rate composes as GenAI($/mo) + platform($/mo) with no annualization, and no $/yr field survives
+      assert('cost totals are monthly (no annualization)', (() => { const mm = computeMetrics(); const cs = costSummary(mm); return Math.abs(cs.totalMo - ((mm.costOpt || 0) + (mm.gpuMo || 0) + cs.platMo)) < 1e-6 && cs.totalYr === undefined && cs.platYr === undefined && mm.gpuYr === undefined; })());
       assert('BigQuery is volume-modeled, not unpriced', cs0.priced.some(x => x.name === 'BigQuery') && !cs0.red.some(x => x.name === 'BigQuery'));
       const bqLo = bomMonthlyCost('BigQuery', computeMetrics());
       state.inputs.actionsPerDay *= 10; const bqHi = bomMonthlyCost('BigQuery', computeMetrics()); state.inputs.actionsPerDay /= 10;
@@ -2731,7 +2690,7 @@
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); lastMetrics = computeMetrics(); pinBaseline();
       state.overrides.platform = 'langgraph'; lastMetrics = computeMetrics();
       const cdiff = computeDiff();
-      assert('platform change shows cost totals in the diff', cdiff.cost.some(s => /Total \$\/yr/.test(s)) && cdiff.cost.some(s => /Platform \$\/yr/.test(s)));
+      assert('platform change shows cost totals in the diff', cdiff.cost.some(s => /Total \$\/mo/.test(s)) && cdiff.cost.some(s => /Platform \$\/mo/.test(s)));
       assert('platform change shows the changed cost line items', cdiff.cost.some(s => /LangGraph Platform Enterprise/.test(s)));
       state.baseline = null;
       const pass = results.every(r => r[1]);
@@ -2742,11 +2701,14 @@
     }
 
     /* ===================== Init ===================== */
-    // Concise definitions for controls whose intent is not self-evident, keyed by the input's
-    // data-bind path. Applied as a native title tooltip plus a subtle dotted-underline cue. Obvious
-    // controls (actors, actions/day, tokens, corpus size, languages) are intentionally left bare,
-    // and data-source checkboxes carry their own purpose-aware tooltips.
+    // Concise definitions for controls, keyed by the input's data-bind path. Applied as a native
+    // browser title tooltip (one standard hover, no cursor or underline cue). Data-source checkboxes
+    // carry their own purpose-aware tooltips; the Languages group label is set in applyControlHelp.
     const CTL_HELP = {
+      'inputs.actors': 'Number of distinct users or seats the system serves.',
+      'inputs.actionsPerDay': 'Requests each actor makes per day; sets the monthly request volume.',
+      'inputs.tokensIn': 'Average input and output tokens per query; drives token cost and generation latency.',
+      'inputs.corpusSize': 'Documents in the grounding corpus to index for retrieval.',
       'inputs.latencyPreset': 'Target response-time service level the design must meet.',
       'inputs.burst': 'Peak-to-average load multiplier, for sizing against spikes.',
       'inputs.activeHoursPerWeek': 'Hours per week of active use the load is averaged over.',
@@ -2802,12 +2764,15 @@
         const lab = ctl.querySelector(':scope > label');
         if (!bound || !lab) return;
         const help = CTL_HELP[bound.getAttribute('data-bind')];
-        if (help) { lab.setAttribute('title', help); lab.setAttribute('data-tip', help); lab.classList.add('has-help'); }
+        if (help) lab.setAttribute('title', help);
       });
+      // Languages is a checkbox group (no data-bind on the label), so set its tooltip directly.
+      const langLab = document.querySelector('.ctl[data-vis="languages"] > label');
+      if (langLab) langLab.setAttribute('title', 'Languages the system must understand and respond in.');
       for (const [id, txt] of Object.entries(PANEL_HELP)) {
         const div = document.getElementById(id);
         const h = id === 'diagram' ? document.querySelector('.diagram-head h3') : (div && div.closest('.panel') ? div.closest('.panel').querySelector('h3') : null);
-        if (h) { h.setAttribute('title', txt); h.setAttribute('data-tip', txt); h.classList.add('has-help'); }
+        if (h) h.setAttribute('title', txt);
       }
     }
     function init() {
