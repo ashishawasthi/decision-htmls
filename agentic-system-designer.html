@@ -2822,6 +2822,9 @@
       assert('context cache with a real reusable prefix raises no will-not-help warning', !runLinter(computeMetrics()).some(x => /minimum cacheable|no shared prefix to cache/.test(x.msg)));
       applyPreset('assistant', 'expert_copilot'); state.overrides.contextCache = false; state.inputs.tokensIn = 4000;
       assert('context cache off with a large prompt still nudges it on', runLinter(computeMetrics()).some(x => x.src === 'contextCache' && /enable context cache/.test(x.msg)));
+      // prompt-design lever: the reuse % help names the static-prefix ordering; the context-cache help is model-aware
+      assert('reuse % help names the static-prefix prompt ordering', /prefix/i.test(CTL_HELP['overrides.reuseInputPct']) && /(first|start)/i.test(CTL_HELP['overrides.reuseInputPct']));
+      assert('context cache help is model-aware (Gemini implicit, Claude breakpoint, vLLM)', /gemini/i.test(CTL_HELP['overrides.contextCache']) && /(cache_control|breakpoint)/i.test(CTL_HELP['overrides.contextCache']) && /vllm/i.test(CTL_HELP['overrides.contextCache']));
       const pass = results.every(r => r[1]);
       const bar = $('#testbar'); bar.style.display = 'block'; bar.className = pass ? 'pass' : 'fail';
       bar.innerHTML = (pass ? '✓ all self-tests pass - ' : '✗ FAILURES - ') + results.map(r => `${r[1] ? '✓' : '✗'} ${r[0]}`).join(' · ');
@@ -2861,8 +2864,8 @@
       'overrides.hnswM': 'HNSW graph connectivity parameter for the index.',
       'overrides.hnswEf': 'HNSW query-time search-breadth parameter.',
       'overrides.stateStore': 'Where session and agent state is kept.',
-      'overrides.contextCache': 'Bill reused prompt and context tokens at the cache-read rate. Helps only with a reusable prefix above the model minimum cacheable size (~2k tokens).',
-      'overrides.reuseInputPct': 'Share of input tokens reusable across calls.',
+      'overrides.contextCache': 'Bill the reusable prompt prefix at the cache-read rate (~10% of input). Gemini caches a stable prefix implicitly and free; Claude needs a cache_control breakpoint; self-hosted Llama uses vLLM prefix caching. Needs a prefix above the model minimum cacheable size (~2k tokens).',
+      'overrides.reuseInputPct': 'Share of input that is a stable, cacheable prefix. Realized by ordering the prompt fixed-part-first: system instructions, context, and few-shot at the start, the variable user turn at the end.',
       'overrides.accelerator': 'GPU or TPU class for self-hosted inference.',
       'overrides.quant': 'Model weight precision for self-hosting.',
       'overrides.pagedAttn': 'Paged attention for higher GPU memory efficiency.',
