@@ -1361,7 +1361,7 @@
       // Vertex AI Search (managed RAG): ~$3 per 1k search queries + index storage $/GiB-mo + a website data store base.
       vais: { perQuery: 0.003, storageGiB: 5, websiteBase: 30 },
       hnsw: { a: 0.5, b: 120, baseMs: 8 },
-      lat: { retrieval: 70, rerank: 80, bigqueryScan: 1200, webGround: 600, onpremCall: 400, qualityGate: 80 },   // gateway/guardrails latency now per-chip in IN_LAT / OUT_LAT
+      lat: { retrieval: 70, rerank: 80, bigqueryScan: 1200, webGround: 600, onpremCall: 400, qualityGate: 80, cacheExact: 5, cacheSem: 30 },   // gateway/guardrails latency now per-chip in IN_LAT / OUT_LAT
     };
     const modelById = id => MODELS.find(m => m.id === id) || MODELS[0];
 
@@ -1420,7 +1420,7 @@
     // Model gateway box on the agent→model leg. A chip shows only when its derived control is on, so
     // each box rewrites its own label from the inputs. Latency maps are per-chip milliseconds.
     const IN_LAT = { 'auth': 8, 'rate-limit': 2, 'PII redact': 8, 'injection screen': 20 };
-    const OUT_LAT = { 'route': 4, 'cache': 4, 'fan-out': 3, 'PII redact': 8, 'output filter': 20, 'audit': 3 };
+    const OUT_LAT = { 'route': 4, 'fan-out': 3, 'PII redact': 8, 'output filter': 20, 'audit': 3 };
     function inboundControls(o, i) {
       const { lvl } = sens(i.audienceSensitivity); const c = [];
       if (o.gateway) { c.push('auth'); c.push('rate-limit'); }   // authenticate caller + per-tenant quota
@@ -1431,7 +1431,6 @@
     function outboundControls(o, i) {
       const { lvl } = sens(i.audienceSensitivity); const c = [];
       if (o.gateway) c.push('route');                            // model routing + fallback
-      if (o.semanticCache) c.push('cache');                      // semantic response cache
       if (o.gateway) c.push('fan-out');                          // provider fan-out
       if (lvl >= 3) c.push('PII redact');                        // redact before tokens leave to a provider
       if (o.guardrails) c.push('output filter');                 // toxicity / leak screen on model output
@@ -1440,6 +1439,10 @@
     }
     const edgeLabel = c => `API Gateway ⊕<br/>${c.join(' · ')}`;
     const modelLabel = c => `Model gateway ⊕<br/>${c.join(' · ')}`;
+    // Response cache box on the request path: a hit returns a stored answer and skips the agent and
+    // model (the respHit fraction of traffic). Drawn only when an exact or semantic cache is enabled.
+    const responseCacheOn = o => !!(o.exactCache || o.semanticCache);
+    const cacheLabel = o => `Response cache ⊕<br/>${[o.exactCache && 'exact', o.semanticCache && 'semantic'].filter(Boolean).join(' + ')}`;
     // Model calls per request: the agent→model fan-out (agents × a damped ReAct loop). The Model
     // gateway sees this many calls per user request, so it sizes on model-call QPS, not user QPS.
     function modelCallsPerReq(o) {
@@ -1459,6 +1462,9 @@
       // preset itself carries only first-level inputs. Governance is never seeded here - it is
       // derived purely from the inputs in deriveGovernance() and shown as a read-only output.
       if (purpose === 'automation') { state.overrides.retrieval = 'none'; state.overrides.pattern = 'multi'; state.overrides.numAgents = 5; state.overrides.stateStore = 'spanner'; }
+      // High-repeat, freshness-tolerant Q&A presets ship with response caching on (exact + semantic):
+      // the cache box and its cost / latency win are intrinsic to those designs. Stays user-editable.
+      if (purpose === 'assistant' && (preset === 'highvol_qa' || preset === 'customer_support')) { state.overrides.exactCache = true; state.overrides.semanticCache = true; }
       // RAG retrieval only makes sense with an indexed source (corpus or website) behind it; default it off when the
       // preset carries only live or grounding sources (the user can still turn it on, which then prompts for a source).
       if (!state.inputs.dataSources.some(s => ['doc_corpus', 'website'].includes(s))) state.overrides.retrieval = 'none';
@@ -1614,6 +1620,9 @@
       const outMs = outbChips.reduce((s, c) => s + (OUT_LAT[c] || 0), 0);
       const genGw = gen + outMs;
       if (inbChips.length) parts.push({ label: 'API Gateway', ms: inMs, note: inbChips.join(' · ') });
+      // Response cache lookup sits once on the request path; the p95 path is a miss (lookup, then fall
+      // through to the agent), so the lookup overhead is added once here, not per model call.
+      if (responseCacheOn(o)) parts.push({ label: 'Response cache lookup', ms: o.semanticCache ? L.cacheSem : L.cacheExact, note: o.semanticCache ? 'embed + ANN on miss' : 'key lookup on miss' });
       if (state.purpose === 'automation') {
         parts.push({ label: 'Planner', ms: rm.ttftMs + i.tokensOut * rm.msPerOutTok / 2 + outMs, note: rm.name });
         if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
@@ -1680,8 +1689,13 @@
       if (chunks > 1e8 && !o.metadataPrefilter) add('scaling', 'Pure ANN recall degrades past ~100M chunks - add a metadata pre-filter + shard.', '', 'metadataPrefilter');
       if (m.volPeak > K.apigeeRpsPerRegion / 1000 && !o.multiRegion) add('scaling', 'Peak load nears single-region quota - shard by region + pre-negotiate.', '', 'multiRegion');
       // cost
+      // Prompt (context) caching is on by default and a near-universal win, but it only pays off with a
+      // reusable prefix above the model's minimum cacheable size. Nudge it on when a large prompt is billed
+      // uncached; flag the cases where it is on but cannot help (prompt too short, or no shared prefix).
       if (!o.contextCache && i.tokensIn >= 3000) add('cost', 'Largest cheap win: enable context cache on the reused system prompt - cached input bills at the model cache-read rate (~10% of input).', 'input cost↓', 'contextCache');
-      if (o.contextCache && i.tokensIn >= 3000 && (o.reuseInputPct || 0) < 40) add('cost', 'Context cache on but low reuse % - set reusable-input toward your real shared-prompt/retrieved fraction to capture the discount.', 'input cost↓', 'reuseInputPct');
+      else if (o.contextCache && i.tokensIn < 2048) add('cost', 'Context cache is on but the prompt is below the ~2k-token minimum cacheable size, so prompt caching will not apply and the input still bills at full price.', '', 'contextCache');
+      else if (o.contextCache && (o.reuseInputPct || 0) <= 10) add('cost', 'Context cache is on but reusable-input is ~0, so there is no shared prefix to cache and no saving - set reusable-input % to your real shared-prompt or retrieved fraction, or turn it off.', '', 'reuseInputPct');
+      else if (o.contextCache && i.tokensIn >= 3000 && (o.reuseInputPct || 0) < 40) add('cost', 'Context cache on but low reuse % - set reusable-input toward your real shared-prompt/retrieved fraction to capture the discount.', 'input cost↓', 'reuseInputPct');
       if (i.dataSources.includes('website')) add('freshness', 'Crawled company-website content is indexed offline, so answers are only as fresh as the last crawl - set a re-crawl cadence that matches how fast the pages change.', '', 'website');
       if (i.dataSources.includes('web')) {
         if ((modelById(o.reasoningModel).webSearch || 0) === 0) add('conflict', `Web grounding needs a model with a web-search tool (Gemini Google Search or Claude web search). ${modelById(o.reasoningModel).name} has none, so live web grounding will not run - switch the reasoning model or drop web grounding.`, '', 'reasoningModel');
@@ -1715,7 +1729,8 @@
       // assistant + shared
       Client: 'The user-facing app (web or chat) that sends queries and renders grounded, cited answers.',
       EdgeGW: 'The request-side API gateway at the system edge: authenticates the caller (IAM + mTLS), enforces per-tenant rate limits, redacts inbound PII, and screens for prompt injection and jailbreaks before anything reaches the agent. Implemented by Apigee, Cloud API Gateway, or a third-party gateway such as Kong. Shows only the controls your inputs require. Sized on inbound user QPS.',
-      ModelGW: 'The model-side control plane on the agent→model leg: routes and fails over between models, serves the semantic cache, fans out to providers, redacts PII before egress, filters unsafe or leaking output, and meters every call. It sees every model call, so it sizes on model-call QPS (user QPS × fan-out), not user QPS.',
+      ModelGW: 'The model-side control plane on the agent→model leg: routes and fails over between models, fans out to providers, redacts PII before egress, filters unsafe or leaking output, and meters every call. It sees every model call, so it sizes on model-call QPS (user QPS × fan-out), not user QPS.',
+      Cache: 'A response cache on the request path: on a hit it returns a stored answer and skips the agent and model entirely, cutting cost and latency on the repeat-heavy head of traffic. Exact-match keys on the normalized query; semantic match keys on the query embedding within a similarity threshold. Sized by the effective hit rate. Invalidation is TTL plus version busting: each entry expires on a TTL set from the data freshness (real-time off, minutes, end-of-day about 24h, static long), and the cache key is namespaced by model, prompt, and index version so shipping a new model or prompt drops stale answers automatically.',
       Orch: 'Plans each request, calls tools and retrieval, and composes the final answer. Single agent or a multi-agent team depending on the pattern.',
       Retr: 'Narrows candidates in stages (metadata pre-filter → dense + BM25 → rerank) so the model is grounded on only the most relevant passages.',
       Sand: 'Runs PII-sensitive or untrusted tool execution in an ephemeral, isolated instance that is wiped after each use, so sensitive data and side-effects never persist.',
@@ -1869,8 +1884,12 @@
         // (injection screen), merged into one adaptive box. Drawn only when a control is derived on.
         const inb = inboundControls(o, i);
         if (inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
+        // Response cache short-circuit: a hit returns the stored answer to the client and skips the
+        // agent and model (the respHit fraction of traffic); a miss falls through to the agent.
+        const cacheOn = responseCacheOn(o);
+        if (cacheOn) { L.push(node('Cache', cacheLabel(o), 'data', 'cyl')); L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Client'); }
         L.push(node('Orch', o.pattern === 'multi' ? `Agent layer<br/>${roleList('assistant', o.numAgents)}` : 'Agent layer<br/>single agent', 'orch'));
-        L.push(`${head} --> Orch`);
+        L.push(cacheOn ? 'Cache -- miss --> Orch' : `${head} --> Orch`);
         // Self-built draws an explicit retrieval funnel (dense + BM25 + rerank); managed Vertex AI
         // Search performs retrieval inside its store node, so the orchestrator reads the store directly.
         const showFunnel = ['hybrid', 'dense', 'rerank'].includes(o.retrieval) && o.ragEngine === 'selfbuilt';
@@ -1892,7 +1911,10 @@
         let head = 'Trig';
         const inb = inboundControls(o, i);
         if (inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
-        L.push(node('Plan', 'Planner', 'orch')); L.push(`${head} --> Plan`);
+        // Response cache short-circuit (dedup): a hit resolves a repeat trigger without planning.
+        const cacheOn = responseCacheOn(o);
+        if (cacheOn) { L.push(node('Cache', cacheLabel(o), 'data', 'cyl')); L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Trig'); }
+        L.push(node('Plan', 'Planner', 'orch')); L.push(cacheOn ? 'Cache -- miss --> Plan' : `${head} --> Plan`);
         L.push(node('Exec', `Executor pool<br/>${roleList('automation', o.numAgents)}`, 'orch')); L.push('Plan --> Exec');
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Exec --> Sand'); }
         // model leg with the Model gateway, mirroring the assistant branch
@@ -1933,7 +1955,8 @@
     function buildComponentDiagram(key) {
       const map = {
         edgegw: 'flowchart LR\n A[Auth IAM+mTLS]-->B[Tenant rate-limit]-->C[Input PII redact]-->D[Injection / jailbreak screen]',
-        modelgw: 'flowchart LR\n A[Model route + fallback]-->B[Semantic cache]-->C[Provider fan-out]-->D[Egress PII redact]-->E[Output safety filter]-->F[Audit + token meter]',
+        modelgw: 'flowchart LR\n A[Model route + fallback]-->B[Provider fan-out]-->C[Egress PII redact]-->D[Output safety filter]-->E[Audit + token meter]',
+        cache: 'flowchart LR\n A[Normalize + version-namespace key]-->B[Exact-match lookup]-->C[Semantic embed + ANN match]-->D[Serve stored answer or write back on miss]-->E[TTL by freshness + evict]',
         ingestion: 'flowchart LR\n A[Docs + Website]-->B[Document AI / crawler]-->C[Chunker]-->D[Embeddings]-->E[Vector + BM25 + GCS]',
         vais: 'flowchart LR\n A[Docs + Website data store]-->B[Managed parse + chunk + embed]-->C[Managed index]-->D["RRF (semantic + keyword) + rerank"]-->E[Grounded answer + citations]',
         sandbox: 'flowchart LR\n A[Ephemeral instance + KMS]-->B[Entity resolution]-->C[Web/OSINT + risk rules]-->D[Memory wipe]-->E[Audit hash]',
@@ -2090,11 +2113,11 @@
     function obsHtml(m) {
       const i = state.inputs, o = state.overrides;
       const path = state.purpose === 'assistant'
-        ? ['client', inboundControls(o, i).length && 'API Gateway', 'agent layer', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', outboundControls(o, i).length && 'model gateway', 'LLM'].filter(Boolean)
-        : ['trigger', 'planner', 'executor', outboundControls(o, i).length && 'model gateway', 'quality-gate'].filter(Boolean);
+        ? ['client', inboundControls(o, i).length && 'API Gateway', responseCacheOn(o) && 'response cache', 'agent layer', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', outboundControls(o, i).length && 'model gateway', 'LLM'].filter(Boolean)
+        : ['trigger', responseCacheOn(o) && 'response cache', 'planner', 'executor', outboundControls(o, i).length && 'model gateway', 'quality-gate'].filter(Boolean);
       const crit = state.purpose === 'assistant' ? 'faithfulness + citation accuracy' : 'PR-success + rework rounds';
       const slo = i.latencyPreset === 'subsecond' ? 'p95 < 1s' : (i.latencyPreset === 'minutes' ? 'per-run < N min' : 'p95 < 2s start / 6s full');
-      const comps = [inboundControls(o, i).length && 'API Gateway', outboundControls(o, i).length && 'model gateway', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
+      const comps = [inboundControls(o, i).length && 'API Gateway', responseCacheOn(o) && 'response cache', outboundControls(o, i).length && 'model gateway', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
       const rows = [
         ['Live trace', path.join(' → '), comps.length ? comps : ['components']],
         ['Eval', `Vertex Eval on 5% async sample - ${crit}; drift > 2σ`, ['purpose']],
@@ -2291,7 +2314,7 @@
         }
         // drill-down on click (subset of boxes)
         let key = null;
-        if (/API Gateway/.test(t)) key = 'edgegw'; else if (/Model gateway/.test(t)) key = 'modelgw'; else if (/Vertex AI Search/.test(t)) key = 'vais'; else if (/Vector store/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
+        if (/API Gateway/.test(t)) key = 'edgegw'; else if (/Model gateway/.test(t)) key = 'modelgw'; else if (/Response cache/.test(t)) key = 'cache'; else if (/Vertex AI Search/.test(t)) key = 'vais'; else if (/Vector store/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
         if (key) { n.classList.add('drill'); n.style.cursor = 'pointer'; n.addEventListener('click', () => openModal(key)); }
       });
     }
@@ -2299,8 +2322,8 @@
     /* ===================== Drill-down modal ===================== */
     async function openModal(key) {
       state.ui.openModal = key;
-      const titles = { edgegw: 'API Gateway', modelgw: 'Model gateway', ingestion: 'Self-built ingestion pipeline', vais: 'Vertex AI Search', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
-      const purposeId = { edgegw: 'EdgeGW', modelgw: 'ModelGW', ingestion: 'Store', vais: 'Store', sandbox: 'Sand', funnel: 'Retr' };   // map modal key → node id in NODE_PURPOSE
+      const titles = { edgegw: 'API Gateway', modelgw: 'Model gateway', cache: 'Response cache', ingestion: 'Self-built ingestion pipeline', vais: 'Vertex AI Search', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
+      const purposeId = { edgegw: 'EdgeGW', modelgw: 'ModelGW', cache: 'Cache', ingestion: 'Store', vais: 'Store', sandbox: 'Sand', funnel: 'Retr' };   // map modal key → node id in NODE_PURPOSE
       const subcalc = key === 'edgegw' || key === 'modelgw' || key === 'ingestion';
       const root = $('#modal-root'), box = $('#modal');
       let inner = `<span class="close" id="modalClose">×</span><h2>${titles[key]} ${subcalc ? '· sub-calculator' : '· detail'}</h2>`;
@@ -2319,7 +2342,14 @@
         const regions = Math.max(1, Math.ceil(modelQPS / (K.apigeeRpsPerRegion)));
         inner += `<div class="ctl"><label>Model calls / request</label><input type="number" id="cmc" value="${fan}" min="1"></div>`;
         inner += `<div style="font-size:11px;color:var(--muted);margin:2px 0 6px">The agent→model fan-out (agents × a damped ReAct loop). Edit to match your trace.</div>`;
-        inner += `<div class="metrics"><div class="metric"><div class="k">Model-call QPS</div><div class="v">${fmt(modelQPS, 1)} <small>= ${fmt(lastMetrics.volPeak, 1)} × ${fan}</small></div></div><div class="metric"><div class="k">Regions</div><div class="v">${regions}</div></div><div class="metric"><div class="k">Cache offload</div><div class="v">${state.overrides.semanticCache ? (100 * (lastMetrics.cacheHitEff || 0)).toFixed(0) + '%' : 'off'}</div></div></div>`;
+        inner += `<div class="metrics"><div class="metric"><div class="k">Model-call QPS</div><div class="v">${fmt(modelQPS, 1)} <small>= ${fmt(lastMetrics.volPeak, 1)} × ${fan}</small></div></div><div class="metric"><div class="k">Regions</div><div class="v">${regions}</div></div></div>`;
+      }
+      if (key === 'cache') {
+        const hit = lastMetrics.cacheHitEff || 0;
+        const reqMo = state.inputs.actors * state.inputs.actionsPerDay * 30.4;
+        const type = [state.overrides.exactCache && 'exact', state.overrides.semanticCache && 'semantic'].filter(Boolean).join(' + ') || 'off';
+        const ttl = { realtime: 'off', minutes: '~5 min', eod: '~24 h', static: 'long / manual' }[state.inputs.freshness] || '~24 h';
+        inner += `<div class="metrics"><div class="metric"><div class="k">Effective hit rate</div><div class="v">${(hit * 100).toFixed(0)}%</div></div><div class="metric"><div class="k">Calls served from cache</div><div class="v">${fmt(reqMo * hit, 1)} <small>/ mo</small></div></div><div class="metric"><div class="k">TTL <small>(freshness)</small></div><div class="v">${ttl}</div></div><div class="metric"><div class="k">Match</div><div class="v">${type}</div></div></div>`;
       }
       if (key === 'ingestion') {
         const ing = state.componentInputs.ingestion; const docs = ing.docsPerDay ?? Math.round((state.inputs.corpusSize || 0) * 0.002);
@@ -2752,6 +2782,46 @@
       state.overrides.sandbox = true; lastMetrics = computeMetrics();
       assert('diagram diff reports an added box', computeDiff().diagram.some(s => /sandbox/i.test(s)));
       state.overrides.sandbox = false; state.baseline = null;
+      // response cache: a box on the request spine when exact/semantic is on, off otherwise; the
+      // semantic cache no longer rides the model gateway, and a miss adds a request-path lookup.
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides(); state.overrides.exactCache = false; state.overrides.semanticCache = false;
+      assert('no response cache box when caching is off', !/Response cache/.test(buildMainDiagram()));
+      assert('model gateway carries no cache chip', !outboundControls(state.overrides, state.inputs).includes('cache'));
+      state.overrides.semanticCache = true; deriveOverrides();
+      const dgCache = buildMainDiagram();
+      assert('response cache box drawn when semantic cache on', /Cache\[\("Response cache/.test(dgCache));
+      assert('cache short-circuits with a hit and a miss edge', /Cache -\. hit \.-> Client/.test(dgCache) && /Cache -- miss --> Orch/.test(dgCache));
+      assert('semantic cache stays out of the model gateway label', !/Model gateway[^"]*cache/.test(dgCache));
+      assert('cache adds a request-path lookup to the latency p95', computeMetrics().latParts.some(p => /Response cache lookup/.test(p.label)));
+      assert('response cache has a drill-in sub-diagram', /Normalize/.test(buildComponentDiagram('cache')));
+      state.overrides.semanticCache = false; state.overrides.exactCache = true;
+      assert('exact-only cache labels the box exact, not semantic', /Response cache[^"]*exact/.test(buildMainDiagram()) && !/Response cache[^"]*semantic/.test(buildMainDiagram()));
+      applyPreset('automation', 'internal_lowstakes'); deriveOverrides(); state.overrides.semanticCache = true;
+      const dgAutoCache = buildMainDiagram();
+      assert('automation cache short-circuits to the trigger', /Cache -\. hit \.-> Trig/.test(dgAutoCache) && /Cache -- miss --> Plan/.test(dgAutoCache));
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides(); state.overrides.exactCache = false; state.overrides.semanticCache = false; lastMetrics = computeMetrics(); pinBaseline();
+      state.overrides.semanticCache = true; lastMetrics = computeMetrics();
+      assert('diagram diff reports the added response cache box', computeDiff().diagram.some(s => /Response cache/.test(s)));
+      state.overrides.semanticCache = false; state.baseline = null;
+      // preset defaults: the two repeat-heavy Q&A presets ship caching on; everything else stays off
+      applyPreset('assistant', 'highvol_qa'); assert('High-volume Q&A preset ships response caching on', responseCacheOn(state.overrides) && /Cache\[\("Response cache/.test(buildMainDiagram()));
+      applyPreset('assistant', 'customer_support'); assert('Customer support preset ships response caching on', responseCacheOn(state.overrides));
+      applyPreset('assistant', 'expert_copilot'); assert('Expert copilot preset leaves caching off by default', !responseCacheOn(state.overrides));
+      applyPreset('assistant', 'strictpii_verify'); assert('Strict-PII preset leaves caching off (conflicts with realtime + PII)', !responseCacheOn(state.overrides));
+      applyPreset('automation', 'regulated'); assert('automation preset leaves caching off by default', !responseCacheOn(state.overrides));
+      // invalidation strategy stated in the tooltip and the drill-in (TTL keyed to freshness + version busting)
+      assert('cache tooltip states TTL + version-busting invalidation', /TTL/.test(NODE_PURPOSE.Cache) && /version/i.test(NODE_PURPOSE.Cache));
+      assert('cache drill-in shows version namespacing and a freshness TTL', /version-namespace/.test(buildComponentDiagram('cache')) && /TTL by freshness/.test(buildComponentDiagram('cache')));
+      assert('High-volume Q&A stays within the sub-second budget with caching on', (() => { applyPreset('assistant', 'highvol_qa'); deriveOverrides(); return computeMetrics().latencyOverBudget === false; })());
+      // prompt (context) caching: default-on, but the linter flags when it cannot help and nudges it on when it would
+      applyPreset('assistant', 'expert_copilot'); state.overrides.contextCache = true; state.inputs.tokensIn = 1500;
+      assert('context cache on with a sub-2k prompt warns it will not apply', runLinter(computeMetrics()).some(x => /minimum cacheable/.test(x.msg)));
+      applyPreset('assistant', 'expert_copilot'); state.overrides.contextCache = true; state.inputs.tokensIn = 4000; state.overrides.reuseInputPct = 0;
+      assert('context cache on with ~0 reuse warns nothing to cache', runLinter(computeMetrics()).some(x => /no shared prefix to cache/.test(x.msg)));
+      applyPreset('assistant', 'expert_copilot'); state.overrides.contextCache = true; state.inputs.tokensIn = 4000; state.overrides.reuseInputPct = 60;
+      assert('context cache with a real reusable prefix raises no will-not-help warning', !runLinter(computeMetrics()).some(x => /minimum cacheable|no shared prefix to cache/.test(x.msg)));
+      applyPreset('assistant', 'expert_copilot'); state.overrides.contextCache = false; state.inputs.tokensIn = 4000;
+      assert('context cache off with a large prompt still nudges it on', runLinter(computeMetrics()).some(x => x.src === 'contextCache' && /enable context cache/.test(x.msg)));
       const pass = results.every(r => r[1]);
       const bar = $('#testbar'); bar.style.display = 'block'; bar.className = pass ? 'pass' : 'fail';
       bar.innerHTML = (pass ? '✓ all self-tests pass - ' : '✗ FAILURES - ') + results.map(r => `${r[1] ? '✓' : '✗'} ${r[0]}`).join(' · ');
@@ -2791,7 +2861,7 @@
       'overrides.hnswM': 'HNSW graph connectivity parameter for the index.',
       'overrides.hnswEf': 'HNSW query-time search-breadth parameter.',
       'overrides.stateStore': 'Where session and agent state is kept.',
-      'overrides.contextCache': 'Bill reused prompt and context tokens at the cache-read rate.',
+      'overrides.contextCache': 'Bill reused prompt and context tokens at the cache-read rate. Helps only with a reusable prefix above the model minimum cacheable size (~2k tokens).',
       'overrides.reuseInputPct': 'Share of input tokens reusable across calls.',
       'overrides.accelerator': 'GPU or TPU class for self-hosted inference.',
       'overrides.quant': 'Model weight precision for self-hosting.',
