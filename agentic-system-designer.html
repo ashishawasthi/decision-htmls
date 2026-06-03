@@ -509,7 +509,8 @@
 
     .sev.cost,
     .sev.freshness,
-    .sev.caching {
+    .sev.caching,
+    .sev.data {
       background: #16302a;
       color: var(--retr);
       border: 1px solid var(--retr)
@@ -1191,10 +1192,12 @@
         <legend>State &amp; context cache</legend>
         <div class="ctl" data-ov="stateStore"><label>State store</label>
           <select data-bind="overrides.stateStore">
-            <option value="redis">Memorystore (Redis)</option>
-            <option value="redis_spanner">Redis + Spanner</option>
+            <option value="alloydb">AlloyDB</option>
+            <option value="redis_alloydb">Redis + AlloyDB</option>
             <option value="spanner">Spanner</option>
+            <option value="redis_spanner">Redis + Spanner</option>
             <option value="cloudsql">Cloud SQL</option>
+            <option value="redis">Memorystore (Redis)</option>
           </select>
         </div>
         <div class="ctl" data-ov="contextCache"><label>Context cache (system prompt)</label>
@@ -1461,7 +1464,11 @@
       // transactional state store with no semantic retrieval). These stay user-editable; a
       // preset itself carries only first-level inputs. Governance is never seeded here - it is
       // derived purely from the inputs in deriveGovernance() and shown as a read-only output.
-      if (purpose === 'automation') { state.overrides.retrieval = 'none'; state.overrides.pattern = 'multi'; state.overrides.numAgents = 5; state.overrides.stateStore = 'spanner'; }
+      // Automation runs a parallel executor pool over a transactional state store. The regional agentic
+      // default is AlloyDB (PostgreSQL-compatible, HA, pgvector/ScaNN for agent memory, cheaper than Spanner
+      // regionally); deriveOverrides() upgrades to Spanner only for active-active multi-region writes. Default
+      // to a single-region posture so the typical automation design lands on AlloyDB.
+      if (purpose === 'automation') { state.overrides.retrieval = 'none'; state.overrides.pattern = 'multi'; state.overrides.numAgents = 5; state.overrides.stateStore = 'alloydb'; state.overrides.multiRegion = false; }
       // High-repeat, freshness-tolerant Q&A presets ship with response caching on (exact + semantic):
       // the cache box and its cost / latency win are intrinsic to those designs. Stays user-editable.
       if (purpose === 'assistant' && (preset === 'highvol_qa' || preset === 'customer_support')) { state.overrides.exactCache = true; state.overrides.semanticCache = true; }
@@ -1498,6 +1505,11 @@
         if (o.reasoningModel === 'llama4-selfhost') o.reasoningModel = 'gemini-35-flash';
         if (o.fastModel === 'llama4-selfhost') o.fastModel = 'gemini-31-flash-lite';
       }
+      // State store: AlloyDB is the regional agentic default for automation. Upgrade to Spanner only for
+      // active-active multi-region writes (AlloyDB is single-primary, so it cannot serve those). One-way, from
+      // the regional default only, so a deliberate Spanner, Cloud SQL, or Redis-tier pick stays put; the linter
+      // separately recommends Spanner when peak write throughput is very high.
+      if (state.purpose === 'automation' && o.multiRegion && o.stateStore === 'alloydb' && !locks.stateStore) o.stateStore = 'spanner';
       state.locks = locks;
       // Governance is a pure, read-only function of the first-level inputs. Computed last so it
       // sees the resolved topology, then rendered in the Governance & controls output panel.
@@ -1688,6 +1700,13 @@
       const chunks = (i.corpusSize || 0) * K.chunksPerDoc;
       if (chunks > 1e8 && !o.metadataPrefilter) add('scaling', 'Pure ANN recall degrades past ~100M chunks - add a metadata pre-filter + shard.', '', 'metadataPrefilter');
       if (m.volPeak > K.apigeeRpsPerRegion / 1000 && !o.multiRegion) add('scaling', 'Peak load nears single-region quota - shard by region + pre-negotiate.', '', 'multiRegion');
+      // State store: keep AlloyDB regional unless the design needs Spanner; flag the inverse; route audit to BigQuery.
+      if (state.purpose === 'automation') {
+        const needsSpanner = o.multiRegion || m.volPeak > 50;
+        if (o.stateStore.includes('spanner') && !needsSpanner) add('cost', 'Spanner is selected but this is a single-region, moderate-write design - AlloyDB is the simpler, cheaper regional default and still does HA, read pools, and cross-region DR. Reserve Spanner for active-active multi-region writes or very high peak write throughput.', 'cost↓', 'stateStore');
+        else if (needsSpanner && !o.stateStore.includes('spanner')) add('scaling', `This design needs ${o.multiRegion ? 'active-active multi-region writes' : 'very high peak write throughput'} - move the state store to Spanner for horizontal write scale and external consistency. AlloyDB caps at single-primary regional writes.`, '', 'stateStore');
+        add('data', 'Keep durable audit and long-term event history in BigQuery, not the transactional state store - the state DB holds resumable run state; BigQuery holds the append-only history for audit and analytics.', '', 'auditLog');
+      }
       // cost
       // Prompt (context) caching is on by default and a near-universal win, but it only pays off with a
       // reusable prefix above the model's minimum cacheable size. Nudge it on when a large prompt is billed
@@ -1723,6 +1742,15 @@
     const INDEXED_LABEL = { doc_corpus: 'Docs', website: 'Site' };
     const AGENT_ROLES = { assistant: ['Q&A', 'summarize', 'draft', 'policy', 'compare', 'extract', 'plan', 'translate'], automation: ['generation', 'review', 'test', 'docs', 'migrate', 'plan'] };
     const roleList = (p, n) => { const r = AGENT_ROLES[p]; return n <= r.length ? r.slice(0, n).join(' · ') : r.join(' · ') + ` +${n - r.length}`; };
+    // State-node label per selected store, so the diagram cylinder names the store the design actually uses.
+    const STATE_STORE_LABEL = {
+      redis: 'State store (Memorystore)',
+      redis_spanner: 'State store (Redis + Spanner)',
+      redis_alloydb: 'State store (Redis + AlloyDB)',
+      alloydb: 'State store (AlloyDB)',
+      spanner: 'State store (Spanner)',
+      cloudsql: 'State store (Cloud SQL)',
+    };
     // One-line purpose per box, keyed by the node id used in buildMainDiagram. Shown on
     // hover (native SVG <title>) and reused as the drill-down modal subtitle.
     const NODE_PURPOSE = {
@@ -1749,7 +1777,7 @@
       Plan: 'Reads the trigger and turns it into a clear, structured task spec, then breaks that into ordered steps and assigns them to the executor agents. It also sets the acceptance criteria the quality gate enforces.',
       Exec: 'The specialist agents that do the work (generation, review, test, docs, migrate), running in parallel where possible.',
       QG: 'Automated checks (tests, linters, policy rules) that must pass before the result moves to approval.',
-      State: 'Durable run state and history, so long workflows can resume and stay auditable.',
+      State: 'Transactional run state, so long workflows can resume after a failure. Default is AlloyDB: PostgreSQL-compatible, HA, with pgvector/ScaNN for agent memory and columnar HTAP, and cheaper than Spanner for a single region. Use Spanner when you need active-active multi-region writes, five-nines, or extreme write throughput. Durable audit and long-term event history belong in BigQuery, not this transactional store.',
     };
     const nodeIdFromSvg = el => { const m = (el.id || '').match(/flowchart-([A-Za-z0-9]+)-\d+$/); return m ? m[1] : null; };
     // Role of each data source, shown as a hover tooltip on the checkbox. BigQuery's role
@@ -1795,6 +1823,7 @@
       'Vertex AI Search': 'components/vertex-ai-search.html',
       'Spanner': 'components/spanner.html',
       'AlloyDB': 'components/alloydb.html',
+      'AlloyDB (state)': 'components/alloydb.html',
       'Memorystore': 'components/memorystore.html',
       // gateway and security
       'Apigee': 'components/apigee.html',
@@ -1925,7 +1954,7 @@
         L.push(node('QG', 'Quality gate', 'retr')); L.push('Exec --> QG'); L.push('Plan --> QG');
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human approval', 'gov')); L.push('QG -. await human .-> Appr'); L.push('Appr -. resume on approve .-> Exec'); }
         dataPlane('Exec', 'Exec');
-        L.push(node('State', 'State store (Spanner)', 'data', 'cyl')); L.push('Exec --> State');
+        L.push(node('State', STATE_STORE_LABEL[o.stateStore] || 'State store', 'data', 'cyl')); L.push('Exec --> State');
         L.push(node('Obs', 'Observability', 'obs')); L.push('Exec --> Obs');
       }
       L.push('classDef client fill:#16384a,stroke:#5ec8f8,color:#dbeefb;');
@@ -2178,7 +2207,10 @@
         if (i.dataSources.includes('doc_corpus') || i.dataSources.includes('website')) b.add('Document AI');
       }
       if (i.dataSources.includes('bigquery')) b.add('BigQuery');
-      b.add(o.stateStore.includes('spanner') ? 'Spanner' : 'Cloud SQL'); if (o.stateStore.includes('redis')) b.add('Memorystore');
+      // Transactional state store: name the actual service so its cost line is correct, and keep the state
+      // AlloyDB line distinct from a vector-DB AlloyDB line. A Redis tier adds Memorystore on top.
+      b.add(o.stateStore.includes('spanner') ? 'Spanner' : o.stateStore.includes('alloydb') ? 'AlloyDB (state)' : 'Cloud SQL');
+      if (o.stateStore.includes('redis')) b.add('Memorystore');
       b.add('Cloud Trace'); b.add('Vertex AI Eval');
       if (o.guardrails) b.add('Model Armor'); if (o.toolAuthz) b.add('Workload Identity'); if (o.modelRiskGov) b.add('Vertex Model Registry');
       if (o.residencyPin) b.add('VPC Service Controls'); b.add('Cloud DLP'); b.add('IAM');
@@ -2250,6 +2282,7 @@
         'Vertex AI Vector Search': idxNodes * 438,
         'Vertex AI Search': R * K.vais.perQuery + (m.indexGB || 0) * K.vais.storageGiB + (i.dataSources.includes('website') ? K.vais.websiteBase : 0),
         'AlloyDB': 300 + m.indexGB * 0.3,
+        'AlloyDB (state)': 280 + dbNodes * 110 + m.indexGB * 0.3,   // primary + read pool (HA) floor, scales with peak concurrency; below Spanner, above Cloud SQL
         'Elasticsearch': idxNodes * 450,
         'BM25': 0,
         'Dataflow': docsDay > 0 ? 30 + docsDay * 0.02 : 0,
@@ -2688,6 +2721,22 @@
       // Sub-second and agentic SLOs do not apply to automation: a stale value coerces to per-run minutes
       applyPreset('automation', 'regulated'); state.inputs.latencyPreset = 'subsecond'; deriveOverrides();
       assert('automation coerces interactive SLO to per-run minutes', state.inputs.latencyPreset === 'minutes');
+      // State store: AlloyDB is the regional automation default; Spanner is derived only for active-active
+      // multi-region writes; the diagram label, BOM, and linter track the selected store.
+      applyPreset('automation', 'regulated'); deriveOverrides();
+      assert('automation regional preset derives AlloyDB state store', state.overrides.stateStore === 'alloydb');
+      assert('automation state node labels the selected store (AlloyDB)', /State store \(AlloyDB\)/.test(buildMainDiagram()));
+      assert('automation AlloyDB state store adds an AlloyDB line to the BOM', bomHtml().includes('AlloyDB (state)'));
+      applyPreset('automation', 'regulated'); state.overrides.multiRegion = true; deriveOverrides();
+      assert('active-active multi-region upgrades the state store to Spanner', state.overrides.stateStore === 'spanner' && /State store \(Spanner\)/.test(buildMainDiagram()));
+      assert('no AlloyDB-cheaper nudge once multi-region active-active is on', !runLinter(computeMetrics()).some(x => x.src === 'stateStore' && /cheaper regional default/.test(x.msg)));
+      applyPreset('automation', 'regulated'); state.overrides.multiRegion = false; state.inputs.actors = 100000; state.inputs.actionsPerDay = 100; deriveOverrides();
+      assert('very high peak throughput recommends Spanner while the store stays AlloyDB', state.overrides.stateStore === 'alloydb' && runLinter(computeMetrics()).some(x => x.src === 'stateStore' && /move the state store to Spanner/.test(x.msg)));
+      applyPreset('automation', 'regulated'); state.overrides.stateStore = 'spanner'; deriveOverrides();
+      assert('a manual Spanner pick at regional scale is kept, with an AlloyDB nudge', state.overrides.stateStore === 'spanner' && runLinter(computeMetrics()).some(x => x.src === 'stateStore' && /cheaper regional default/.test(x.msg)));
+      applyPreset('automation', 'regulated'); state.overrides.stateStore = 'cloudsql'; deriveOverrides();
+      assert('a deliberate Cloud SQL pick is preserved and labels the node', state.overrides.stateStore === 'cloudsql' && /State store \(Cloud SQL\)/.test(buildMainDiagram()));
+      assert('automation routes audit history to BigQuery in the linter', runLinter(computeMetrics()).some(x => x.src === 'auditLog' && /BigQuery/.test(x.msg)));
       // RAG defaults to managed Vertex AI Search; the engine drives the diagram, BOM, and knobs
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
       assert('RAG engine defaults to managed Vertex AI Search', state.overrides.ragEngine === 'vais' && bomHtml().includes('Vertex AI Search'));
@@ -2863,7 +2912,7 @@
       'overrides.ingestionSep': 'Index on a separate pipeline from query serving.',
       'overrides.hnswM': 'HNSW graph connectivity parameter for the index.',
       'overrides.hnswEf': 'HNSW query-time search-breadth parameter.',
-      'overrides.stateStore': 'Where session and agent state is kept.',
+      'overrides.stateStore': 'Where transactional run and agent state is kept. AlloyDB is the regional default; Spanner is derived when the design needs active-active multi-region writes, and recommended when peak write throughput is very high. Audit and long-term history go to BigQuery.',
       'overrides.contextCache': 'Bill the reusable prompt prefix at the cache-read rate (~10% of input). Gemini caches a stable prefix implicitly and free; Claude needs a cache_control breakpoint; self-hosted Llama uses vLLM prefix caching. Needs a prefix above the model minimum cacheable size (~2k tokens).',
       'overrides.reuseInputPct': 'Share of input that is a stable, cacheable prefix. Realized by ordering the prompt fixed-part-first: system instructions, context, and few-shot at the start, the variable user turn at the end.',
       'overrides.accelerator': 'GPU or TPU class for self-hosted inference.',
