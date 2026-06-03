@@ -288,11 +288,11 @@
 
       <fieldset>
         <legend>Model variant</legend>
-        <label><input type="radio" name="model" value="E2B"> <b>gemma-4-E2B-it</b>: ~2B effective, ~3.5 GB PLE</label>
+        <label><input type="radio" name="model" value="E2B"> <b>gemma-4-E2B-it</b>: ~2.3B effective, ~5.5 GB PLE</label>
         <label><input type="radio" name="model" value="E4B" checked> <b>gemma-4-E4B-it</b>: ~4.5B effective, ~7 GB
           PLE</label>
         <div class="tradeoff">PLE (Per-Layer Embeddings) cannot be 4-bit quantized. It stays fp16 and dominates static
-          footprint. E2B saves ~3.5 GB on this line alone, at the cost of model capability.</div>
+          footprint. E2B saves ~1.5 GB on this line (5.5 vs 7 GB), at the cost of model capability.</div>
       </fieldset>
 
       <fieldset>
@@ -381,6 +381,24 @@
           memory. Drops the cross-entropy logits line ~90% (the L4 killer at 262k vocab). Available via
           <code>liger-kernel</code> or <code>torch.compile</code> with a fused CE shim. Small throughput win too.</div>
       </fieldset>
+
+      <fieldset>
+        <legend>Inference / serving (separate from training)</legend>
+        <div class="range-row">
+          <label style="min-width: 170px;">Context length (tokens)</label>
+          <input type="range" min="1024" max="131072" step="1024" value="4096" id="contextLen">
+          <output for="contextLen" id="contextLenOut">4096</output>
+        </div>
+        <div class="range-row">
+          <label style="min-width: 170px;">Concurrent sequences</label>
+          <input type="range" min="1" max="64" step="1" value="1" id="sequences">
+          <output for="sequences" id="sequencesOut">1</output>
+        </div>
+        <div class="tradeoff">Serving has no optimizer, gradients, or stored backward activations, but it holds a KV
+          cache that grows with context length &times; concurrent sequences. Gemma 4 keeps this small: GQA (1 KV head
+          on E2B, 2 on E4B), a 512-token sliding window on local layers, and KV-cache sharing across most layers.
+          Drives the separate panel on the right.</div>
+      </fieldset>
     </section>
 
     <section class="output">
@@ -406,6 +424,27 @@
             flagged orange</b>. The calculator's estimate is an average peak; real runs see 1-3 GB additional spikes
           from variable-length batches, kernel JIT compilation, allocator fragmentation, and bnb dequant timing. Treat
           orange as "probably OOMs on first surprise"; green as "comfortable safety margin".</p>
+      </div>
+
+      <h2>Inference / serving memory</h2>
+      <div class="panel">
+        <table id="inferBreakdown">
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th style="text-align:right">Size</th>
+              <th style="width:35%">Share</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="total">Estimated serving peak: <b id="inferTotal">&hellip;</b></div>
+        <div id="inferGpu" class="note"></div>
+        <p class="note">A different regime from training: no optimizer state, gradients, or backward activations. The
+          KV cache is the part that scales with context and concurrency. This estimate assumes a bf16 KV cache and
+          Gemma 4's local:global attention split (about 5:1) with sliding-window local layers and KV-cache sharing.
+          Serving at a lower weight quant or an fp8 KV cache reduces it further. Long-context prefill adds transient
+          scratch not modeled here.</p>
       </div>
 
       <h2>Source &amp; assumptions</h2>
@@ -435,6 +474,9 @@
             (softmax, layer norm).</li>
           <li><b>Framework overhead: 1.5 GB</b> with <code>expandable_segments</code>, 2.5 GB without, from allocator
             fragmentation, PEFT/Unsloth wrapper allocations, autograd graph storage.</li>
+          <li><b>KV cache: not part of training.</b> A fine-tuning step is a single teacher-forced forward pass, so
+            there is no autoregressive KV cache; the K/V tensors are already inside the activations line. KV cache
+            only matters for inference, estimated separately in the "Inference / serving memory" panel above.</li>
         </ul>
       </div>
     </section>
@@ -445,12 +487,14 @@
 
     const MODELS = {
       E2B: {
-        name: "gemma-4-E2B-it", linearParams: 2.0e9, embedFp16Bytes: 3.5e9,
-        layers: 26, hidden: 2304, mlpIntermediate: 9216, bnbDequant: 500e6, vocab: 262144
+        name: "gemma-4-E2B-it", linearParams: 2.3e9, embedFp16Bytes: 5.5e9,
+        layers: 35, hidden: 1536, mlpIntermediate: 6144, bnbDequant: 500e6, vocab: 262144,
+        kvHeads: 1, headDim: 256, slidingWindow: 512, kvSharedLayers: 20
       },
       E4B: {
         name: "gemma-4-E4B-it", linearParams: 4.5e9, embedFp16Bytes: 7.0e9,
-        layers: 42, hidden: 2560, mlpIntermediate: 10240, bnbDequant: 800e6, vocab: 262144
+        layers: 42, hidden: 2560, mlpIntermediate: 10240, bnbDequant: 800e6, vocab: 262144,
+        kvHeads: 2, headDim: 256, slidingWindow: 512, kvSharedLayers: 18
       },
     };
 
@@ -471,6 +515,11 @@
     const QUANT_BYTES = { fp16: 2.0, int8: 1.0, nf4: 0.55 };
     const OPT_BYTES = { fp32_adamw: 12, adamw_8bit: 6, paged_adamw_8bit: 4 };
     const GB = 1024 ** 3;
+
+    // Inference / serving (KV cache) constants
+    const KV_LOCAL_GLOBAL_RATIO = 6; // Gemma's ~5 local : 1 global attention pattern
+    const KV_BYTES = 2;              // bf16/fp16 KV cache element
+    const INFER_OVERHEAD = 1.5 * GB; // CUDA context + prefill scratch + cuBLAS workspace
 
     function loraParamCount(model, rank) {
       // 4 attention projections (q,k,v,o) with same in/out hidden dims,
@@ -496,6 +545,8 @@
         lengthSort: document.getElementById('lengthSort').checked,
         expandableSeg: document.getElementById('expandableSeg').checked,
         useLiger: document.getElementById('useLiger').checked,
+        contextLen: +document.getElementById('contextLen').value,
+        sequences: +document.getElementById('sequences').value,
       };
     }
 
@@ -570,6 +621,37 @@
 
       const total = Object.values(components).reduce((a, b) => a + b, 0);
       return { components, total, trainableParams };
+    }
+
+    function kvCacheBytes(model, contextLen, sequences) {
+      // Gemma 4 stores KV only for the non-shared layers: KV-cache sharing lets
+      // later layers reuse the last non-shared layer's K/V. Among the storing
+      // layers, ~1 in 6 is a global-attention layer that scales with full
+      // context; the rest are local sliding-window layers capped at
+      // slidingWindow tokens. GQA means only kvHeads (1 on E2B, 2 on E4B) K/V
+      // heads, which keeps this small even at 128k context.
+      const kvStoringLayers = model.layers - model.kvSharedLayers;
+      const globalLayers = Math.round(kvStoringLayers / KV_LOCAL_GLOBAL_RATIO);
+      const localLayers = kvStoringLayers - globalLayers;
+      const localTokens = Math.min(contextLen, model.slidingWindow);
+      const perLayerTokenBytes = 2 * model.kvHeads * model.headDim * KV_BYTES; // K + V
+      const tokenLayerSum = localLayers * localTokens + globalLayers * contextLen;
+      return sequences * perLayerTokenBytes * tokenLayerSum;
+    }
+
+    function calculateInference(o) {
+      // Serving is a different regime from training: no gradients, optimizer
+      // state, or stored backward activations. Weights stay resident, plus a KV
+      // cache that grows with context length and concurrent sequences.
+      const m = MODELS[o.model];
+      const weights = m.linearParams * QUANT_BYTES[o.quant] + m.embedFp16Bytes;
+      const kv = kvCacheBytes(m, o.contextLen, o.sequences);
+      const components = {};
+      components['Weights (' + o.quant + ' linears + fp16 embeddings/PLE)'] = weights;
+      components['KV cache (' + o.contextLen + ' tok × ' + o.sequences + ' seq)'] = kv;
+      components['Runtime overhead'] = INFER_OVERHEAD;
+      const total = weights + kv + INFER_OVERHEAD;
+      return { components, total, kv };
     }
 
     function fmtBytes(b) {
@@ -651,6 +733,31 @@
     `;
         fitEl.appendChild(row);
       }
+
+      // Inference / serving panel
+      document.getElementById('contextLenOut').textContent = o.contextLen;
+      document.getElementById('sequencesOut').textContent = o.sequences;
+      const ir = calculateInference(o);
+      const itbody = document.querySelector('#inferBreakdown tbody');
+      itbody.innerHTML = '';
+      const iMax = Math.max(...Object.values(ir.components));
+      for (const [name, bytes] of Object.entries(ir.components)) {
+        const tr = document.createElement('tr');
+        const pct = iMax > 0 ? (bytes / iMax) * 100 : 0;
+        tr.innerHTML = `
+      <td>${name}</td>
+      <td class="size">${fmtBytes(bytes)}</td>
+      <td><span class="bar" style="width:${pct}%"></span></td>
+    `;
+        itbody.appendChild(tr);
+      }
+      document.getElementById('inferTotal').textContent = (ir.total / GB).toFixed(2) + ' GB';
+      const inferGB = ir.total / GB;
+      const fitsList = GPUS.filter(g => g.vramGB >= inferGB).sort((a, b) => a.vramGB - b.vramGB);
+      const smallest = fitsList[0];
+      document.getElementById('inferGpu').textContent = smallest
+        ? 'KV cache ' + (ir.kv / GB).toFixed(2) + ' GB. Smallest listed GPU that fits: ' + smallest.name + '.'
+        : 'KV cache ' + (ir.kv / GB).toFixed(2) + ' GB. Total exceeds all listed GPUs.';
     }
 
     // Wire up listeners
