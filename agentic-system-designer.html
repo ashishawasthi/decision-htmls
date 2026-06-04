@@ -1036,9 +1036,9 @@
       <span><span class="tag" style="margin:0">blue</span> driving input</span>
     </div>
     <div class="header-actions">
-      <button class="mini icon" id="themeBtn" title="Toggle light / dark theme" aria-label="Toggle light / dark theme"><svg
-          class="ic-sun" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
+      <button class="mini icon" id="themeBtn" title="Toggle light / dark theme"
+        aria-label="Toggle light / dark theme"><svg class="ic-sun" viewBox="0 0 24 24" width="14" height="14"
+          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="4" />
           <path
             d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
@@ -1046,8 +1046,8 @@
           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg></button>
-      <button class="mini" id="permalinkBtn" title="Copy permalink"><svg viewBox="0 0 24 24" width="13"
-          height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button class="mini" id="permalinkBtn" title="Copy permalink"><svg viewBox="0 0 24 24" width="13" height="13"
+          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="9" y="9" width="13" height="13" rx="2" />
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
         </svg><span>Permalink</span></button>
@@ -1501,10 +1501,10 @@
     const PRESETS = {
       assistant: {
         expert_copilot: { label: 'Expert copilot', desc: 'Internal expert copilot that answers from a document corpus and BigQuery at agentic speed.', inputs: { actors: 1000, actionsPerDay: 10, burst: 5, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 4000, tokensOut: 800, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'doc_corpus'], corpusSize: 2e6, freshness: 'eod', languages: ['en'] } },
+        self_managed: { label: 'Self-Managed', desc: 'Interactive assistant that self-hosts the agent, vector search, and cache on GKE under CMEK and a VPC-SC perimeter, grounded on a self-built vector DB.', inputs: { actors: 1000, actionsPerDay: 10, burst: 5, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 4000, tokensOut: 800, audienceSensitivity: 'internal_regulated', dataSources: ['doc_corpus'], corpusSize: 2e6, freshness: 'eod', languages: ['en'] } },
         highvol_qa: { label: 'High-volume Q&A', desc: 'Very high-volume Q&A over a large document corpus, tuned for sub-second latency and low cost per query.', inputs: { actors: 20000, actionsPerDay: 50, burst: 6, activeHoursPerWeek: 120, latencyPreset: 'subsecond', tokensIn: 3000, tokensOut: 500, audienceSensitivity: 'internal_regulated', dataSources: ['doc_corpus'], corpusSize: 1e7, freshness: 'static', languages: ['en'] } },
         customer_support: { label: 'Customer support', desc: 'External, multilingual customer support grounded on a support corpus at agentic latency.', inputs: { actors: 50000, actionsPerDay: 4, burst: 7, activeHoursPerWeek: 168, latencyPreset: 'agentic', tokensIn: 2500, tokensOut: 600, audienceSensitivity: 'external_enterprise', dataSources: ['doc_corpus'], corpusSize: 5e5, freshness: 'eod', languages: ['en', 'zh', 'ja'] } },
         strictpii_verify: { label: 'Strict-PII verification', desc: 'Low-volume, strict-PII verification that grounds live on web, knowledge graph, and on-prem data in real time.', inputs: { actors: 300, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 6000, tokensOut: 1000, audienceSensitivity: 'internal_strictpii', dataSources: ['web', 'kg', 'onprem'], corpusSize: 0, freshness: 'realtime', languages: ['en'] } },
-        self_managed: { label: 'Self-Managed', desc: 'Interactive assistant that self-hosts the agent, vector search, and cache on GKE under CMEK and a VPC-SC perimeter, grounded on a self-built vector DB.', inputs: { actors: 1000, actionsPerDay: 10, burst: 5, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 4000, tokensOut: 800, audienceSensitivity: 'internal_regulated', dataSources: ['doc_corpus'], corpusSize: 2e6, freshness: 'eod', languages: ['en'] } },
       },
       automation: {
         // Presets differ by trust tier (audience & sensitivity), the one input that
@@ -3096,14 +3096,18 @@
       assert('self-managed labels the Redis tier as self-hosted on GKE', /Redis on GKE/.test(buildMainDiagram()));
       // active-active upgrades the durable tier to Spanner and draws it OUTSIDE the VPC (PSC, managed), Memorystore inside
       applyPreset('assistant', 'expert_copilot'); state.overrides.multiRegion = true; deriveOverrides();
-      { const d = buildMainDiagram(); const vo = d.indexOf('subgraph VPC['); const ve = d.indexOf('\nend', vo);
+      {
+        const d = buildMainDiagram(); const vo = d.indexOf('subgraph VPC['); const ve = d.indexOf('\nend', vo);
         assert('active-active assistant upgrades the durable tier to Spanner', state.overrides.stateStore === 'redis_spanner');
         assert('the hot Memorystore store sits inside the dedicated VPC', vo >= 0 && /State\[\(/.test(d.slice(vo, ve)));
-        assert('Spanner (durable) is drawn outside the VPC box', /StateDur\[\("Spanner/.test(d) && d.indexOf('StateDur') > ve); }
+        assert('Spanner (durable) is drawn outside the VPC box', /StateDur\[\("Spanner/.test(d) && d.indexOf('StateDur') > ve);
+      }
       // Rule 2: the VPC box matches the Terraform networkUser - the response cache (Memorystore) is VPC-resident and sits inside it
       applyPreset('assistant', 'expert_copilot'); state.overrides.stateStore = 'spanner'; state.overrides.exactCache = true; deriveOverrides();
-      { const d = buildMainDiagram(); const vo = d.indexOf('subgraph VPC['); const ve = d.indexOf('\nend', vo);
-        assert('the response cache surfaces the VPC and sits inside it', vo >= 0 && /Cache\[\(/.test(d.slice(vo, ve))); }
+      {
+        const d = buildMainDiagram(); const vo = d.indexOf('subgraph VPC['); const ve = d.indexOf('\nend', vo);
+        assert('the response cache surfaces the VPC and sits inside it', vo >= 0 && /Cache\[\(/.test(d.slice(vo, ve)));
+      }
       // Rule 3: VPC-SC is claimed in the BOM only when the perimeter is actually enforced, not merely regulated
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
       assert('regulated default does not list VPC-SC in the BOM while the perimeter is off', state.overrides.residencyPin === true && state.overrides.enforceVpcSc === false && !bomHtml().includes('VPC Service Controls'));
@@ -3240,9 +3244,11 @@
       // Dedicated VPC network boundary in the diagram: wraps the self-hosted resources and, when the
       // perimeter is also on, nests inside it (PERIM > VPC > the GKE runtime subgraph AE).
       applyPreset('assistant', 'self_managed'); deriveOverrides();
-      { const dvpc = buildMainDiagram();
+      {
+        const dvpc = buildMainDiagram();
         assert('Self-Managed assistant draws the Dedicated VPC network boundary', /subgraph VPC\["Dedicated VPC network"\]/.test(dvpc));
-        assert('the dedicated VPC nests inside the VPC-SC perimeter with the GKE runtime inside the VPC', dvpc.indexOf('subgraph PERIM') >= 0 && dvpc.indexOf('subgraph PERIM') < dvpc.indexOf('subgraph VPC') && dvpc.indexOf('subgraph VPC') < dvpc.indexOf('subgraph AE')); }
+        assert('the dedicated VPC nests inside the VPC-SC perimeter with the GKE runtime inside the VPC', dvpc.indexOf('subgraph PERIM') >= 0 && dvpc.indexOf('subgraph PERIM') < dvpc.indexOf('subgraph VPC') && dvpc.indexOf('subgraph VPC') < dvpc.indexOf('subgraph AE'));
+      }
       state.overrides.dedicatedVpc = false;
       assert('toggling Dedicated VPC off removes the network boundary', !/subgraph VPC\[/.test(buildMainDiagram()));
       applyPreset('automation', 'self_managed'); deriveOverrides();
@@ -3250,9 +3256,11 @@
       // managed assistant (Agent Engine + Vertex AI Search): the private Redis session store surfaces the
       // VPC even with no self-hosted compute, matching the Terraform that provisions Memorystore in a VPC.
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
-      { const dmgd = buildMainDiagram();
+      {
+        const dmgd = buildMainDiagram();
         assert('a managed assistant draws its session state store', /State\[/.test(dmgd));
-        assert('the private Redis session store surfaces the dedicated VPC on a managed assistant', /subgraph VPC\["Dedicated VPC network"\]/.test(dmgd)); }
+        assert('the private Redis session store surfaces the dedicated VPC on a managed assistant', /subgraph VPC\["Dedicated VPC network"\]/.test(dmgd));
+      }
       state.overrides.stateStore = 'spanner';
       assert('a managed assistant on Spanner-only state (nothing private) draws no VPC boundary', !/subgraph VPC\[/.test(buildMainDiagram()));
       applyPreset('assistant', 'strictpii_verify'); assert('Strict-PII verification ships CMEK + VPC-SC', state.overrides.cmek === true && state.overrides.enforceVpcSc === true);
