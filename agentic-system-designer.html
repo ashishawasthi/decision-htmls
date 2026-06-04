@@ -5,6 +5,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Agentic System Designer - GCP</title>
+  <script>
+    /* Resolve the theme before first paint to avoid a flash. 'asd-theme' is set only
+       when the user has explicitly chosen; absent means follow the OS setting. */
+    (function () {
+      var saved = localStorage.getItem('asd-theme');
+      var theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
   <style>
     :root {
       --bg: #0f1419;
@@ -25,6 +34,40 @@
       --ok: #3fb950;
       --warn: #d29922;
       --err: #f85149;
+      /* tinted status backgrounds, shared by severity tags, the test bar, and the active chip */
+      --ok-tint: #16302a;
+      --err-tint: #3a1d22;
+      --warn-tint: #3a2f1a;
+      --accent-tint: #1d2b44;
+      --overlay: rgba(0, 0, 0, .6);
+    }
+
+    /* Light palette. The dark values above are the default, so a JS failure still renders
+       the original dark theme. Only colour tokens change between themes. */
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --panel: #f6f8fa;
+      --panel2: #eaeef2;
+      --border: #d0d7de;
+      --muted: #57606a;
+      --text: #1f2328;
+      --accent: #0969da;
+      --accent2: #6639ba;
+      --client: #0a7ea4;
+      --gateway: #bc6716;
+      --orch: #6639ba;
+      --retr: #137a63;
+      --data: #9a7d0a;
+      --obs: #6e7781;
+      --gov: #c2255c;
+      --ok: #1a7f37;
+      --warn: #9a6700;
+      --err: #cf222e;
+      --ok-tint: #dafbe1;
+      --err-tint: #ffebe9;
+      --warn-tint: #fff8c5;
+      --accent-tint: #ddf4ff;
+      --overlay: rgba(0, 0, 0, .4);
     }
 
     * {
@@ -49,10 +92,26 @@
       background: var(--panel)
     }
 
-    header .permalink-top {
+    header .header-actions {
       position: absolute;
       top: 14px;
-      right: 20px
+      right: 20px;
+      display: flex;
+      gap: 6px;
+      align-items: center
+    }
+
+    /* Toggle shows a sun in dark mode and a moon in light mode (the theme you'd switch to). */
+    #themeBtn .ic-moon {
+      display: none
+    }
+
+    :root[data-theme="light"] #themeBtn .ic-sun {
+      display: none
+    }
+
+    :root[data-theme="light"] #themeBtn .ic-moon {
+      display: block
     }
 
     .backlink {
@@ -91,7 +150,7 @@
       margin: 0;
       font-size: 18px;
       font-weight: 650;
-      padding-right: 108px
+      padding-right: 148px
     }
 
     header .sub {
@@ -144,9 +203,6 @@
     }
 
     .selector {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
       padding: 12px
     }
 
@@ -214,7 +270,7 @@
     .chip.active {
       border-color: var(--accent);
       color: var(--text);
-      background: #1d2b44
+      background: var(--accent-tint)
     }
 
     .chip.custom {
@@ -260,9 +316,6 @@
 
 
     fieldset {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--panel);
       margin: 0;
       padding: 10px 12px 12px
     }
@@ -412,9 +465,6 @@
 
     .diff-grp>.dlabel {
       font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--muted);
       min-width: 64px
     }
 
@@ -459,19 +509,35 @@
       font-size: 13px
     }
 
-    .panel {
+    /* shared card surface for the config selector, fieldsets, output panels, and diagram */
+    .selector,
+    fieldset,
+    .panel,
+    #diagram {
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: 8px
+    }
+
+    .panel {
       padding: 12px 14px
+    }
+
+    /* shared uppercase micro-heading used across the output panels and config column */
+    .panel h3,
+    .config-head,
+    .cost-grp,
+    .gov-cat,
+    .diff-grp>.dlabel,
+    .diagram-head h3 {
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted)
     }
 
     .panel h3 {
       margin: 0 0 8px;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--muted)
+      font-size: 12px
     }
 
     /* issues panel: grouped by category - a colored tag heading over a bulleted
@@ -496,13 +562,13 @@
 
     .sev.conflict,
     .sev.privacy {
-      background: #3a1d22;
+      background: var(--err-tint);
       color: var(--err);
       border: 1px solid var(--err)
     }
 
     .sev.scaling {
-      background: #3a2f1a;
+      background: var(--warn-tint);
       color: var(--warn);
       border: 1px solid var(--warn)
     }
@@ -511,7 +577,7 @@
     .sev.freshness,
     .sev.caching,
     .sev.data {
-      background: #16302a;
+      background: var(--ok-tint);
       color: var(--retr);
       border: 1px solid var(--retr)
     }
@@ -537,9 +603,6 @@
     }
 
     #diagram {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
       padding: 14px;
       min-height: 120px;
       overflow: auto
@@ -569,16 +632,14 @@
 
     .diagram-head h3 {
       margin: 0;
-      flex: 1
+      flex: 1;
+      font-size: 12px
     }
 
     /* panel-level header for the left config column; muted like Architecture, a level above the fieldset legends */
     .config-head {
       margin: 0 0 2px;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--muted)
+      font-size: 12px
     }
 
     .metrics {
@@ -674,9 +735,6 @@
 
     .cost-grp {
       font-size: 10.5px;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--muted);
       margin-top: 9px;
       padding-top: 6px;
       border-top: 1px dashed var(--border)
@@ -747,9 +805,6 @@
 
     .gov-cat {
       font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--muted);
       margin: 0 0 2px
     }
 
@@ -853,7 +908,7 @@
       display: none;
       align-items: center;
       justify-content: center;
-      background: rgba(0, 0, 0, .6);
+      background: var(--overlay);
       z-index: 50
     }
 
@@ -914,13 +969,13 @@
     }
 
     #testbar.pass {
-      background: #16302a;
+      background: var(--ok-tint);
       border: 1px solid var(--ok);
       color: var(--ok)
     }
 
     #testbar.fail {
-      background: #3a1d22;
+      background: var(--err-tint);
       border: 1px solid var(--err);
       color: var(--err)
     }
@@ -980,11 +1035,23 @@
       <span><b>⊕</b> drill in</span>
       <span><span class="tag" style="margin:0">blue</span> driving input</span>
     </div>
-    <button class="mini permalink-top" id="permalinkBtn" title="Copy permalink"><svg viewBox="0 0 24 24" width="13"
-        height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="9" y="9" width="13" height="13" rx="2" />
-        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-      </svg><span>Permalink</span></button>
+    <div class="header-actions">
+      <button class="mini icon" id="themeBtn" title="Toggle light / dark theme" aria-label="Toggle light / dark theme"><svg
+          class="ic-sun" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4" />
+          <path
+            d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+        </svg><svg class="ic-moon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg></button>
+      <button class="mini" id="permalinkBtn" title="Copy permalink"><svg viewBox="0 0 24 24" width="13"
+          height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg><span>Permalink</span></button>
+    </div>
   </header>
   <div id="testbar"></div>
 
@@ -1290,7 +1357,7 @@
       <div class="panel diff-strip" id="diffStrip" hidden></div>
       <div class="arch-wrap">
         <div class="diagram-head">
-          <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Architecture</h3>
+          <h3>Architecture</h3>
           <button class="mini icon" id="copyMermaid" title="Copy Mermaid source" aria-label="Copy Mermaid source"><svg
               viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
@@ -1346,12 +1413,45 @@
   <script type="module">
     /* ===================== Mermaid (CDN + graceful fallback) ===================== */
     let mermaid = null, mermaidOK = false;
+    const isLightTheme = () => document.documentElement.getAttribute('data-theme') === 'light';
+    // (Re)initialise Mermaid for the active theme: 'default' is its light theme, 'dark' the dark one.
+    function applyDiagramTheme() {
+      if (!mermaidOK) return;
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: isLightTheme() ? 'default' : 'dark', flowchart: { htmlLabels: true, curve: 'basis' } });
+    }
     try {
       const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
       mermaid = mod.default;
-      mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'dark', flowchart: { htmlLabels: true, curve: 'basis' } });
       mermaidOK = true;
+      applyDiagramTheme();
     } catch (e) { console.warn('Mermaid CDN unavailable - using source fallback', e); }
+
+    /* Node colours for the architecture diagram, per theme. Mermaid bakes these into the
+       SVG via classDef, so they can't read CSS variables - the diagram is rebuilt on a
+       theme switch. Each theme mirrors the other: dark uses dark fills + light text,
+       light uses light fills + dark text, with the stroke matching the legend swatch. */
+    const DIAGRAM_PALETTE = {
+      dark: {
+        perim: '#9aa5b1',
+        client: { fill: '#16384a', stroke: '#5ec8f8', color: '#dbeefb' },
+        gateway: { fill: '#40301a', stroke: '#f4a259', color: '#ffe6cc' },
+        orch: { fill: '#2a2348', stroke: '#7c5cff', color: '#e7e0ff' },
+        retr: { fill: '#143a32', stroke: '#4cd4b0', color: '#d6fff3' },
+        data: { fill: '#3a3416', stroke: '#e6c84c', color: '#fff7cc' },
+        obs: { fill: '#23272e', stroke: '#9aa5b1', color: '#e6edf3' },
+        gov: { fill: '#3a1a2a', stroke: '#ff6b9d', color: '#ffd6e6' },
+      },
+      light: {
+        perim: '#6e7781',
+        client: { fill: '#dbeefb', stroke: '#0a7ea4', color: '#06323f' },
+        gateway: { fill: '#ffe6cc', stroke: '#bc6716', color: '#3d2406' },
+        orch: { fill: '#e7e0ff', stroke: '#6639ba', color: '#2a1a4d' },
+        retr: { fill: '#d6fff3', stroke: '#137a63', color: '#06302a' },
+        data: { fill: '#fff7cc', stroke: '#9a7d0a', color: '#3a3416' },
+        obs: { fill: '#eaedf1', stroke: '#6e7781', color: '#23272e' },
+        gov: { fill: '#ffd6e6', stroke: '#c2255c', color: '#3a1a2a' },
+      },
+    };
 
     /* ===================== Constants (editable, ~May 2026) ===================== */
     // $/1M tokens for in/out/cacheRead; webSearch = $ per 1k web-search/grounding calls
@@ -2023,14 +2123,11 @@
         // human review of the quality gate (outside the perimeter), with resume back into the agent
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push('Validator -. await human .-> Appr'); L.push('Appr -. resume on approve .-> Orchestrator'); }
       }
-      if (perim) L.push('style PERIM stroke:#9aa5b1,stroke-dasharray: 4 4,fill:transparent;');
-      L.push('classDef client fill:#16384a,stroke:#5ec8f8,color:#dbeefb;');
-      L.push('classDef gateway fill:#40301a,stroke:#f4a259,color:#ffe6cc;');
-      L.push('classDef orch fill:#2a2348,stroke:#7c5cff,color:#e7e0ff;');
-      L.push('classDef retr fill:#143a32,stroke:#4cd4b0,color:#d6fff3;');
-      L.push('classDef data fill:#3a3416,stroke:#e6c84c,color:#fff7cc;');
-      L.push('classDef obs fill:#23272e,stroke:#9aa5b1,color:#e6edf3;');
-      L.push('classDef gov fill:#3a1a2a,stroke:#ff6b9d,color:#ffd6e6;');
+      const dp = DIAGRAM_PALETTE[isLightTheme() ? 'light' : 'dark'];
+      if (perim) L.push(`style PERIM stroke:${dp.perim},stroke-dasharray: 4 4,fill:transparent;`);
+      for (const k of ['client', 'gateway', 'orch', 'retr', 'data', 'obs', 'gov']) {
+        L.push(`classDef ${k} fill:${dp[k].fill},stroke:${dp[k].stroke},color:${dp[k].color};`);
+      }
       L.push(...cls);
       return L.join('\n');
     }
@@ -2770,6 +2867,20 @@
     $('#permalinkBtn').addEventListener('click', () => { navigator.clipboard?.writeText(currentPermalink()); const s = $('#permalinkBtn').querySelector('span'); s.textContent = 'Copied'; setTimeout(() => s.textContent = 'Permalink', 1200); });
     // Re-render the diagram when crossing the mobile breakpoint, so its direction (LR vs TD) tracks the layout.
     window.matchMedia('(max-width:880px)').addEventListener('change', () => renderDiagram());
+
+    // Theme toggle: flip and persist the choice, then repaint the diagram (its colours are
+    // baked into the SVG, so it has to be rebuilt for the new theme).
+    function setTheme(theme, persist) {
+      document.documentElement.setAttribute('data-theme', theme);
+      if (persist) localStorage.setItem('asd-theme', theme);
+      applyDiagramTheme();
+      if (mermaidOK) renderDiagram();
+    }
+    $('#themeBtn').addEventListener('click', () => setTheme(isLightTheme() ? 'dark' : 'light', true));
+    // With no explicit choice saved, follow the OS setting live.
+    window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', e => {
+      if (!localStorage.getItem('asd-theme')) setTheme(e.matches ? 'light' : 'dark', false);
+    });
 
     /* ===================== Self-test ===================== */
     function selfTest() {
