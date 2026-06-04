@@ -1678,7 +1678,7 @@
       set('toolAuthz', 'Agent identity & tool authz', tools && (auto || ext || lvl >= 2),
         !tools ? 'no privileged tools' : auto ? 'automation tools' : ext ? 'external + tools' : lvl >= 2 ? 'regulated + tools' : 'internal low-stakes', 'access');
       // Data protection
-      set('residencyPin', 'Data residency pin + VPC-SC', lvl >= 2,
+      set('residencyPin', 'Data residency pin', lvl >= 2,
         lvl >= 3 ? 'strict-PII' : lvl >= 2 ? 'regulated+' : 'not required', 'data');
       set('sandbox', 'Transient sandbox', lvl >= 3 || (auto && ext),
         lvl >= 3 ? 'strict-PII' : (auto && ext) ? 'external automation' : 'not required', 'data');
@@ -2113,23 +2113,25 @@
         // only when a control is derived on. Sits outside the VPC-SC perimeter.
         const inb = inboundControls(o, i);
         if (inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
-        // Response cache short-circuit: a hit returns the stored answer to the client and skips the
-        // agent and model (the respHit fraction of traffic); a miss falls through to the agent.
+        // Response cache short-circuit: a hit returns the stored answer and skips the agent and model.
+        // The cache (Memorystore, or self-hosted Redis on GKE) is VPC-resident, so it is drawn inside
+        // the dedicated VPC below; its short-circuit edges cross the boundary.
         const cacheOn = responseCacheOn(o);
-        if (cacheOn) { L.push(node('Cache', cacheLabel(o), 'data', 'cyl')); L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Client'); }
         // Self-built draws an explicit retrieval funnel; managed Vertex AI Search retrieves inside
         // its store node, so the generator reads the store directly.
         const showFunnel = retrInVpc;
         openPerim();
         // Self-hosted runtime, search, and store sit inside the dedicated VPC; the managed Agent
         // Engine runtime and the managed Google services stay outside it but inside the perimeter.
-        openVpc(gke || retrInVpc || storeInVpc || stateInVpc);
+        openVpc(gke || retrInVpc || storeInVpc || stateInVpc || cacheOn);
+        if (cacheOn) L.push(node('Cache', cacheLabel(o), 'data', 'cyl'));
         if (gke) agentEngine();
         if (showFunnel) L.push(node('Retr', 'Retrieval funnel ⊕', 'retr'));
         if (storeInVpc) L.push(node('Store', 'Vector store + BM25 ⊕', 'data', 'cyl'));
         if (stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
         closeVpc();
         if (!gke) agentEngine();
+        if (cacheOn) { L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Client'); }
         if (showFunnel) L.push('Generator --> Retr');
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Generator --> Sand'); }
         modelLeg('Generator');
@@ -2153,18 +2155,20 @@
         const inb = inboundControls(o, i);
         if (inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
         // Response cache short-circuit (dedup): a hit resolves a repeat trigger without planning.
+        // The cache (Memorystore / self-hosted Redis) is VPC-resident, so it is drawn inside the VPC below.
         const cacheOn = responseCacheOn(o);
-        if (cacheOn) { L.push(node('Cache', cacheLabel(o), 'data', 'cyl')); L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Trig'); }
         openPerim();
         // Self-hosted runtime and store, plus a private AlloyDB/Redis state store, sit inside the
         // VPC; the managed Agent Engine runtime and the managed Google services stay outside it.
-        openVpc(gke || storeInVpc || stateInVpc);
+        openVpc(gke || storeInVpc || stateInVpc || cacheOn);
+        if (cacheOn) L.push(node('Cache', cacheLabel(o), 'data', 'cyl'));
         // Agent Engine hosts the orchestrator, generator, and validator; the auto quality gate is the validator
         if (gke) agentEngine();
         if (storeInVpc) L.push(node('Store', 'Vector store + BM25 ⊕', 'data', 'cyl'));
         if (stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
         closeVpc();
         if (!gke) agentEngine();
+        if (cacheOn) { L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Trig'); }
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Generator --> Sand'); }
         modelLeg('Generator');
         dataPlane('Generator', 'Generator', storeInVpc);
@@ -2441,7 +2445,7 @@
       if (o.stateStore.includes('redis')) b.add('Memorystore');
       b.add('Cloud Trace'); b.add('Vertex AI Eval');
       if (o.guardrails) b.add('Model Armor'); if (o.toolAuthz) b.add('Workload Identity'); if (o.modelRiskGov) b.add('Vertex Model Registry');
-      if (o.residencyPin || o.enforceVpcSc) b.add('VPC Service Controls'); b.add('Cloud DLP'); b.add('IAM');
+      if (o.enforceVpcSc) b.add('VPC Service Controls'); b.add('Cloud DLP'); b.add('IAM');
       // Storage and secrets are always provisioned; KMS only with CMEK; Pub/Sub triggers automation runs
       b.add('Cloud Storage'); b.add('Secret Manager');
       if (o.cmek) b.add('Cloud KMS');
@@ -2653,7 +2657,6 @@
       const modelArmor = !!(o.guardrails || o.residencyPin || o.toolAuthz);
       return {
         purpose: state.purpose,
-        preset: state.preset,
         dedicatedVpc: !!o.dedicatedVpc,
         deploy: {
           projectId: form.projectId, region: form.region, prefix: form.prefix,
@@ -3097,6 +3100,15 @@
         assert('active-active assistant upgrades the durable tier to Spanner', state.overrides.stateStore === 'redis_spanner');
         assert('the hot Memorystore store sits inside the dedicated VPC', vo >= 0 && /State\[\(/.test(d.slice(vo, ve)));
         assert('Spanner (durable) is drawn outside the VPC box', /StateDur\[\("Spanner/.test(d) && d.indexOf('StateDur') > ve); }
+      // Rule 2: the VPC box matches the Terraform networkUser - the response cache (Memorystore) is VPC-resident and sits inside it
+      applyPreset('assistant', 'expert_copilot'); state.overrides.stateStore = 'spanner'; state.overrides.exactCache = true; deriveOverrides();
+      { const d = buildMainDiagram(); const vo = d.indexOf('subgraph VPC['); const ve = d.indexOf('\nend', vo);
+        assert('the response cache surfaces the VPC and sits inside it', vo >= 0 && /Cache\[\(/.test(d.slice(vo, ve))); }
+      // Rule 3: VPC-SC is claimed in the BOM only when the perimeter is actually enforced, not merely regulated
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides();
+      assert('regulated default does not list VPC-SC in the BOM while the perimeter is off', state.overrides.residencyPin === true && state.overrides.enforceVpcSc === false && !bomHtml().includes('VPC Service Controls'));
+      state.overrides.enforceVpcSc = true;
+      assert('enabling the perimeter lists VPC-SC in the BOM', bomHtml().includes('VPC Service Controls'));
       // RAG defaults to managed Vertex AI Search; the engine drives the diagram, BOM, and knobs
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
       assert('RAG engine defaults to managed Vertex AI Search', state.overrides.ragEngine === 'vais' && bomHtml().includes('Vertex AI Search'));
