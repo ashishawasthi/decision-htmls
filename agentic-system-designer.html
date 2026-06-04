@@ -1772,7 +1772,7 @@
       // through to the agent), so the lookup overhead is added once here, not per model call.
       if (responseCacheOn(o)) parts.push({ label: 'Response cache lookup', ms: o.semanticCache ? L.cacheSem : L.cacheExact, note: o.semanticCache ? 'embed + ANN on miss' : 'key lookup on miss' });
       if (state.purpose === 'automation') {
-        parts.push({ label: 'Planner', ms: rm.ttftMs + i.tokensOut * rm.msPerOutTok / 2 + outMs, note: rm.name });
+        parts.push({ label: 'Orchestrator', ms: rm.ttftMs + i.tokensOut * rm.msPerOutTok / 2 + outMs, note: rm.name });
         if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
         parts.push({ label: `Executor pool (×${o.numAgents}, parallel)`, ms: genGw, note: 'agents concurrent, slowest wins' });
         parts.push({ label: 'Quality gate', ms: L.qualityGate });
@@ -1894,10 +1894,9 @@
       Client: 'The user-facing app (web or chat) that sends queries and renders grounded, cited answers.',
       EdgeGW: 'The request-side API gateway at the system edge: authenticates the caller (IAM + mTLS), enforces per-tenant rate limits, redacts inbound PII, and screens for prompt injection and jailbreaks before anything reaches the agent. Implemented by Apigee, Cloud API Gateway, or a third-party gateway such as Kong. Shows only the controls your inputs require. Sized on inbound user QPS.',
       Armor: 'Model Armor screens every model call inline: it filters prompt injection and jailbreaks on the way in and redacts or blocks unsafe or leaking output on the way out. Routing and fail-over between models are configured inside the agent; per-call audit goes to Observability. It sees every model call, so it sizes on model-call QPS (user QPS × fan-out), not user QPS.',
-      Orchestrator: 'Inside Agent Engine: plans each request, calls tools and retrieval, and composes the final answer across the specialist steps.',
-      Planner: 'Inside Agent Engine: turns the request or trigger into an ordered task spec and the acceptance criteria the validator enforces.',
-      Generator: 'Inside Agent Engine: calls the models through Model Armor and reads retrieval to produce the draft answer.',
-      Validator: 'Inside Agent Engine: the automated quality gate that checks the draft against the acceptance criteria before it is returned or sent for human review.',
+      Orchestrator: 'Inside Agent Engine: decomposes the request into steps, calls tools and retrieval, coordinates the generate-evaluate-revise loop, and composes the final answer.',
+      Generator: 'Inside Agent Engine: calls the models through Model Armor and reads retrieval to produce the draft, then revises it from the Validator critique until it passes (the Self-Refine loop).',
+      Validator: 'Inside Agent Engine: the automated quality gate. It evaluates the draft against the acceptance criteria and, on a fail, returns a critique to the Generator to revise; on a pass the answer is returned or sent for human review.',
       Secrets: 'Secret Manager holds tool and database credentials; with CMEK on, data is encrypted with customer-managed Cloud KMS keys. The agent service account reads only the secrets it needs.',
       Cache: 'A response cache on the request path: on a hit it returns a stored answer and skips the agent and model entirely, cutting cost and latency on the repeat-heavy head of traffic. Exact-match keys on the normalized query; semantic match keys on the query embedding within a similarity threshold. Sized by the effective hit rate. Invalidation is TTL plus version busting: each entry expires on a TTL set from the data freshness (real-time off, minutes, end-of-day about 24h, static long), and the cache key is namespaced by model, prompt, and index version so shipping a new model or prompt drops stale answers automatically.',
       Orch: 'Plans each request, calls tools and retrieval, and composes the final answer. Single agent or a multi-agent team depending on the pattern.',
@@ -2053,13 +2052,16 @@
         // live web grounding via the model web-search tool (separate from indexed content and live data)
         if (i.dataSources.includes('web')) { L.push(node('WebG', 'Web grounding<br/>Google Search', 'data')); L.push(`${liveReader} --> WebG`); }
       };
-      // Agent Engine (or GKE) hosts the orchestrator, planner, generator, and validator as one
-      // runtime. The internal components are drawn inside a subgraph so the consolidation is visible.
+      // Agent Engine (or GKE) hosts the orchestrator, generator, and validator as one runtime. The
+      // internal components are drawn inside a subgraph; the generate-evaluate-revise reflection loop
+      // (the Generator revises its own draft on the Validator critique) is shown as a back-edge.
       const aeLabel = o.agentRuntime === 'gke' ? 'Agent runtime (GKE Autopilot)' : 'Agent Engine';
-      const agentEngine = (order) => {
+      const agentEngine = () => {
         L.push(`subgraph AE["${aeLabel}"]`);
-        order.forEach(id => L.push(node(id, id, 'orch')));
-        for (let k = 0; k < order.length - 1; k++) L.push(`${order[k]} --> ${order[k + 1]}`);
+        ['Orchestrator', 'Generator', 'Validator'].forEach(id => L.push(node(id, id, 'orch')));
+        L.push('Orchestrator --> Generator');
+        L.push('Generator --> Validator');
+        L.push('Validator -. revise .-> Generator');
         L.push('end');
       };
       // Model Armor sits inline on the model leg (sanitize input and output). Routing and fail-over
@@ -2122,12 +2124,12 @@
         // Self-hosted runtime, search, and store sit inside the dedicated VPC; the managed Agent
         // Engine runtime and the managed Google services stay outside it but inside the perimeter.
         openVpc(gke || retrInVpc || storeInVpc || stateInVpc);
-        if (gke) agentEngine(['Orchestrator', 'Planner', 'Generator', 'Validator']);
+        if (gke) agentEngine();
         if (showFunnel) L.push(node('Retr', 'Retrieval funnel ⊕', 'retr'));
         if (storeInVpc) L.push(node('Store', 'Vector store + BM25 ⊕', 'data', 'cyl'));
         if (stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
         closeVpc();
-        if (!gke) agentEngine(['Orchestrator', 'Planner', 'Generator', 'Validator']);
+        if (!gke) agentEngine();
         if (showFunnel) L.push('Generator --> Retr');
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Generator --> Sand'); }
         modelLeg('Generator');
@@ -2157,12 +2159,12 @@
         // Self-hosted runtime and store, plus a private AlloyDB/Redis state store, sit inside the
         // VPC; the managed Agent Engine runtime and the managed Google services stay outside it.
         openVpc(gke || storeInVpc || stateInVpc);
-        // Agent Engine planner leads in the automation flow; the auto quality gate is the validator
-        if (gke) agentEngine(['Planner', 'Orchestrator', 'Generator', 'Validator']);
+        // Agent Engine hosts the orchestrator, generator, and validator; the auto quality gate is the validator
+        if (gke) agentEngine();
         if (storeInVpc) L.push(node('Store', 'Vector store + BM25 ⊕', 'data', 'cyl'));
         if (stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
         closeVpc();
-        if (!gke) agentEngine(['Planner', 'Orchestrator', 'Generator', 'Validator']);
+        if (!gke) agentEngine();
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Generator --> Sand'); }
         modelLeg('Generator');
         dataPlane('Generator', 'Generator', storeInVpc);
@@ -2173,7 +2175,7 @@
         if (stateSpanner) { L.push(node('StateDur', 'Spanner<br/>active-active durable', 'data', 'cyl')); L.push('State -. durable .-> StateDur'); }
         L.push(node('Obs', 'Observability', 'obs')); L.push('Validator --> Obs');
         closePerim();
-        L.push(cacheOn ? 'Cache -- miss --> Planner' : `${head} --> Planner`);
+        L.push(cacheOn ? 'Cache -- miss --> Orchestrator' : `${head} --> Orchestrator`);
         // human review of the quality gate (outside the perimeter), with resume back into the agent
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push('Validator -. await human .-> Appr'); L.push('Appr -. resume on approve .-> Orchestrator'); }
       }
@@ -3052,11 +3054,12 @@
       applyPreset('automation', 'internal_lowstakes'); deriveOverrides();
       assert('automation diagram shows live data sources', /Live data/.test(buildMainDiagram()));
       assert('automation state store renders as a datastore cylinder', /State\[\(/.test(buildMainDiagram()));
-      // Task automation: planner, orchestrator, generator, and validator run inside one Agent Engine
-      // subgraph. The auto quality gate is the validator; there is no separate executor or QG box.
+      // Task automation: orchestrator, generator, and validator run inside one Agent Engine subgraph,
+      // with the Generator revising on the Validator critique. No Planner, no separate executor/QG box.
       const dgAuto = buildMainDiagram();
-      assert('automation merges requirement agent into the planner', !/Requirement agent/.test(dgAuto) && /Planner/.test(dgAuto));
-      assert('automation runs inside one Agent Engine subgraph', /subgraph AE/.test(dgAuto) && /Planner --> Orchestrator/.test(dgAuto));
+      assert('automation drops the Planner (the orchestrator decomposes)', !/Planner/.test(dgAuto) && /Orchestrator --> Generator/.test(dgAuto));
+      assert('automation runs inside one Agent Engine subgraph', /subgraph AE/.test(dgAuto) && /Generator --> Validator/.test(dgAuto));
+      assert('Agent Engine shows the Generator revise loop and no separate Optimizer', /Validator -\. revise \.-> Generator/.test(dgAuto) && !/Optimizer/.test(dgAuto));
       assert('automation folds the executor and quality gate into the validator', !/Executor pool/.test(dgAuto) && !/Quality gate/.test(dgAuto) && /Validator/.test(dgAuto));
       // async human approval: the run awaits a reviewer, then resumes on approval
       applyPreset('automation', 'strictpii'); deriveOverrides();
@@ -3204,7 +3207,7 @@
       assert('exact-only cache labels the box exact, not semantic', /Response cache[^"]*exact/.test(buildMainDiagram()) && !/Response cache[^"]*semantic/.test(buildMainDiagram()));
       applyPreset('automation', 'internal_lowstakes'); deriveOverrides(); state.overrides.semanticCache = true;
       const dgAutoCache = buildMainDiagram();
-      assert('automation cache short-circuits to the trigger', /Cache -\. hit \.-> Trig/.test(dgAutoCache) && /Cache -- miss --> Planner/.test(dgAutoCache));
+      assert('automation cache short-circuits to the trigger', /Cache -\. hit \.-> Trig/.test(dgAutoCache) && /Cache -- miss --> Orchestrator/.test(dgAutoCache));
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); state.overrides.exactCache = false; state.overrides.semanticCache = false; lastMetrics = computeMetrics(); pinBaseline();
       state.overrides.semanticCache = true; lastMetrics = computeMetrics();
       assert('diagram diff reports the added response cache box', computeDiff().diagram.some(s => /Response cache/.test(s)));
