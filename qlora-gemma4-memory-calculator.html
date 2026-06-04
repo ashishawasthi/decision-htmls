@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gemma 4 Memory Calculator</title>
+  <title>Gemma QLoRA Memory Calculator</title>
   <style>
     :root {
       --bg: #0f1115;
@@ -132,6 +132,23 @@
       padding-top: 6px;
       border-top: 1px dashed var(--border);
       font-style: italic;
+    }
+
+    .model-select {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    .model-select:focus {
+      outline: none;
+      border-color: var(--accent);
     }
 
     .range-row {
@@ -276,10 +293,12 @@
 
   <header>
     <a class="backlink" href="index.html" aria-label="Back to all tools" title="Back to all tools"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></a>
-    <h1>Gemma 4 Memory Calculator</h1>
-    <p>Pick the memory-saving levers; see the estimated peak GPU memory and which GPUs fit. Estimates calibrated against
-      this repo's <a href="gemma4-oom-mitigations.md" style="color:var(--accent);">empirical mitigations doc</a> (T4 OOM
-      on static, L4 OOM on the bf16 cross-entropy logits, A100 fits with headroom).</p>
+    <h1>Gemma QLoRA Memory Calculator</h1>
+    <p>Pick a Gemma model and the memory-saving levers; see the estimated peak GPU memory for QLoRA fine-tuning and
+      which GPUs fit. Covers Gemma 2, 3, 3n, and 4 sizes. The per-component formulas are calibrated against this repo's
+      <a href="gemma4-oom-mitigations.md" style="color:var(--accent);">Gemma 4 E4B empirical mitigations doc</a> (T4 OOM
+      on static, L4 OOM on the bf16 cross-entropy logits, A100 fits with headroom) and scale to the other sizes by their
+      architecture.</p>
   </header>
 
   <main>
@@ -287,12 +306,29 @@
       <h2>Configuration</h2>
 
       <fieldset>
-        <legend>Model variant</legend>
-        <label><input type="radio" name="model" value="E2B"> <b>gemma-4-E2B-it</b>: ~2.3B effective, ~5.5 GB PLE</label>
-        <label><input type="radio" name="model" value="E4B" checked> <b>gemma-4-E4B-it</b>: ~4.5B effective, ~7 GB
-          PLE</label>
-        <div class="tradeoff">PLE (Per-Layer Embeddings) cannot be 4-bit quantized. It stays fp16 and dominates static
-          footprint. E2B saves ~1.5 GB on this line (5.5 vs 7 GB), at the cost of model capability.</div>
+        <legend>Model</legend>
+        <select id="modelSelect" class="model-select">
+          <optgroup label="Gemma 2 (256k vocab)">
+            <option value="gemma-2-2b">gemma-2-2b (2B)</option>
+            <option value="gemma-2-9b">gemma-2-9b (9B)</option>
+            <option value="gemma-2-27b">gemma-2-27b (27B)</option>
+          </optgroup>
+          <optgroup label="Gemma 3 (262k vocab)">
+            <option value="gemma-3-1b">gemma-3-1b (1B)</option>
+            <option value="gemma-3-4b">gemma-3-4b (4B)</option>
+            <option value="gemma-3-12b">gemma-3-12b (12B)</option>
+            <option value="gemma-3-27b">gemma-3-27b (27B)</option>
+          </optgroup>
+          <optgroup label="Gemma 3n (Per-Layer Embeddings)">
+            <option value="gemma-3n-E2B">gemma-3n-E2B (~2B effective)</option>
+            <option value="gemma-3n-E4B">gemma-3n-E4B (~4B effective)</option>
+          </optgroup>
+          <optgroup label="Gemma 4 (Per-Layer Embeddings)">
+            <option value="gemma-4-E2B">gemma-4-E2B (~2.3B effective)</option>
+            <option value="gemma-4-E4B" selected>gemma-4-E4B (~4.5B effective)</option>
+          </optgroup>
+        </select>
+        <div class="tradeoff" id="modelInfo"></div>
       </fieldset>
 
       <fieldset>
@@ -308,8 +344,9 @@
         <legend>Training mode</legend>
         <label><input type="radio" name="trainMode" value="full"> Full fine-tune (all params)</label>
         <label><input type="radio" name="trainMode" value="lora" checked> LoRA adapters only</label>
-        <div class="tradeoff">Full FT trains all ~8B params, with massive gradients and optimizer state (30-50 GB just
-          for that). LoRA trains 0.1-1% of params. Practically required to fit Gemma 4 on a single GPU.</div>
+        <div class="tradeoff">Full FT trains every parameter, with massive gradients and optimizer state that scale with
+          model size. LoRA trains 0.1-1% of params and is practically required to fit the larger Gemma sizes on a single
+          GPU.</div>
       </fieldset>
 
       <fieldset id="loraGroup">
@@ -381,24 +418,6 @@
           memory. Drops the cross-entropy logits line ~90% (the L4 killer at 262k vocab). Available via
           <code>liger-kernel</code> or <code>torch.compile</code> with a fused CE shim. Small throughput win too.</div>
       </fieldset>
-
-      <fieldset>
-        <legend>Inference / serving (separate from training)</legend>
-        <div class="range-row">
-          <label style="min-width: 170px;">Context length (tokens)</label>
-          <input type="range" min="1024" max="131072" step="1024" value="4096" id="contextLen">
-          <output for="contextLen" id="contextLenOut">4096</output>
-        </div>
-        <div class="range-row">
-          <label style="min-width: 170px;">Concurrent sequences</label>
-          <input type="range" min="1" max="64" step="1" value="1" id="sequences">
-          <output for="sequences" id="sequencesOut">1</output>
-        </div>
-        <div class="tradeoff">Serving has no optimizer, gradients, or stored backward activations, but it holds a KV
-          cache that grows with context length &times; concurrent sequences. Gemma 4 keeps this small: GQA (1 KV head
-          on E2B, 2 on E4B), a 512-token sliding window on local layers, and KV-cache sharing across most layers.
-          Drives the separate panel on the right.</div>
-      </fieldset>
     </section>
 
     <section class="output">
@@ -427,36 +446,33 @@
       </div>
 
       <h2>Inference / serving memory</h2>
-      <div class="panel">
-        <table id="inferBreakdown">
-          <thead>
-            <tr>
-              <th>Component</th>
-              <th style="text-align:right">Size</th>
-              <th style="width:35%">Share</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-        <div class="total">Estimated serving peak: <b id="inferTotal">&hellip;</b></div>
-        <div id="inferGpu" class="note"></div>
-        <p class="note">A different regime from training: no optimizer state, gradients, or backward activations. The
-          KV cache is the part that scales with context and concurrency. This estimate assumes a bf16 KV cache and
-          Gemma 4's local:global attention split (about 5:1) with sliding-window local layers and KV-cache sharing.
-          Serving at a lower weight quant or an fp8 KV cache reduces it further. Long-context prefill adds transient
-          scratch not modeled here.</p>
+      <div class="panel" style="font-size:13px; color:var(--muted);">
+        <p style="margin-top:0">This tool covers QLoRA <b>training</b>. Inference and serving are a different memory
+          regime (no optimizer or gradients, but a KV cache that grows with context length and concurrency), and
+          purpose-built calculators already cover it. Use one of these:</p>
+        <ul style="margin:0; padding-left:18px;">
+          <li><a href="https://ai.google.dev/gemma/docs/core" style="color:var(--accent);">Google Gemma memory
+              requirements</a>: official per-model inference footprint (BF16 / SFP8 / Q4_0).</li>
+          <li><a href="https://huggingface.co/spaces/hf-accelerate/model-memory-usage"
+              style="color:var(--accent);">Hugging Face Model Memory Utility</a>: official Accelerate estimator for
+            load, inference, and training memory of any Hub model.</li>
+          <li><a href="https://huggingface.co/spaces/NyxKrage/LLM-Model-VRAM-Calculator" style="color:var(--accent);">LLM
+              Model VRAM Calculator</a>: interactive KV-cache and context-length sizing across quantizations.</li>
+        </ul>
       </div>
 
       <h2>Source &amp; assumptions</h2>
       <div class="panel" style="font-size:12px; color:var(--muted);">
-        <p style="margin-top:0">Formulas calibrated empirically against the OOM events in the <a
+        <p style="margin-top:0">Formulas calibrated empirically against the Gemma 4 E4B OOM events in the <a
             href="gemma4-oom-mitigations.md" style="color:var(--accent);">OOM mitigations doc</a> (T4 ~10 GB static, L4
           ~22 GB at step 2, A100 ~17 GB at step 0). Naive textbook estimates predict ~13 GB, but real measurements show
-          17-22 GB. Why the gap:</p>
+          17-22 GB. Every other Gemma size reuses these same per-component formulas with its own architecture numbers
+          (layers, hidden, vocab, GQA heads), so treat the non-E4B totals as architecture-scaled estimates rather than
+          separately measured. Why the gap:</p>
         <ul style="margin-bottom:0">
           <li>NF4: 0.55 bytes/param (4-bit code + per-block fp16 scale)</li>
-          <li>Embeddings: vocab&nbsp;&times;&nbsp;hidden&nbsp;&times;&nbsp;2 bytes (no quantization; PLE adds ~3.5B more
-            fp16 params on E4B)</li>
+          <li>Embeddings: vocab&nbsp;&times;&nbsp;hidden&nbsp;&times;&nbsp;2 bytes (kept fp16, not 4-bit quantized). The
+            Gemma 3n and Gemma 4 E-variants add Per-Layer Embedding tables on top (none on dense Gemma 2 / 3)</li>
           <li>LoRA: r&nbsp;&times;&nbsp;(in+out) per projection &times; layers, fp16</li>
           <li>adamw_8bit: ~6 bytes/trainable param (m+v 8-bit + fp32 master)</li>
           <li>paged_adamw_8bit: ~4 bytes/trainable param (master paged to CPU)</li>
@@ -466,17 +482,17 @@
             intermediates.</li>
           <li><b>bnb dequant scratch (accumulated): per-tile size &times; 3.</b> Multiple layers' dequant'd fp16 tiles
             coexist in PyTorch's caching allocator. Sequence-independent, so dropping seq does NOT help this.</li>
-          <li><b>Cross-entropy logits + backward: bs &times; seq &times; vocab &times; 2 &times; 3.</b> Gemma 4's 262k
-            vocab makes this dominant on L4. The &times;3 covers forward logits + grad-w.r.t.-logits + log_softmax
-            intermediates. This is the line that pushes L4 over 22 GB even with sort + checkpointing on.</li>
-          <li><b>cuBLAS + autocast workspaces: ~2.5 GB.</b> The LM head matmul over 262k vocab needs larger cuBLAS
-            scratch than typical hidden-to-hidden ops; bf16 autocast also keeps brief fp32 intermediates for stability
-            (softmax, layer norm).</li>
+          <li><b>Cross-entropy logits + backward: bs &times; seq &times; vocab &times; 2 &times; 3.</b> The large
+            256k-262k Gemma vocab makes this dominant on L4. The &times;3 covers forward logits + grad-w.r.t.-logits +
+            log_softmax intermediates. This is the line that pushes L4 over 22 GB even with sort + checkpointing on.</li>
+          <li><b>cuBLAS + autocast workspaces: ~2.5 GB.</b> The LM head matmul over the 256k-262k vocab needs larger
+            cuBLAS scratch than typical hidden-to-hidden ops; bf16 autocast also keeps brief fp32 intermediates for
+            stability (softmax, layer norm).</li>
           <li><b>Framework overhead: 1.5 GB</b> with <code>expandable_segments</code>, 2.5 GB without, from allocator
             fragmentation, PEFT/Unsloth wrapper allocations, autograd graph storage.</li>
           <li><b>KV cache: not part of training.</b> A fine-tuning step is a single teacher-forced forward pass, so
             there is no autoregressive KV cache; the K/V tensors are already inside the activations line. KV cache
-            only matters for inference, estimated separately in the "Inference / serving memory" panel above.</li>
+            only matters for inference, which the linked calculators in the "Inference / serving memory" panel cover.</li>
         </ul>
       </div>
     </section>
@@ -485,16 +501,68 @@
   <script>
     'use strict';
 
+    // Architecture pulled from each model's config.json. linearParams = the
+    // bnb-4-bit-quantizable transformer linears (attn q/k/v/o + MLP gate/up/down);
+    // for the PLE E-variants this is the published "effective" param count.
+    // embedFp16Bytes = token embedding (+ Per-Layer Embedding table on 3n/4 E-variants),
+    // which bnb keeps in fp16. ple flags the Per-Layer-Embedding families. heads/kvHeads
+    // feed the model-info line; the remaining attention fields (headDim, slidingWindow,
+    // localGlobalRatio, kvSharedLayers) are kept as architecture reference.
     const MODELS = {
-      E2B: {
-        name: "gemma-4-E2B-it", linearParams: 2.3e9, embedFp16Bytes: 5.5e9,
-        layers: 35, hidden: 1536, mlpIntermediate: 6144, bnbDequant: 500e6, vocab: 262144,
-        kvHeads: 1, headDim: 256, slidingWindow: 512, kvSharedLayers: 20
+      "gemma-2-2b": {
+        name: "gemma-2-2b", family: "Gemma 2", ple: false, linearParams: 2.02e9, embedFp16Bytes: 1.18e9,
+        layers: 26, hidden: 2304, mlpIntermediate: 9216, vocab: 256000, bnbDequant: 500e6,
+        heads: 8, kvHeads: 4, headDim: 256, slidingWindow: 4096, localGlobalRatio: 2, kvSharedLayers: 0
       },
-      E4B: {
-        name: "gemma-4-E4B-it", linearParams: 4.5e9, embedFp16Bytes: 7.0e9,
-        layers: 42, hidden: 2560, mlpIntermediate: 10240, bnbDequant: 800e6, vocab: 262144,
-        kvHeads: 2, headDim: 256, slidingWindow: 512, kvSharedLayers: 18
+      "gemma-2-9b": {
+        name: "gemma-2-9b", family: "Gemma 2", ple: false, linearParams: 8.32e9, embedFp16Bytes: 1.84e9,
+        layers: 42, hidden: 3584, mlpIntermediate: 14336, vocab: 256000, bnbDequant: 1.0e9,
+        heads: 16, kvHeads: 8, headDim: 256, slidingWindow: 4096, localGlobalRatio: 2, kvSharedLayers: 0
+      },
+      "gemma-2-27b": {
+        name: "gemma-2-27b", family: "Gemma 2", ple: false, linearParams: 26.0e9, embedFp16Bytes: 2.36e9,
+        layers: 46, hidden: 4608, mlpIntermediate: 36864, vocab: 256000, bnbDequant: 1.8e9,
+        heads: 32, kvHeads: 16, headDim: 128, slidingWindow: 4096, localGlobalRatio: 2, kvSharedLayers: 0
+      },
+      "gemma-3-1b": {
+        name: "gemma-3-1b", family: "Gemma 3", ple: false, linearParams: 0.70e9, embedFp16Bytes: 0.60e9,
+        layers: 26, hidden: 1152, mlpIntermediate: 6912, vocab: 262144, bnbDequant: 350e6,
+        heads: 4, kvHeads: 1, headDim: 256, slidingWindow: 512, localGlobalRatio: 6, kvSharedLayers: 0
+      },
+      "gemma-3-4b": {
+        name: "gemma-3-4b", family: "Gemma 3", ple: false, linearParams: 3.21e9, embedFp16Bytes: 1.34e9,
+        layers: 34, hidden: 2560, mlpIntermediate: 10240, vocab: 262208, bnbDequant: 800e6,
+        heads: 8, kvHeads: 4, headDim: 256, slidingWindow: 1024, localGlobalRatio: 6, kvSharedLayers: 0
+      },
+      "gemma-3-12b": {
+        name: "gemma-3-12b", family: "Gemma 3", ple: false, linearParams: 10.76e9, embedFp16Bytes: 2.01e9,
+        layers: 48, hidden: 3840, mlpIntermediate: 15360, vocab: 262208, bnbDequant: 1.3e9,
+        heads: 16, kvHeads: 8, headDim: 256, slidingWindow: 1024, localGlobalRatio: 6, kvSharedLayers: 0
+      },
+      "gemma-3-27b": {
+        name: "gemma-3-27b", family: "Gemma 3", ple: false, linearParams: 25.6e9, embedFp16Bytes: 2.82e9,
+        layers: 62, hidden: 5376, mlpIntermediate: 21504, vocab: 262208, bnbDequant: 1.8e9,
+        heads: 32, kvHeads: 16, headDim: 128, slidingWindow: 1024, localGlobalRatio: 6, kvSharedLayers: 0
+      },
+      "gemma-3n-E2B": {
+        name: "gemma-3n-E2B", family: "Gemma 3n", ple: true, linearParams: 2.0e9, embedFp16Bytes: 5.1e9,
+        layers: 30, hidden: 2048, mlpIntermediate: 8192, vocab: 262400, bnbDequant: 600e6,
+        heads: 8, kvHeads: 2, headDim: 256, slidingWindow: 512, localGlobalRatio: 5, kvSharedLayers: 10
+      },
+      "gemma-3n-E4B": {
+        name: "gemma-3n-E4B", family: "Gemma 3n", ple: true, linearParams: 4.0e9, embedFp16Bytes: 5.77e9,
+        layers: 35, hidden: 2048, mlpIntermediate: 16384, vocab: 262400, bnbDequant: 900e6,
+        heads: 8, kvHeads: 2, headDim: 256, slidingWindow: 512, localGlobalRatio: 5, kvSharedLayers: 15
+      },
+      "gemma-4-E2B": {
+        name: "gemma-4-E2B", family: "Gemma 4", ple: true, linearParams: 2.3e9, embedFp16Bytes: 5.5e9,
+        layers: 35, hidden: 1536, mlpIntermediate: 6144, vocab: 262144, bnbDequant: 500e6,
+        heads: 8, kvHeads: 1, headDim: 256, slidingWindow: 512, localGlobalRatio: 6, kvSharedLayers: 20
+      },
+      "gemma-4-E4B": {
+        name: "gemma-4-E4B", family: "Gemma 4", ple: true, linearParams: 4.5e9, embedFp16Bytes: 7.0e9,
+        layers: 42, hidden: 2560, mlpIntermediate: 10240, vocab: 262144, bnbDequant: 800e6,
+        heads: 8, kvHeads: 2, headDim: 256, slidingWindow: 512, localGlobalRatio: 6, kvSharedLayers: 18
       },
     };
 
@@ -516,25 +584,25 @@
     const OPT_BYTES = { fp32_adamw: 12, adamw_8bit: 6, paged_adamw_8bit: 4 };
     const GB = 1024 ** 3;
 
-    // Inference / serving (KV cache) constants
-    const KV_LOCAL_GLOBAL_RATIO = 6; // Gemma's ~5 local : 1 global attention pattern
-    const KV_BYTES = 2;              // bf16/fp16 KV cache element
-    const INFER_OVERHEAD = 1.5 * GB; // CUDA context + prefill scratch + cuBLAS workspace
-
     function loraParamCount(model, rank) {
-      // 4 attention projections (q,k,v,o) with same in/out hidden dims,
-      // 2 MLP projections (gate, up) hidden -> intermediate,
-      // 1 MLP projection (down) intermediate -> hidden
+      // LoRA adapters on all 7 projections. With grouped-query attention the
+      // q/o projections run over heads*headDim while k/v run over the (smaller)
+      // kvHeads*headDim, so the adapters are not all hidden x hidden.
+      const qDim = model.heads * model.headDim;
+      const kvDim = model.kvHeads * model.headDim;
       const perLayer =
-        4 * rank * (model.hidden + model.hidden) +
-        2 * rank * (model.hidden + model.mlpIntermediate) +
-        1 * rank * (model.mlpIntermediate + model.hidden);
+        rank * (model.hidden + qDim) +              // q_proj
+        rank * (model.hidden + kvDim) +             // k_proj
+        rank * (model.hidden + kvDim) +             // v_proj
+        rank * (qDim + model.hidden) +              // o_proj
+        2 * rank * (model.hidden + model.mlpIntermediate) + // gate + up
+        1 * rank * (model.mlpIntermediate + model.hidden);  // down
       return model.layers * perLayer;
     }
 
     function getOpts() {
       return {
-        model: document.querySelector('input[name=model]:checked').value,
+        model: document.getElementById('modelSelect').value,
         quant: document.querySelector('input[name=quant]:checked').value,
         trainMode: document.querySelector('input[name=trainMode]:checked').value,
         optimizer: document.querySelector('input[name=opt]:checked').value,
@@ -545,8 +613,6 @@
         lengthSort: document.getElementById('lengthSort').checked,
         expandableSeg: document.getElementById('expandableSeg').checked,
         useLiger: document.getElementById('useLiger').checked,
-        contextLen: +document.getElementById('contextLen').value,
-        sequences: +document.getElementById('sequences').value,
       };
     }
 
@@ -623,37 +689,6 @@
       return { components, total, trainableParams };
     }
 
-    function kvCacheBytes(model, contextLen, sequences) {
-      // Gemma 4 stores KV only for the non-shared layers: KV-cache sharing lets
-      // later layers reuse the last non-shared layer's K/V. Among the storing
-      // layers, ~1 in 6 is a global-attention layer that scales with full
-      // context; the rest are local sliding-window layers capped at
-      // slidingWindow tokens. GQA means only kvHeads (1 on E2B, 2 on E4B) K/V
-      // heads, which keeps this small even at 128k context.
-      const kvStoringLayers = model.layers - model.kvSharedLayers;
-      const globalLayers = Math.round(kvStoringLayers / KV_LOCAL_GLOBAL_RATIO);
-      const localLayers = kvStoringLayers - globalLayers;
-      const localTokens = Math.min(contextLen, model.slidingWindow);
-      const perLayerTokenBytes = 2 * model.kvHeads * model.headDim * KV_BYTES; // K + V
-      const tokenLayerSum = localLayers * localTokens + globalLayers * contextLen;
-      return sequences * perLayerTokenBytes * tokenLayerSum;
-    }
-
-    function calculateInference(o) {
-      // Serving is a different regime from training: no gradients, optimizer
-      // state, or stored backward activations. Weights stay resident, plus a KV
-      // cache that grows with context length and concurrent sequences.
-      const m = MODELS[o.model];
-      const weights = m.linearParams * QUANT_BYTES[o.quant] + m.embedFp16Bytes;
-      const kv = kvCacheBytes(m, o.contextLen, o.sequences);
-      const components = {};
-      components['Weights (' + o.quant + ' linears + fp16 embeddings/PLE)'] = weights;
-      components['KV cache (' + o.contextLen + ' tok × ' + o.sequences + ' seq)'] = kv;
-      components['Runtime overhead'] = INFER_OVERHEAD;
-      const total = weights + kv + INFER_OVERHEAD;
-      return { components, total, kv };
-    }
-
     function fmtBytes(b) {
       if (b === 0) return '0';
       if (b < 1e6) return (b / 1024).toFixed(0) + ' KB';
@@ -679,6 +714,15 @@
       document.getElementById('gradAccumOut').textContent =
         Math.max(1, Math.round(8 / o.batchSize)) + ' (auto-derived to keep effective batch = 8)';
       document.getElementById('trainableOut').textContent = fmtParams(r.trainableParams);
+
+      // Model info line (data-driven from the selected model's config)
+      const m = MODELS[o.model];
+      const linB = m.linearParams >= 1e10 ? (m.linearParams / 1e9).toFixed(0) : (m.linearParams / 1e9).toFixed(2);
+      const embGB = (m.embedFp16Bytes / GB).toFixed(1);
+      const head = `${m.layers} layers, hidden ${m.hidden}, vocab ${m.vocab.toLocaleString()}, GQA ${m.heads}/${m.kvHeads} heads, ~${linB}B 4-bit-quantizable linear params. `;
+      document.getElementById('modelInfo').innerHTML = m.ple
+        ? head + `<b>${embGB} GB embeddings + PLE</b> stay fp16 (Per-Layer Embeddings are not 4-bit quantizable) and dominate the static footprint.`
+        : head + `${embGB} GB embedding table stays fp16 (not 4-bit quantizable).`;
 
       // Enable/disable LoRA group when full FT is selected
       const loraDisabled = (o.trainMode === 'full');
@@ -733,35 +777,13 @@
     `;
         fitEl.appendChild(row);
       }
-
-      // Inference / serving panel
-      document.getElementById('contextLenOut').textContent = o.contextLen;
-      document.getElementById('sequencesOut').textContent = o.sequences;
-      const ir = calculateInference(o);
-      const itbody = document.querySelector('#inferBreakdown tbody');
-      itbody.innerHTML = '';
-      const iMax = Math.max(...Object.values(ir.components));
-      for (const [name, bytes] of Object.entries(ir.components)) {
-        const tr = document.createElement('tr');
-        const pct = iMax > 0 ? (bytes / iMax) * 100 : 0;
-        tr.innerHTML = `
-      <td>${name}</td>
-      <td class="size">${fmtBytes(bytes)}</td>
-      <td><span class="bar" style="width:${pct}%"></span></td>
-    `;
-        itbody.appendChild(tr);
-      }
-      document.getElementById('inferTotal').textContent = (ir.total / GB).toFixed(2) + ' GB';
-      const inferGB = ir.total / GB;
-      const fitsList = GPUS.filter(g => g.vramGB >= inferGB).sort((a, b) => a.vramGB - b.vramGB);
-      const smallest = fitsList[0];
-      document.getElementById('inferGpu').textContent = smallest
-        ? 'KV cache ' + (ir.kv / GB).toFixed(2) + ' GB. Smallest listed GPU that fits: ' + smallest.name + '.'
-        : 'KV cache ' + (ir.kv / GB).toFixed(2) + ' GB. Total exceeds all listed GPUs.';
     }
 
     // Wire up listeners
-    document.querySelectorAll('input').forEach(el => el.addEventListener('input', render));
+    document.querySelectorAll('input, select').forEach(el => {
+      el.addEventListener('input', render);
+      el.addEventListener('change', render);
+    });
     render();
   </script>
 
