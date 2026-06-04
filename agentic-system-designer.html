@@ -1016,7 +1016,27 @@
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
             <circle cx="12" cy="10" r="3" />
           </svg><span>Pin</span></button>
+        <button class="mini" id="tfBtn" title="Generate a Terraform bundle for this design"><svg viewBox="0 0 24 24"
+            width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg><span>Terraform</span></button>
       </div>
+
+      <fieldset data-grp="target">
+        <legend>Deployment target</legend>
+        <div class="ctl" data-ov="dedicatedVpc"><label>Dedicated VPC</label>
+          <input type="checkbox" data-bind="overrides.dedicatedVpc">
+        </div>
+        <div class="ctl" data-ov="agentRuntime"><label>Agent runtime</label>
+          <select data-bind="overrides.agentRuntime">
+            <option value="agentengine">Agent Engine (managed)</option>
+            <option value="gke">GKE Autopilot</option>
+          </select>
+        </div>
+      </fieldset>
 
       <fieldset data-grp="workload">
         <legend>Workload &amp; SLO <span class="vis-count" id="visCount"></span></legend>
@@ -1103,6 +1123,12 @@
         <div class="ctl" data-ov="multiRegion"><label>Multi-region active-active</label>
           <input type="checkbox" data-bind="overrides.multiRegion">
         </div>
+        <div class="ctl" data-ov="cmek"><label>Customer-managed keys (CMEK)</label>
+          <input type="checkbox" data-bind="overrides.cmek">
+        </div>
+        <div class="ctl" data-ov="enforceVpcSc"><label>Enforce VPC-SC perimeter</label>
+          <input type="checkbox" data-bind="overrides.enforceVpcSc">
+        </div>
       </fieldset>
 
       <fieldset data-grp="3b">
@@ -1122,7 +1148,7 @@
         </div>
         <div class="ctl" data-ov="platform"><label>Platform</label>
           <select data-bind="overrides.platform">
-            <option value="adk">ADK + Agent Engine</option>
+            <option value="adk">ADK</option>
             <option value="studio">Agent Studio</option>
             <option value="langgraph">LangGraph</option>
           </select>
@@ -1316,6 +1342,7 @@
     <div class="modal" id="modal"></div>
   </div>
 
+  <script src="tf-generator.js"></script>
   <script type="module">
     /* ===================== Mermaid (CDN + graceful fallback) ===================== */
     let mermaid = null, mermaidOK = false;
@@ -1375,21 +1402,22 @@
         highvol_qa: { label: 'High-volume Q&A', desc: 'Very high-volume Q&A over a large document corpus, tuned for sub-second latency and low cost per query.', inputs: { actors: 20000, actionsPerDay: 50, burst: 6, activeHoursPerWeek: 120, latencyPreset: 'subsecond', tokensIn: 3000, tokensOut: 500, audienceSensitivity: 'internal_regulated', dataSources: ['doc_corpus'], corpusSize: 1e7, freshness: 'static', languages: ['en'] } },
         customer_support: { label: 'Customer support', desc: 'External, multilingual customer support grounded on a support corpus at agentic latency.', inputs: { actors: 50000, actionsPerDay: 4, burst: 7, activeHoursPerWeek: 168, latencyPreset: 'agentic', tokensIn: 2500, tokensOut: 600, audienceSensitivity: 'external_enterprise', dataSources: ['doc_corpus'], corpusSize: 5e5, freshness: 'eod', languages: ['en', 'zh', 'ja'] } },
         strictpii_verify: { label: 'Strict-PII verification', desc: 'Low-volume, strict-PII verification that grounds live on web, knowledge graph, and on-prem data in real time.', inputs: { actors: 300, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 6000, tokensOut: 1000, audienceSensitivity: 'internal_strictpii', dataSources: ['web', 'kg', 'onprem'], corpusSize: 0, freshness: 'realtime', languages: ['en'] } },
+        self_managed: { label: 'Self-Managed', desc: 'Interactive assistant that self-hosts the agent, vector search, and cache on GKE under CMEK and a VPC-SC perimeter, grounded on a self-built vector DB.', inputs: { actors: 1000, actionsPerDay: 10, burst: 5, activeHoursPerWeek: 50, latencyPreset: 'agentic', tokensIn: 4000, tokensOut: 800, audienceSensitivity: 'internal_regulated', dataSources: ['doc_corpus'], corpusSize: 2e6, freshness: 'eod', languages: ['en'] } },
       },
       automation: {
         // Presets differ by trust tier (audience & sensitivity), the one input that
         // changes the automation design: each tier mandates a different governance
         // posture (gateway / guardrails / sandbox / residency), visible in the diagram.
         internal_lowstakes: { label: 'Internal · low-stakes', desc: 'Internal low-stakes automation with light governance, running at minutes-scale latency.', inputs: { actors: 300, actionsPerDay: 6, burst: 3, activeHoursPerWeek: 50, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_low', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
-        regulated: { label: 'Regulated enterprise', desc: 'Regulated internal automation that adds model-risk governance and safe rollout controls.', inputs: { actors: 800, actionsPerDay: 6, burst: 4, activeHoursPerWeek: 80, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_regulated', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
-        strictpii: { label: 'Strict-PII / high-stakes', desc: 'Strict-PII, high-stakes automation that mandates a sandbox, model gateway, and data residency.', inputs: { actors: 400, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 60, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_strictpii', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
+        self_managed: { label: 'Self-Managed', desc: 'Regulated internal automation that self-hosts the agent, vector search, and cache on GKE under CMEK and a VPC-SC perimeter, grounded on a self-built vector DB.', inputs: { actors: 800, actionsPerDay: 6, burst: 4, activeHoursPerWeek: 80, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_regulated', dataSources: ['doc_corpus'], corpusSize: 2e6, freshness: 'eod', languages: ['en'] } },
+        strictpii: { label: 'Strict-PII / high-stakes', desc: 'Strict-PII, high-stakes automation that mandates a sandbox, Model Armor, and data residency.', inputs: { actors: 400, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 60, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_strictpii', dataSources: ['bigquery', 'onprem'], corpusSize: 0, freshness: 'eod', languages: ['en'] } },
         external_facing: { label: 'External-facing', desc: 'External-facing automation with stronger guardrails for untrusted users and multilingual output.', inputs: { actors: 1500, actionsPerDay: 4, burst: 5, activeHoursPerWeek: 120, latencyPreset: 'minutes', tokensIn: 6000, tokensOut: 1500, audienceSensitivity: 'external_regulated', dataSources: ['bigquery'], corpusSize: 0, freshness: 'eod', languages: ['en', 'zh'] } },
       }
     };
 
     /* ===================== Default override values ===================== */
     const DEFAULT_OVERRIDES = () => ({
-      deployment: 'gcp', multiRegion: true,
+      deployment: 'gcp', multiRegion: true, agentRuntime: 'agentengine', dedicatedVpc: true, cmek: false, enforceVpcSc: false,
       pattern: 'multi', numAgents: 4, reactMaxIter: 6, platform: 'adk',
       reasoningModel: 'gemini-35-flash', fastModel: 'gemini-31-flash-lite', smartRouting: true, routingSplit: 70, judgeDiversity: false,
       ragEngine: 'vais', retrieval: 'rerank', metadataPrefilter: true, vectorDB: 'vertex', ingestionSep: false, hnswM: 32, hnswEf: 128,
@@ -1417,11 +1445,12 @@
     const money = n => { if (n == null || isNaN(n)) return '-'; return '$' + Math.round(n).toLocaleString('en-US'); };
     const sens = s => ({ internal_low: { aud: 'internal', lvl: 0 }, internal_regulated: { aud: 'internal', lvl: 2 }, internal_strictpii: { aud: 'internal', lvl: 3 }, external_enterprise: { aud: 'external', lvl: 1 }, external_regulated: { aud: 'external', lvl: 2 }, public_strictpii: { aud: 'public', lvl: 3 } }[s]);
 
-    /* ===================== Control-plane split (API Gateway / Model gateway) ===================== */
+    /* ===================== Control-plane split (API Gateway / model leg) ===================== */
     // The gateway and the guardrails each divide into a request-side (inbound) half and a
-    // response-side (outbound) half. The halves merge into one API Gateway box at ingress and one
-    // Model gateway box on the agent→model leg. A chip shows only when its derived control is on, so
-    // each box rewrites its own label from the inputs. Latency maps are per-chip milliseconds.
+    // response-side (outbound) half. The inbound half draws the API Gateway box at ingress. The
+    // outbound half sizes the model-leg control overhead (latency plus Model Armor); it is no longer
+    // a separate diagram box, since routing and fail-over now run inside the agent. Latency maps are
+    // per-chip milliseconds.
     const IN_LAT = { 'auth': 8, 'rate-limit': 2, 'PII redact': 8, 'injection screen': 20 };
     const OUT_LAT = { 'route': 4, 'fan-out': 3, 'PII redact': 8, 'output filter': 20, 'audit': 3 };
     function inboundControls(o, i) {
@@ -1441,7 +1470,6 @@
       return c;
     }
     const edgeLabel = c => `API Gateway ⊕<br/>${c.join(' · ')}`;
-    const modelLabel = c => `Model gateway ⊕<br/>${c.join(' · ')}`;
     // Response cache box on the request path: a hit returns a stored answer and skips the agent and
     // model (the respHit fraction of traffic). Drawn only when an exact or semantic cache is enabled.
     const responseCacheOn = o => !!(o.exactCache || o.semanticCache);
@@ -1472,6 +1500,12 @@
       // High-repeat, freshness-tolerant Q&A presets ship with response caching on (exact + semantic):
       // the cache box and its cost / latency win are intrinsic to those designs. Stays user-editable.
       if (purpose === 'assistant' && (preset === 'highvol_qa' || preset === 'customer_support')) { state.overrides.exactCache = true; state.overrides.semanticCache = true; }
+      // Strict-PII verification (assistant) and the two regulated automation presets ship the
+      // production security posture: customer-managed keys (CMEK) and a VPC-SC perimeter. Editable.
+      if (['self_managed', 'strictpii', 'strictpii_verify'].includes(preset)) { state.overrides.cmek = true; state.overrides.enforceVpcSc = true; }
+      // Self-Managed (either purpose) self-hosts on GKE: agent runtime on GKE Autopilot, self-built RAG
+      // on a self-hosted vector DB (Elasticsearch), and response caching (Redis on GKE). Editable.
+      if (preset === 'self_managed') { state.overrides.agentRuntime = 'gke'; state.overrides.ragEngine = 'selfbuilt'; state.overrides.vectorDB = 'elastic'; state.overrides.retrieval = 'rerank'; state.overrides.exactCache = true; state.overrides.semanticCache = true; }
       // RAG retrieval only makes sense with an indexed source (corpus or website) behind it; default it off when the
       // preset carries only live or grounding sources (the user can still turn it on, which then prompts for a source).
       if (!state.inputs.dataSources.some(s => ['doc_corpus', 'website'].includes(s))) state.overrides.retrieval = 'none';
@@ -1535,7 +1569,7 @@
       const G = [];
       const set = (key, label, on, why, cat) => { o[key] = on; G.push({ key, label, on, why, cat }); };
       // Access & gateway
-      set('gateway', 'API + model gateway (IAP + Apigee)', lvl >= 2 || ext,
+      set('gateway', 'API gateway + Model Armor (IAP + Apigee)', lvl >= 2 || ext,
         lvl >= 2 ? 'regulated+' : ext ? (aud === 'public' ? 'public' : 'external') : 'not required', 'access');
       set('auditLog', 'Immutable audit log', lvl >= 2 || ext,
         lvl >= 2 ? 'regulated+' : ext ? 'external' : 'not required', 'access');
@@ -1625,8 +1659,8 @@
       if (i.dataSources.includes('onprem')) groundSubs.push({ label: 'On-prem call', ms: L.onpremCall });
       const grounding = groundSubs.length ? Math.max(...groundSubs.map(s => s.ms)) : 0;
       const parts = [];
-      // API Gateway is on the request path: counted once. Model gateway is on the model leg, so its
-      // latency rides every model call (genGw) and compounds with the ReAct loop / executor pool.
+      // API Gateway is on the request path: counted once. The model-leg control (Model Armor plus
+      // routing) rides every model call (genGw) and compounds with the ReAct loop / executor pool.
       const inbChips = inboundControls(o, i), outbChips = outboundControls(o, i);
       const inMs = inbChips.reduce((s, c) => s + (IN_LAT[c] || 0), 0);
       const outMs = outbChips.reduce((s, c) => s + (OUT_LAT[c] || 0), 0);
@@ -1643,7 +1677,7 @@
       } else {
         if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
         if (o.retrieval === 'rerank') parts.push({ label: 'Rerank', ms: L.rerank });
-        parts.push({ label: 'Generation (TTFT + output)', ms: genGw, note: outMs ? `${genNote} · +${Math.round(outMs)}ms model gateway` : genNote });
+        parts.push({ label: 'Generation (TTFT + output)', ms: genGw, note: outMs ? `${genNote} · +${Math.round(outMs)}ms model leg` : genNote });
         if (o.pattern === 'multi') parts.push({ label: `ReAct loop (×${o.reactMaxIter} iter)`, ms: ((o.retrieval === 'rerank' ? L.rerank : 0) + genGw) * o.reactMaxIter * 0.12, note: 'sequential iterations' });
       }
       m.latParts = parts;
@@ -1757,7 +1791,12 @@
       // assistant + shared
       Client: 'The user-facing app (web or chat) that sends queries and renders grounded, cited answers.',
       EdgeGW: 'The request-side API gateway at the system edge: authenticates the caller (IAM + mTLS), enforces per-tenant rate limits, redacts inbound PII, and screens for prompt injection and jailbreaks before anything reaches the agent. Implemented by Apigee, Cloud API Gateway, or a third-party gateway such as Kong. Shows only the controls your inputs require. Sized on inbound user QPS.',
-      ModelGW: 'The model-side control plane on the agent→model leg: routes and fails over between models, fans out to providers, redacts PII before egress, filters unsafe or leaking output, and meters every call. It sees every model call, so it sizes on model-call QPS (user QPS × fan-out), not user QPS.',
+      Armor: 'Model Armor screens every model call inline: it filters prompt injection and jailbreaks on the way in and redacts or blocks unsafe or leaking output on the way out. Routing and fail-over between models are configured inside the agent; per-call audit goes to Observability. It sees every model call, so it sizes on model-call QPS (user QPS × fan-out), not user QPS.',
+      Orchestrator: 'Inside Agent Engine: plans each request, calls tools and retrieval, and composes the final answer across the specialist steps.',
+      Planner: 'Inside Agent Engine: turns the request or trigger into an ordered task spec and the acceptance criteria the validator enforces.',
+      Generator: 'Inside Agent Engine: calls the models through Model Armor and reads retrieval to produce the draft answer.',
+      Validator: 'Inside Agent Engine: the automated quality gate that checks the draft against the acceptance criteria before it is returned or sent for human review.',
+      Secrets: 'Secret Manager holds tool and database credentials; with CMEK on, data is encrypted with customer-managed Cloud KMS keys. The agent service account reads only the secrets it needs.',
       Cache: 'A response cache on the request path: on a hit it returns a stored answer and skips the agent and model entirely, cutting cost and latency on the repeat-heavy head of traffic. Exact-match keys on the normalized query; semantic match keys on the query embedding within a similarity threshold. Sized by the effective hit rate. Invalidation is TTL plus version busting: each entry expires on a TTL set from the data freshness (real-time off, minutes, end-of-day about 24h, static long), and the cache key is namespaced by model, prompt, and index version so shipping a new model or prompt drops stale answers automatically.',
       Orch: 'Plans each request, calls tools and retrieval, and composes the final answer. Single agent or a multi-agent team depending on the pattern.',
       Retr: 'Narrows candidates in stages (metadata pre-filter → dense + BM25 → rerank) so the model is grounded on only the most relevant passages.',
@@ -1765,6 +1804,7 @@
       LLM: 'The reasoning and fast models. Smart routing sends easy lookups to the cheap model and hard queries to the reasoning model.',
       Store: 'The index that retrieval reads at query time. Managed (Vertex AI Search) or self-built (Vertex AI Vector Search + BM25). Populated offline by the ingestion branch, never at request time.',
       Idx: 'The content indexed offline into the store: the document corpus and crawled company website pages. Re-crawled and re-embedded on a schedule, so the index is only as fresh as the last run.',
+      GCS: 'Cloud Storage holds the source documents (uploaded to the seed-docs prefix) and the packaged agent artifact. It feeds the offline index; it is not read at request time.',
       Live: 'Sources queried live at request time (BigQuery text-to-SQL, on-prem DB, knowledge graph, streaming), not pre-indexed.',
       WebG: 'Live web grounding via the model web-search tool (Gemini Google Search or Claude web search) for fresh, public, non-owned content. Billed per search and adds a network round-trip; not available on self-hosted Llama.',
       DocAI: 'Parses source documents and pages into clean structured text (layout, tables, OCR) before chunking and embedding.',
@@ -1897,7 +1937,10 @@
           L.push(node('Store', storeLabel, 'data', 'cyl')); L.push(`${storeReader} --> Store`);
           // offline ingestion branch only when there is content to crawl, parse, and index
           if (idxSel.length) {
+            // Cloud Storage holds the source documents and the agent artifact that feed the index
+            L.push(node('GCS', 'Cloud Storage<br/>docs + artifacts', 'data', 'cyl'));
             L.push(node('Idx', `Index sources<br/>${idxSel.map(s => INDEXED_LABEL[s]).join(' / ')}`, 'data'));
+            L.push('GCS -. source docs .-> Idx');
             if (o.ragEngine === 'vais') { L.push('Idx -. crawl + parse + embed .-> Store'); }
             else { L.push(node('DocAI', 'Document AI', 'data')); L.push(node('Emb', 'Chunk + embed', 'data')); L.push('Idx --> DocAI'); L.push('DocAI --> Emb'); L.push('Emb -. write .-> Store'); }
           }
@@ -1906,34 +1949,57 @@
         // live web grounding via the model web-search tool (separate from indexed content and live data)
         if (i.dataSources.includes('web')) { L.push(node('WebG', 'Web grounding<br/>Google Search', 'data')); L.push(`${liveReader} --> WebG`); }
       };
+      // Agent Engine (or GKE) hosts the orchestrator, planner, generator, and validator as one
+      // runtime. The internal components are drawn inside a subgraph so the consolidation is visible.
+      const aeLabel = o.agentRuntime === 'gke' ? 'Agent runtime (GKE Autopilot)' : 'Agent Engine';
+      const agentEngine = (order) => {
+        L.push(`subgraph AE["${aeLabel}"]`);
+        order.forEach(id => L.push(node(id, id, 'orch')));
+        for (let k = 0; k < order.length - 1; k++) L.push(`${order[k]} --> ${order[k + 1]}`);
+        L.push('end');
+      };
+      // Model Armor sits inline on the model leg (sanitize input and output). Routing and fail-over
+      // are configured inside the agent; audit goes to Observability.
+      const armorOn = !!(o.guardrails || o.residencyPin || o.toolAuthz);
+      const modelLeg = (from) => {
+        L.push(node('LLM', 'Model(s)', 'orch'));
+        if (armorOn) { L.push(node('Armor', 'Model Armor<br/>injection, redaction', 'gateway')); L.push(`${from} --> Armor`); L.push('Armor --> LLM'); }
+        else { L.push(`${from} --> LLM`); }
+      };
+      const secretsNode = (from) => { if (o.toolAuthz || o.cmek) { L.push(node('Secrets', 'Secret Manager & CMEK', 'gov')); L.push(`${from} -. secrets .-> Secrets`); } };
+      // VPC-SC perimeter wraps the Google services when enforcement is on. Ingress and human review
+      // sit outside it; cross-boundary edges are emitted after the perimeter closes.
+      const perim = o.enforceVpcSc;
+      const openPerim = () => { if (perim) L.push('subgraph PERIM["VPC-SC perimeter"]'); };
+      const closePerim = () => { if (perim) L.push('end'); };
       if (state.purpose === 'assistant') {
         L.push(node('Client', 'Client UI', 'client'));
         let head = 'Client';
-        // API Gateway: request-side halves of the gateway (auth, rate-limit) and the guardrails
-        // (injection screen), merged into one adaptive box. Drawn only when a control is derived on.
+        // API Gateway: request-side auth and rate-limit, plus the inbound guardrail screen. Drawn
+        // only when a control is derived on. Sits outside the VPC-SC perimeter.
         const inb = inboundControls(o, i);
         if (inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
         // Response cache short-circuit: a hit returns the stored answer to the client and skips the
         // agent and model (the respHit fraction of traffic); a miss falls through to the agent.
         const cacheOn = responseCacheOn(o);
         if (cacheOn) { L.push(node('Cache', cacheLabel(o), 'data', 'cyl')); L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Client'); }
-        L.push(node('Orch', o.pattern === 'multi' ? `Agent layer<br/>${roleList('assistant', o.numAgents)}` : 'Agent layer<br/>single agent', 'orch'));
-        L.push(cacheOn ? 'Cache -- miss --> Orch' : `${head} --> Orch`);
-        // Self-built draws an explicit retrieval funnel (dense + BM25 + rerank); managed Vertex AI
-        // Search performs retrieval inside its store node, so the orchestrator reads the store directly.
+        openPerim();
+        // Agent Engine runs the orchestrator, planner, generator, and validator as one runtime
+        agentEngine(['Orchestrator', 'Planner', 'Generator', 'Validator']);
+        // Self-built draws an explicit retrieval funnel; managed Vertex AI Search retrieves inside
+        // its store node, so the generator reads the store directly.
         const showFunnel = ['hybrid', 'dense', 'rerank'].includes(o.retrieval) && o.ragEngine === 'selfbuilt';
-        if (showFunnel) { L.push(node('Retr', 'Retrieval funnel ⊕', 'retr')); L.push('Orch --> Retr'); }
-        if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Orch --> Sand'); }
-        // Model gateway: response-side halves on the agent→model leg (route, cache, fan-out, egress
-        // redact, output filter, audit). It sees every model call.
-        const outb = outboundControls(o, i);
-        L.push(node('LLM', 'Model(s)', 'orch'));
-        if (outb.length) { L.push(node('ModelGW', modelLabel(outb), 'gateway')); L.push('Orch --> ModelGW'); L.push('ModelGW --> LLM'); }
-        else { L.push('Orch --> LLM'); }
+        if (showFunnel) { L.push(node('Retr', 'Retrieval funnel ⊕', 'retr')); L.push('Generator --> Retr'); }
+        if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Generator --> Sand'); }
+        modelLeg('Generator');
         // data plane: offline index (written by ingestion, read by retrieval) + live sources
-        dataPlane(showFunnel ? 'Retr' : 'Orch', 'Orch');
-        L.push(node('Obs', 'Observability', 'obs')); L.push('Orch --> Obs');
-        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Approval gate', 'gov')); L.push('LLM --> Appr'); }
+        dataPlane(showFunnel ? 'Retr' : 'Generator', 'Generator');
+        secretsNode('Generator');
+        L.push(node('Obs', 'Observability', 'obs')); L.push('Validator --> Obs');
+        closePerim();
+        // cross-boundary entry edge (ingress into the perimeter) and human review (outside)
+        L.push(cacheOn ? 'Cache -- miss --> Orchestrator' : `${head} --> Orchestrator`);
+        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push('Validator --> Appr'); }
         if (o.feedbackLoop) { L.push(node('Fb', 'Feedback → eval', 'gov')); L.push('Obs --> Fb'); }
       } else {
         L.push(node('Trig', 'Trigger (ticket/event)', 'client'));
@@ -1943,20 +2009,21 @@
         // Response cache short-circuit (dedup): a hit resolves a repeat trigger without planning.
         const cacheOn = responseCacheOn(o);
         if (cacheOn) { L.push(node('Cache', cacheLabel(o), 'data', 'cyl')); L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Trig'); }
-        L.push(node('Plan', 'Planner', 'orch')); L.push(cacheOn ? 'Cache -- miss --> Plan' : `${head} --> Plan`);
-        L.push(node('Exec', `Executor pool<br/>${roleList('automation', o.numAgents)}`, 'orch')); L.push('Plan --> Exec');
-        if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Exec --> Sand'); }
-        // model leg with the Model gateway, mirroring the assistant branch
-        const outb = outboundControls(o, i);
-        L.push(node('LLM', 'Model(s)', 'orch'));
-        if (outb.length) { L.push(node('ModelGW', modelLabel(outb), 'gateway')); L.push('Exec --> ModelGW'); L.push('ModelGW --> LLM'); }
-        else { L.push('Exec --> LLM'); }
-        L.push(node('QG', 'Quality gate', 'retr')); L.push('Exec --> QG'); L.push('Plan --> QG');
-        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human approval', 'gov')); L.push('QG -. await human .-> Appr'); L.push('Appr -. resume on approve .-> Exec'); }
-        dataPlane('Exec', 'Exec');
-        L.push(node('State', STATE_STORE_LABEL[o.stateStore] || 'State store', 'data', 'cyl')); L.push('Exec --> State');
-        L.push(node('Obs', 'Observability', 'obs')); L.push('Exec --> Obs');
+        openPerim();
+        // Agent Engine planner leads in the automation flow; the auto quality gate is the validator
+        agentEngine(['Planner', 'Orchestrator', 'Generator', 'Validator']);
+        if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Generator --> Sand'); }
+        modelLeg('Generator');
+        dataPlane('Generator', 'Generator');
+        secretsNode('Generator');
+        L.push(node('State', STATE_STORE_LABEL[o.stateStore] || 'State store', 'data', 'cyl')); L.push('Validator --> State');
+        L.push(node('Obs', 'Observability', 'obs')); L.push('Validator --> Obs');
+        closePerim();
+        L.push(cacheOn ? 'Cache -- miss --> Planner' : `${head} --> Planner`);
+        // human review of the quality gate (outside the perimeter), with resume back into the agent
+        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push('Validator -. await human .-> Appr'); L.push('Appr -. resume on approve .-> Orchestrator'); }
       }
+      if (perim) L.push('style PERIM stroke:#9aa5b1,stroke-dasharray: 4 4,fill:transparent;');
       L.push('classDef client fill:#16384a,stroke:#5ec8f8,color:#dbeefb;');
       L.push('classDef gateway fill:#40301a,stroke:#f4a259,color:#ffe6cc;');
       L.push('classDef orch fill:#2a2348,stroke:#7c5cff,color:#e7e0ff;');
@@ -1973,18 +2040,22 @@
     function diagramNodeMap(src) {
       const m = new Map();
       if (!src) return m;
-      const re = /(\w+)\[\(?"([^"]*)"\)?\]/g;
-      let g;
-      while ((g = re.exec(src)) !== null) {
-        const label = g[2].replace(/\s*⊕/g, '').replace(/<br\/?>/g, ' ').replace(/\s+/g, ' ').trim();
-        m.set(g[1], label);
-      }
+      // Skip subgraph headers: they carry an id and a quoted label but are containers, not boxes.
+      src.split('\n').forEach(line => {
+        if (/^\s*subgraph\b/.test(line)) return;
+        const re = /(\w+)\[\(?"([^"]*)"\)?\]/g;
+        let g;
+        while ((g = re.exec(line)) !== null) {
+          const label = g[2].replace(/\s*⊕/g, '').replace(/<br\/?>/g, ' ').replace(/\s+/g, ' ').trim();
+          m.set(g[1], label);
+        }
+      });
       return m;
     }
     function buildComponentDiagram(key) {
       const map = {
         edgegw: 'flowchart LR\n A[Auth IAM+mTLS]-->B[Tenant rate-limit]-->C[Input PII redact]-->D[Injection / jailbreak screen]',
-        modelgw: 'flowchart LR\n A[Model route + fallback]-->B[Provider fan-out]-->C[Egress PII redact]-->D[Output safety filter]-->E[Audit + token meter]',
+        modelarmor: 'flowchart LR\n A[Input sanitize]-->B[Injection / jailbreak screen]-->C[Model call]-->D[Output safety filter]-->E[Egress PII redact]',
         cache: 'flowchart LR\n A[Normalize + version-namespace key]-->B[Exact-match lookup]-->C[Semantic embed + ANN match]-->D[Serve stored answer or write back on miss]-->E[TTL by freshness + evict]',
         ingestion: 'flowchart LR\n A[Docs + Website]-->B[Document AI / crawler]-->C[Chunker]-->D[Embeddings]-->E[Vector + BM25 + GCS]',
         vais: 'flowchart LR\n A[Docs + Website data store]-->B[Managed parse + chunk + embed]-->C[Managed index]-->D["RRF (semantic + keyword) + rerank"]-->E[Grounded answer + citations]',
@@ -2141,12 +2212,13 @@
     function driverTags(drv) { return drv ? drv.map(d => `<span class="tag" title="driven by ${d}">${d}</span>`).join(' ') : '<span class="tag static" title="same for every config">fixed</span>'; }
     function obsHtml(m) {
       const i = state.inputs, o = state.overrides;
+      const armorOn = !!(o.guardrails || o.residencyPin || o.toolAuthz);
       const path = state.purpose === 'assistant'
-        ? ['client', inboundControls(o, i).length && 'API Gateway', responseCacheOn(o) && 'response cache', 'agent layer', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', outboundControls(o, i).length && 'model gateway', 'LLM'].filter(Boolean)
-        : ['trigger', responseCacheOn(o) && 'response cache', 'planner', 'executor', outboundControls(o, i).length && 'model gateway', 'quality-gate'].filter(Boolean);
+        ? ['client', inboundControls(o, i).length && 'API Gateway', responseCacheOn(o) && 'response cache', 'Agent Engine', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', armorOn && 'Model Armor', 'LLM'].filter(Boolean)
+        : ['trigger', responseCacheOn(o) && 'response cache', 'Agent Engine', armorOn && 'Model Armor', 'LLM'].filter(Boolean);
       const crit = state.purpose === 'assistant' ? 'faithfulness + citation accuracy' : 'PR-success + rework rounds';
       const slo = i.latencyPreset === 'subsecond' ? 'p95 < 1s' : (i.latencyPreset === 'minutes' ? 'per-run < N min' : 'p95 < 2s start / 6s full');
-      const comps = [inboundControls(o, i).length && 'API Gateway', responseCacheOn(o) && 'response cache', outboundControls(o, i).length && 'model gateway', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
+      const comps = [inboundControls(o, i).length && 'API Gateway', responseCacheOn(o) && 'response cache', armorOn && 'Model Armor', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
       const rows = [
         ['Live trace', path.join(' → '), comps.length ? comps : ['components']],
         ['Eval', `Vertex Eval on 5% async sample - ${crit}; drift > 2σ`, ['purpose']],
@@ -2163,7 +2235,7 @@
       if ((i.corpusSize || 0) * K.chunksPerDoc > 1e8) { bottleneck = 'vector index (shard by line × region)'; bdrv = ['corpus', 'scale']; }
       else if (o.retrieval === 'rerank' && m.volPeak > 10) { bottleneck = 'reranker latency (cascade small→medium)'; bdrv = ['rerank', 'volume']; }
       else if (o.stateStore.includes('spanner') && m.volPeak > 50) { bottleneck = 'Spanner write path (partition by key)'; bdrv = ['state store', 'volume']; }
-      else if (o.gateway && m.volPeak * modelCallsPerReq(o) > 20) { bottleneck = 'model gateway shard (model-call QPS = user QPS × fan-out, per-region quota)'; bdrv = ['model gateway', 'fan-out']; }
+      else if (o.gateway && m.volPeak * modelCallsPerReq(o) > 20) { bottleneck = 'Model Armor shard (model-call QPS = user QPS × fan-out, per-region quota)'; bdrv = ['Model Armor', 'fan-out']; }
       const spofs = ['agent layer → stateless autoscaled', o.retrieval !== 'none' && 'vector index → multi-region read failover', 'model → reasoning→fast→cached failover'].filter(Boolean);
       const rows = [
         ['What breaks at 10×', bottleneck, bdrv],
@@ -2190,7 +2262,8 @@
     }
     function bomHtml() {
       const o = state.overrides, i = state.inputs, b = new Set();
-      b.add(o.platform === 'adk' ? 'ADK + Agent Engine' : o.platform === 'studio' ? 'Agent Studio' : 'LangGraph');
+      if (o.agentRuntime === 'gke') b.add('GKE Autopilot (agent)');
+      else b.add(o.platform === 'adk' ? 'ADK + Agent Engine' : o.platform === 'studio' ? 'Agent Studio' : 'LangGraph');
       // LangGraph is open-source and free, so its platform line looks cheapest. But the supported self-hosted
       // path adds the cloud infra/ops the managed runtimes bundle, plus a LangGraph Platform Enterprise contract
       // (self-hosting is an Enterprise add-on). Surface both as their own visible cost lines.
@@ -2213,7 +2286,11 @@
       if (o.stateStore.includes('redis')) b.add('Memorystore');
       b.add('Cloud Trace'); b.add('Vertex AI Eval');
       if (o.guardrails) b.add('Model Armor'); if (o.toolAuthz) b.add('Workload Identity'); if (o.modelRiskGov) b.add('Vertex Model Registry');
-      if (o.residencyPin) b.add('VPC Service Controls'); b.add('Cloud DLP'); b.add('IAM');
+      if (o.residencyPin || o.enforceVpcSc) b.add('VPC Service Controls'); b.add('Cloud DLP'); b.add('IAM');
+      // Storage and secrets are always provisioned; KMS only with CMEK; Pub/Sub triggers automation runs
+      b.add('Cloud Storage'); b.add('Secret Manager');
+      if (o.cmek) b.add('Cloud KMS');
+      if (state.purpose === 'automation') b.add('Pub/Sub');
       if (o.deployment !== 'gcp') b.add('vLLM on GKE');
       [o.reasoningModel, o.fastModel].forEach(id => b.add(modelById(id).name));
       return [...b];
@@ -2291,6 +2368,11 @@
         'Spanner': dbNodes * 657 + m.indexGB * 0.3,
         'Cloud SQL': 200 + dbNodes * 120,
         'Memorystore': 70,
+        'GKE Autopilot (agent)': 140 + dbNodes * 20,            // Autopilot pod resources for the self-managed agent runtime
+        'Cloud Storage': 5 + (m.indexGB || 0) * 0.02,           // docs + agent artifact bucket
+        'Secret Manager': 1,                                    // a few secret versions + access calls
+        'Cloud KMS': 3 + (R / 1e6) * 0.03,                      // CMEK key + crypto operations
+        'Pub/Sub': 10 + (R / 1e6) * 0.4,                        // trigger topic + DLQ throughput
         'Cloud Trace': (R / 1e6) * 2.0,
         'Vertex AI Eval': (R * 0.05 / 1000) * 0.5,
         'Model Armor': (R / 1000) * 0.5,
@@ -2347,7 +2429,7 @@
         }
         // drill-down on click (subset of boxes)
         let key = null;
-        if (/API Gateway/.test(t)) key = 'edgegw'; else if (/Model gateway/.test(t)) key = 'modelgw'; else if (/Response cache/.test(t)) key = 'cache'; else if (/Vertex AI Search/.test(t)) key = 'vais'; else if (/Vector store/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
+        if (/API Gateway/.test(t)) key = 'edgegw'; else if (/Model Armor/.test(t)) key = 'modelarmor'; else if (/Response cache/.test(t)) key = 'cache'; else if (/Vertex AI Search/.test(t)) key = 'vais'; else if (/Vector store/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
         if (key) { n.classList.add('drill'); n.style.cursor = 'pointer'; n.addEventListener('click', () => openModal(key)); }
       });
     }
@@ -2355,9 +2437,9 @@
     /* ===================== Drill-down modal ===================== */
     async function openModal(key) {
       state.ui.openModal = key;
-      const titles = { edgegw: 'API Gateway', modelgw: 'Model gateway', cache: 'Response cache', ingestion: 'Self-built ingestion pipeline', vais: 'Vertex AI Search', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
-      const purposeId = { edgegw: 'EdgeGW', modelgw: 'ModelGW', cache: 'Cache', ingestion: 'Store', vais: 'Store', sandbox: 'Sand', funnel: 'Retr' };   // map modal key → node id in NODE_PURPOSE
-      const subcalc = key === 'edgegw' || key === 'modelgw' || key === 'ingestion';
+      const titles = { edgegw: 'API Gateway', modelarmor: 'Model Armor', cache: 'Response cache', ingestion: 'Self-built ingestion pipeline', vais: 'Vertex AI Search', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
+      const purposeId = { edgegw: 'EdgeGW', modelarmor: 'Armor', cache: 'Cache', ingestion: 'Store', vais: 'Store', sandbox: 'Sand', funnel: 'Retr' };   // map modal key to node id in NODE_PURPOSE
+      const subcalc = key === 'edgegw' || key === 'modelarmor' || key === 'ingestion';
       const root = $('#modal-root'), box = $('#modal');
       let inner = `<span class="close" id="modalClose">×</span><h2>${titles[key]} ${subcalc ? '· sub-calculator' : '· detail'}</h2>`;
       inner += `<div class="sub">${NODE_PURPOSE[purposeId[key]] || ''}${subcalc ? ' <em>Has its own sizing axis, independent of the main app.</em>' : ''}</div>`;
@@ -2369,12 +2451,12 @@
         inner += `<div class="ctl"><label>Tenant apps</label><input type="number" id="cit" value="${g.tenantApps}" min="1"></div>`;
         inner += `<div class="metrics"><div class="metric"><div class="k">Regions</div><div class="v">${regions}</div></div><div class="metric"><div class="k">This app share</div><div class="v">${(100 * lastMetrics.volPeak / agg).toFixed(1)}%</div></div><div class="metric"><div class="k">DLP redaction QPS</div><div class="v">${fmt(agg, 1)}</div></div></div>`;
       }
-      if (key === 'modelgw') {
+      if (key === 'modelarmor') {
         const g = state.componentInputs.model; const fan = g.callsPerReq ?? modelCallsPerReq(state.overrides);
         const modelQPS = lastMetrics.volPeak * fan;
         const regions = Math.max(1, Math.ceil(modelQPS / (K.apigeeRpsPerRegion)));
         inner += `<div class="ctl"><label>Model calls / request</label><input type="number" id="cmc" value="${fan}" min="1"></div>`;
-        inner += `<div style="font-size:11px;color:var(--muted);margin:2px 0 6px">The agent→model fan-out (agents × a damped ReAct loop). Edit to match your trace.</div>`;
+        inner += `<div style="font-size:11px;color:var(--muted);margin:2px 0 6px">Model Armor screens every model call inline, so it sizes on model-call QPS (user QPS times the agent fan-out). Edit to match your trace.</div>`;
         inner += `<div class="metrics"><div class="metric"><div class="k">Model-call QPS</div><div class="v">${fmt(modelQPS, 1)} <small>= ${fmt(lastMetrics.volPeak, 1)} × ${fan}</small></div></div><div class="metric"><div class="k">Regions</div><div class="v">${regions}</div></div></div>`;
       }
       if (key === 'cache') {
@@ -2398,10 +2480,104 @@
       else md.innerHTML = '<pre>' + buildComponentDiagram(key).replace(/</g, '&lt;') + '</pre>';
       // wire sub-calc inputs
       if (key === 'edgegw') { $('#ciq').oninput = e => { state.componentInputs.edge.aggregateQPS = +e.target.value; openModal('edgegw'); }; $('#cit').oninput = e => { state.componentInputs.edge.tenantApps = +e.target.value; }; }
-      if (key === 'modelgw') { $('#cmc').oninput = e => { state.componentInputs.model.callsPerReq = +e.target.value; openModal('modelgw'); }; }
+      if (key === 'modelarmor') { $('#cmc').oninput = e => { state.componentInputs.model.callsPerReq = +e.target.value; openModal('modelarmor'); }; }
       if (key === 'ingestion') { $('#cid').oninput = e => { state.componentInputs.ingestion.docsPerDay = +e.target.value; openModal('ingestion'); }; }
     }
     function closeModal() { state.ui.openModal = null; $('#modal-root').classList.remove('open'); }
+
+    /* ===================== Terraform export ===================== */
+    // Map the live design state plus the deploy form into a normalized spec that tf-generator.js
+    // turns into a Terraform bundle. The spec carries the architecture; the form carries the deploy
+    // specifics (project, region, prefix, site, task wording). The agent code stays generic.
+    function buildDeploySpec(form) {
+      const i = state.inputs, o = state.overrides;
+      const ds = i.dataSources || [];
+      const liveSel = ds.filter(s => LIVE_SRC.includes(s));
+      const selfHost = o.reasoningModel === 'llama4-selfhost' || o.fastModel === 'llama4-selfhost';
+      const responseCache = !!(o.exactCache || o.semanticCache);
+      const modelArmor = !!(o.guardrails || o.residencyPin || o.toolAuthz);
+      return {
+        purpose: state.purpose,
+        preset: state.preset,
+        dedicatedVpc: !!o.dedicatedVpc,
+        deploy: {
+          projectId: form.projectId, region: form.region, prefix: form.prefix,
+          env: form.env, siteUrl: form.siteUrl
+        },
+        task: { generationInstruction: form.generationInstruction, validationInstruction: form.validationInstruction },
+        agent: {
+          runtime: o.agentRuntime, framework: o.platform, pattern: o.pattern, numAgents: o.numAgents,
+          reasoningModel: { id: o.reasoningModel, name: modelById(o.reasoningModel).name },
+          fastModel: { id: o.fastModel, name: modelById(o.fastModel).name },
+          smartRouting: !!o.smartRouting, selfHost,
+          selfHostCfg: selfHost ? { accelerator: o.accelerator, quant: o.quant, gpuTier: o.gpuTier, gpuUtil: o.gpuUtil } : null
+        },
+        retrieval: {
+          enabled: ['hybrid', 'dense', 'rerank'].includes(o.retrieval),
+          ragEngine: o.ragEngine,
+          vectorDB: o.vectorDB,
+          dataSources: ds.slice(),
+          hasWebsite: ds.includes('website'),
+          hasUnstructured: ds.includes('doc_corpus'),
+          hasOnprem: ds.includes('onprem'),
+          hasLive: liveSel.length > 0
+        },
+        state: { store: o.stateStore, needsRedis: responseCache || /redis/.test(o.stateStore) },
+        automation: { isAutomation: state.purpose === 'automation', dlq: true },
+        security: {
+          cmek: !!o.cmek, enforceVpcSc: !!o.enforceVpcSc, residencyPin: !!o.residencyPin,
+          auditLog: !!o.auditLog, guardrails: !!o.guardrails, modelArmor
+        }
+      };
+    }
+    function downloadBlob(blob, name) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    function openExportModal() {
+      const o = state.overrides;
+      const root = $('#modal-root'), box = $('#modal');
+      const def = {
+        projectId: 'my-gcp-project', region: 'us-central1', prefix: 'whiz-study', env: 'dev',
+        siteUrl: 'https://whiz.coach/',
+        gen: 'Generate simple text study material on the given topic.',
+        val: 'Validate the study material is accurate, on topic, and free of personal data. Reply APPROVE or REVISE with a reason.'
+      };
+      const tfReady = !!(window.TfGen && window.TfGen.generate);
+      const note = [o.cmek ? 'CMEK on (Cloud KMS keys are created).' : '', o.enforceVpcSc ? 'VPC-SC on (set an access policy id in tfvars before apply).' : '', o.agentRuntime === 'gke' ? 'GKE runtime needs a two-phase apply.' : ''].filter(Boolean).join(' ');
+      const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+      let inner = `<span class="close" id="modalClose">×</span><h2>Generate Terraform</h2>`;
+      inner += `<div class="sub">Deploy inputs for a Google Cloud Terraform bundle. The design on the left is the architecture; these fields fill in the specifics. ${note}</div>`;
+      inner += `<div class="ctl"><label>GCP project id</label><input type="text" id="dpProject" value="${esc(def.projectId)}"></div>`;
+      inner += `<div class="ctl"><label>Region</label><input type="text" id="dpRegion" value="${esc(def.region)}"></div>`;
+      inner += `<div class="ctl"><label>Resource name prefix</label><input type="text" id="dpPrefix" value="${esc(def.prefix)}"></div>`;
+      inner += `<div class="ctl"><label>Environment</label><input type="text" id="dpEnv" value="${esc(def.env)}"></div>`;
+      inner += `<div class="ctl"><label>Owned site URL</label><input type="text" id="dpSite" value="${esc(def.siteUrl)}"></div>`;
+      inner += `<div class="ctl" style="align-items:flex-start"><label>Generation instruction</label><textarea id="dpGen" rows="2" style="flex:1">${esc(def.gen)}</textarea></div>`;
+      inner += `<div class="ctl" style="align-items:flex-start"><label>Validation instruction</label><textarea id="dpVal" rows="2" style="flex:1">${esc(def.val)}</textarea></div>`;
+      inner += `<div style="margin-top:10px"><button class="mini" id="dpDownload">${tfReady ? 'Download Terraform .zip' : 'Download design spec JSON'}</button></div>`;
+      if (!tfReady) inner += `<div style="font-size:11px;color:var(--muted);margin-top:6px">tf-generator.js is not loaded next to this page, so only the design spec can be downloaded. Deploy the two files together to enable the Terraform export.</div>`;
+      box.innerHTML = inner; root.classList.add('open');
+      $('#modalClose').onclick = closeModal;
+      $('#dpDownload').onclick = () => {
+        const form = {
+          projectId: $('#dpProject').value.trim(), region: $('#dpRegion').value.trim(),
+          prefix: $('#dpPrefix').value.trim(), env: $('#dpEnv').value.trim(),
+          siteUrl: $('#dpSite').value.trim(),
+          generationInstruction: $('#dpGen').value.trim(), validationInstruction: $('#dpVal').value.trim()
+        };
+        const spec = buildDeploySpec(form);
+        const base = (form.prefix || 'agent') + '-' + (form.env || 'dev');
+        if (tfReady) {
+          const { files } = window.TfGen.generate(spec);
+          downloadBlob(new Blob([window.TfGen.zip(files)], { type: 'application/zip' }), base + '-terraform.zip');
+        } else {
+          downloadBlob(new Blob([JSON.stringify(spec, null, 2)], { type: 'application/json' }), base + '-design-spec.json');
+        }
+      };
+    }
     $('#modal-root').addEventListener('click', e => { if (e.target.id === 'modal-root') closeModal(); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
@@ -2585,6 +2761,7 @@
       strip.hidden = false;
     }
     $('#pinBtn').addEventListener('click', () => { pinBaseline(); render(); });
+    $('#tfBtn').addEventListener('click', () => openExportModal());
     $('#diffStrip').addEventListener('click', e => { if (e.target.closest('#diffClear')) { state.baseline = null; render(); } });
     document.querySelector('main').addEventListener('input', e => { if (e.target.dataset.cost != null || e.target.closest('#modal')) return; onInput(); });
     document.querySelector('main').addEventListener('change', e => { if (e.target.id === 'purpose' || e.target.closest('#modal')) return; onInput(); });
@@ -2610,11 +2787,11 @@
       applyPreset('assistant', 'highvol_qa'); state.inputs.latencyPreset = 'subsecond'; deriveOverrides(); assert('sub-second locks single-agent', state.overrides.pattern === 'single');
       // external derives guardrails
       applyPreset('assistant', 'customer_support'); deriveOverrides(); assert('external derives guardrails on', state.overrides.guardrails === true);
-      // control-plane split: the Edge + Model gateway boxes derive from the same booleans, one inbound, one on the model leg
+      // control-plane split: the API Gateway box and the model-leg controls derive from the same booleans, one inbound, one on the model leg
       assert('external splits into edge + model controls', inboundControls(state.overrides, state.inputs).length > 0 && outboundControls(state.overrides, state.inputs).length > 0);
       assert('edge carries auth, model carries output filter', inboundControls(state.overrides, state.inputs).includes('auth') && outboundControls(state.overrides, state.inputs).includes('output filter'));
-      { const d = buildMainDiagram(); assert('diagram wires the model gateway onto the model leg', /Orch --> ModelGW/.test(d) && /ModelGW --> LLM/.test(d) && !/LLM Gateway/.test(d)); }
-      assert('latency: model gateway adds to each model call', (() => {
+      { const d = buildMainDiagram(); assert('diagram wires Model Armor onto the model leg', /Generator --> Armor/.test(d) && /Armor --> LLM/.test(d) && !/ModelGW/.test(d)); }
+      assert('latency: a model-leg control adds to each model call', (() => {
         applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['doc_corpus'];
         state.inputs.audienceSensitivity = 'internal_low'; deriveOverrides();
         const g0 = computeMetrics().latParts.find(p => /Generation/.test(p.label)).ms;   // no outbound controls → no model-gateway latency
@@ -2639,7 +2816,7 @@
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); const wc0 = costSummary(computeMetrics()).totalMo; state.inputs.dataSources = [...state.inputs.dataSources, 'website']; const wc1 = costSummary(computeMetrics()).totalMo; assert('indexing a company website adds cost', wc1 > wc0);
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); const wg0 = computeMetrics().costParts.grounding; state.inputs.dataSources = [...state.inputs.dataSources, 'web']; const wg1 = computeMetrics().costParts.grounding; assert('live web grounding adds a per-search cost', wg0 === 0 && wg1 > 0);
       // self-host: int4 fleet < bf16 fleet at a volume that needs multiple nodes; on-prem zeroes token cost
-      applyPreset('automation', 'regulated'); state.inputs.actors = 50000; state.inputs.actionsPerDay = 60; state.inputs.tokensOut = 2000; state.overrides.deployment = 'onprem'; deriveOverrides();
+      applyPreset('automation', 'internal_lowstakes'); state.inputs.actors = 50000; state.inputs.actionsPerDay = 60; state.inputs.tokensOut = 2000; state.overrides.deployment = 'onprem'; deriveOverrides();
       state.overrides.quant = 'bf16'; const nbf = computeMetrics().gpuNodes; state.overrides.quant = 'int4'; const ni4 = computeMetrics().gpuNodes;
       assert('int4 fleet < bf16 fleet (multi-node)', nbf > 1 && ni4 < nbf); assert('on-prem zeroes token cost', computeMetrics().costOpt === 0);
       // automation trust-tier presets yield distinct governance postures, all derived from inputs
@@ -2705,36 +2882,36 @@
       state.inputs.dataSources = ['doc_corpus', 'bigquery', 'web', 'onprem']; const lp3 = computeMetrics().latencyP95;
       assert('parallel grounding takes max not sum', lp3 === lp1);
       // automation diagram includes a Live data node for query-time sources
-      applyPreset('automation', 'regulated'); deriveOverrides();
+      applyPreset('automation', 'internal_lowstakes'); deriveOverrides();
       assert('automation diagram shows live data sources', /Live data/.test(buildMainDiagram()));
       assert('automation state store renders as a datastore cylinder', /State\[\(/.test(buildMainDiagram()));
-      // Task automation: Requirement agent merged into the Planner (no separate box), planner feeds the
-      // quality gate directly, and the executor's lead role is 'generation' (renamed from code-gen).
+      // Task automation: planner, orchestrator, generator, and validator run inside one Agent Engine
+      // subgraph. The auto quality gate is the validator; there is no separate executor or QG box.
       const dgAuto = buildMainDiagram();
       assert('automation merges requirement agent into the planner', !/Requirement agent/.test(dgAuto) && /Planner/.test(dgAuto));
-      assert('automation planner feeds the quality gate', /Plan --> QG/.test(dgAuto));
-      assert('automation executor lead role renamed code-gen to generation', /generation/.test(dgAuto) && !/code-gen/.test(dgAuto));
+      assert('automation runs inside one Agent Engine subgraph', /subgraph AE/.test(dgAuto) && /Planner --> Orchestrator/.test(dgAuto));
+      assert('automation folds the executor and quality gate into the validator', !/Executor pool/.test(dgAuto) && !/Quality gate/.test(dgAuto) && /Validator/.test(dgAuto));
       // async human approval: the run awaits a reviewer, then resumes on approval
       applyPreset('automation', 'strictpii'); deriveOverrides();
       const dgHitl = buildMainDiagram();
-      assert('async approval shows await + resume edges', /QG -\. await human \.-> Appr/.test(dgHitl) && /Appr -\. resume on approve \.-> Exec/.test(dgHitl));
+      assert('async approval shows await + resume edges', /Validator -\. await human \.-> Appr/.test(dgHitl) && /Appr -\. resume on approve \.-> Orchestrator/.test(dgHitl));
       // Sub-second and agentic SLOs do not apply to automation: a stale value coerces to per-run minutes
-      applyPreset('automation', 'regulated'); state.inputs.latencyPreset = 'subsecond'; deriveOverrides();
+      applyPreset('automation', 'internal_lowstakes'); state.inputs.latencyPreset = 'subsecond'; deriveOverrides();
       assert('automation coerces interactive SLO to per-run minutes', state.inputs.latencyPreset === 'minutes');
       // State store: AlloyDB is the regional automation default; Spanner is derived only for active-active
       // multi-region writes; the diagram label, BOM, and linter track the selected store.
-      applyPreset('automation', 'regulated'); deriveOverrides();
+      applyPreset('automation', 'internal_lowstakes'); deriveOverrides();
       assert('automation regional preset derives AlloyDB state store', state.overrides.stateStore === 'alloydb');
       assert('automation state node labels the selected store (AlloyDB)', /State store \(AlloyDB\)/.test(buildMainDiagram()));
       assert('automation AlloyDB state store adds an AlloyDB line to the BOM', bomHtml().includes('AlloyDB (state)'));
-      applyPreset('automation', 'regulated'); state.overrides.multiRegion = true; deriveOverrides();
+      applyPreset('automation', 'internal_lowstakes'); state.overrides.multiRegion = true; deriveOverrides();
       assert('active-active multi-region upgrades the state store to Spanner', state.overrides.stateStore === 'spanner' && /State store \(Spanner\)/.test(buildMainDiagram()));
       assert('no AlloyDB-cheaper nudge once multi-region active-active is on', !runLinter(computeMetrics()).some(x => x.src === 'stateStore' && /cheaper regional default/.test(x.msg)));
-      applyPreset('automation', 'regulated'); state.overrides.multiRegion = false; state.inputs.actors = 100000; state.inputs.actionsPerDay = 100; deriveOverrides();
+      applyPreset('automation', 'internal_lowstakes'); state.overrides.multiRegion = false; state.inputs.actors = 100000; state.inputs.actionsPerDay = 100; deriveOverrides();
       assert('very high peak throughput recommends Spanner while the store stays AlloyDB', state.overrides.stateStore === 'alloydb' && runLinter(computeMetrics()).some(x => x.src === 'stateStore' && /move the state store to Spanner/.test(x.msg)));
-      applyPreset('automation', 'regulated'); state.overrides.stateStore = 'spanner'; deriveOverrides();
+      applyPreset('automation', 'internal_lowstakes'); state.overrides.stateStore = 'spanner'; deriveOverrides();
       assert('a manual Spanner pick at regional scale is kept, with an AlloyDB nudge', state.overrides.stateStore === 'spanner' && runLinter(computeMetrics()).some(x => x.src === 'stateStore' && /cheaper regional default/.test(x.msg)));
-      applyPreset('automation', 'regulated'); state.overrides.stateStore = 'cloudsql'; deriveOverrides();
+      applyPreset('automation', 'internal_lowstakes'); state.overrides.stateStore = 'cloudsql'; deriveOverrides();
       assert('a deliberate Cloud SQL pick is preserved and labels the node', state.overrides.stateStore === 'cloudsql' && /State store \(Cloud SQL\)/.test(buildMainDiagram()));
       assert('automation routes audit history to BigQuery in the linter', runLinter(computeMetrics()).some(x => x.src === 'auditLog' && /BigQuery/.test(x.msg)));
       // RAG defaults to managed Vertex AI Search; the engine drives the diagram, BOM, and knobs
@@ -2743,7 +2920,7 @@
       assert('managed collapses the DIY BOM + hides knobs', !bomHtml().includes('Document AI') && !bomHtml().includes('BM25') && !bomHtml().includes('Dataflow') && visibleInputs().selfbuilt === false);
       const dgV = buildMainDiagram();
       assert('main diagram shows offline ingestion into the store', /Index sources/.test(dgV) && /-\. crawl \+ parse \+ embed \.->/.test(dgV) && /Vertex AI Search/.test(dgV));
-      assert('managed folds retrieval into the store (no separate funnel)', !/Retrieval funnel/.test(dgV) && /Orch --> Store/.test(dgV));
+      assert('managed folds retrieval into the store (no separate funnel)', !/Retrieval funnel/.test(dgV) && /Generator --> Store/.test(dgV));
       assert('retrieval index renders as a datastore cylinder', /Store\[\(/.test(dgV));
       const dirWide = !window.matchMedia('(max-width:880px)').matches;
       assert('diagram direction follows the viewport', new RegExp('flowchart ' + (dirWide ? 'LR' : 'TD')).test(buildMainDiagram()));
@@ -2832,22 +3009,22 @@
       assert('diagram diff reports an added box', computeDiff().diagram.some(s => /sandbox/i.test(s)));
       state.overrides.sandbox = false; state.baseline = null;
       // response cache: a box on the request spine when exact/semantic is on, off otherwise; the
-      // semantic cache no longer rides the model gateway, and a miss adds a request-path lookup.
+      // semantic cache no longer rides the model leg, and a miss adds a request-path lookup.
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); state.overrides.exactCache = false; state.overrides.semanticCache = false;
       assert('no response cache box when caching is off', !/Response cache/.test(buildMainDiagram()));
-      assert('model gateway carries no cache chip', !outboundControls(state.overrides, state.inputs).includes('cache'));
+      assert('model leg carries no cache chip', !outboundControls(state.overrides, state.inputs).includes('cache'));
       state.overrides.semanticCache = true; deriveOverrides();
       const dgCache = buildMainDiagram();
       assert('response cache box drawn when semantic cache on', /Cache\[\("Response cache/.test(dgCache));
-      assert('cache short-circuits with a hit and a miss edge', /Cache -\. hit \.-> Client/.test(dgCache) && /Cache -- miss --> Orch/.test(dgCache));
-      assert('semantic cache stays out of the model gateway label', !/Model gateway[^"]*cache/.test(dgCache));
+      assert('cache short-circuits with a hit and a miss edge', /Cache -\. hit \.-> Client/.test(dgCache) && /Cache -- miss --> Orchestrator/.test(dgCache));
+      assert('semantic cache stays out of the Model Armor label', !/Model Armor[^"]*cache/.test(dgCache));
       assert('cache adds a request-path lookup to the latency p95', computeMetrics().latParts.some(p => /Response cache lookup/.test(p.label)));
       assert('response cache has a drill-in sub-diagram', /Normalize/.test(buildComponentDiagram('cache')));
       state.overrides.semanticCache = false; state.overrides.exactCache = true;
       assert('exact-only cache labels the box exact, not semantic', /Response cache[^"]*exact/.test(buildMainDiagram()) && !/Response cache[^"]*semantic/.test(buildMainDiagram()));
       applyPreset('automation', 'internal_lowstakes'); deriveOverrides(); state.overrides.semanticCache = true;
       const dgAutoCache = buildMainDiagram();
-      assert('automation cache short-circuits to the trigger', /Cache -\. hit \.-> Trig/.test(dgAutoCache) && /Cache -- miss --> Plan/.test(dgAutoCache));
+      assert('automation cache short-circuits to the trigger', /Cache -\. hit \.-> Trig/.test(dgAutoCache) && /Cache -- miss --> Planner/.test(dgAutoCache));
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); state.overrides.exactCache = false; state.overrides.semanticCache = false; lastMetrics = computeMetrics(); pinBaseline();
       state.overrides.semanticCache = true; lastMetrics = computeMetrics();
       assert('diagram diff reports the added response cache box', computeDiff().diagram.some(s => /Response cache/.test(s)));
@@ -2857,7 +3034,17 @@
       applyPreset('assistant', 'customer_support'); assert('Customer support preset ships response caching on', responseCacheOn(state.overrides));
       applyPreset('assistant', 'expert_copilot'); assert('Expert copilot preset leaves caching off by default', !responseCacheOn(state.overrides));
       applyPreset('assistant', 'strictpii_verify'); assert('Strict-PII preset leaves caching off (conflicts with realtime + PII)', !responseCacheOn(state.overrides));
-      applyPreset('automation', 'regulated'); assert('automation preset leaves caching off by default', !responseCacheOn(state.overrides));
+      applyPreset('automation', 'internal_lowstakes'); assert('automation preset leaves caching off by default', !responseCacheOn(state.overrides));
+      // Self-Managed preset: GKE runtime, self-built vector DB, CMEK + VPC-SC, and the production
+      // security posture also lands on the strict-PII presets.
+      applyPreset('automation', 'self_managed');
+      assert('Self-Managed preset runs on GKE with a self-built vector DB', state.overrides.agentRuntime === 'gke' && state.overrides.ragEngine === 'selfbuilt' && state.overrides.vectorDB === 'elastic');
+      assert('Self-Managed preset ships CMEK + VPC-SC and response caching', state.overrides.cmek === true && state.overrides.enforceVpcSc === true && responseCacheOn(state.overrides));
+      assert('Self-Managed exists for both purposes and seeds GKE in assistant too', !!PRESETS.assistant.self_managed && (() => { applyPreset('assistant', 'self_managed'); return state.overrides.agentRuntime === 'gke' && state.overrides.cmek === true && state.overrides.enforceVpcSc === true && state.overrides.ragEngine === 'selfbuilt'; })());
+      assert('Dedicated VPC defaults on', DEFAULT_OVERRIDES().dedicatedVpc === true);
+      applyPreset('assistant', 'strictpii_verify'); assert('Strict-PII verification ships CMEK + VPC-SC', state.overrides.cmek === true && state.overrides.enforceVpcSc === true);
+      applyPreset('automation', 'strictpii'); assert('Strict-PII automation ships CMEK + VPC-SC', state.overrides.cmek === true && state.overrides.enforceVpcSc === true);
+      applyPreset('assistant', 'expert_copilot'); assert('Expert copilot leaves CMEK + VPC-SC off', state.overrides.cmek === false && state.overrides.enforceVpcSc === false);
       // invalidation strategy stated in the tooltip and the drill-in (TTL keyed to freshness + version busting)
       assert('cache tooltip states TTL + version-busting invalidation', /TTL/.test(NODE_PURPOSE.Cache) && /version/i.test(NODE_PURPOSE.Cache));
       assert('cache drill-in shows version namespacing and a freshness TTL', /version-namespace/.test(buildComponentDiagram('cache')) && /TTL by freshness/.test(buildComponentDiagram('cache')));
@@ -2874,6 +3061,41 @@
       // prompt-design lever: the reuse % help names the static-prefix ordering; the context-cache help is model-aware
       assert('reuse % help names the static-prefix prompt ordering', /prefix/i.test(CTL_HELP['overrides.reuseInputPct']) && /(first|start)/i.test(CTL_HELP['overrides.reuseInputPct']));
       assert('context cache help is model-aware (Gemini implicit, Claude breakpoint, vLLM)', /gemini/i.test(CTL_HELP['overrides.contextCache']) && /(cache_control|breakpoint)/i.test(CTL_HELP['overrides.contextCache']) && /vllm/i.test(CTL_HELP['overrides.contextCache']));
+      // ---- Terraform export: buildDeploySpec maps the design, tf-generator.js (sibling module) emits HCL ----
+      applyPreset('assistant', 'customer_support'); state.inputs.dataSources = ['doc_corpus', 'website']; deriveOverrides();
+      const exForm = { projectId: 'p', region: 'us-central1', prefix: 'whiz-study', env: 'dev', siteUrl: 'https://whiz.coach/', generationInstruction: 'Generate simple text study material on the given topic.', validationInstruction: 'Validate the study material is accurate.' };
+      const spec = buildDeploySpec(exForm);
+      assert('deploy spec carries purpose, the deploy form, and the security flags', spec.purpose === 'assistant' && spec.deploy.siteUrl === 'https://whiz.coach/' && 'cmek' in spec.security && 'enforceVpcSc' in spec.security);
+      assert('deploy spec reflects the agent runtime override', spec.agent.runtime === state.overrides.agentRuntime);
+      if (window.TfGen) {
+        const braces = s => { let d = 0; for (const c of s) { if (c === '{') d++; else if (c === '}') d--; if (d < 0) return -1; } return d; };
+        const f0 = window.TfGen.generate(spec).files;
+        assert('generator emits the core Terraform files and the agent stub', ['versions.tf', 'variables.tf', 'terraform.tfvars', 'main.tf', 'README.md', 'agent/agent.py'].every(k => k in f0));
+        assert('generated main.tf has balanced braces', braces(f0['main.tf']) === 0);
+        assert('owned site maps to a target site with the whiz.coach pattern', /google_discovery_engine_target_site/.test(f0['main.tf']) && /whiz\.coach\/\*/.test(f0['main.tf']));
+        assert('agent code is generic (no study-material or domain literal)', !/study material/i.test(f0['agent/agent.py']) && !/whiz\.coach/i.test(f0['agent/agent.py']));
+        assert('the study-material example lives in tfvars, not the agent code', /study material/i.test(f0['terraform.tfvars']) && !/study material/i.test(f0['agent/agent.py']));
+        // runtime, CMEK, and VPC-SC are gated by the design
+        applyPreset('assistant', 'customer_support'); state.overrides.agentRuntime = 'agentengine'; state.overrides.cmek = false; state.overrides.enforceVpcSc = false;
+        let mt = window.TfGen.generate(buildDeploySpec(exForm)).files['main.tf'];
+        assert('Agent Engine runtime emits a reasoning engine and no GKE agent', /google_vertex_ai_reasoning_engine/.test(mt) && !/enable_autopilot/.test(mt));
+        assert('CMEK off omits Cloud KMS and VPC-SC off omits the perimeter', !/google_kms_crypto_key/.test(mt) && !/google_access_context_manager_service_perimeter/.test(mt));
+        state.overrides.agentRuntime = 'gke'; state.overrides.cmek = true; state.overrides.enforceVpcSc = true;
+        mt = window.TfGen.generate(buildDeploySpec(exForm)).files['main.tf'];
+        assert('GKE runtime emits an Autopilot cluster and a kubernetes deployment', /enable_autopilot/.test(mt) && /kubernetes_deployment/.test(mt) && !/google_vertex_ai_reasoning_engine/.test(mt));
+        assert('CMEK on emits Cloud KMS and VPC-SC on emits the perimeter', /google_kms_crypto_key/.test(mt) && /google_access_context_manager_service_perimeter/.test(mt));
+        // on-prem data source: no connectivity Terraform, but a README integration section
+        applyPreset('assistant', 'strictpii_verify'); deriveOverrides();
+        const og = window.TfGen.generate(buildDeploySpec(exForm)).files;
+        assert('on-prem data emits no connectivity Terraform but a README section', !/google_compute_vpn|google_compute_interconnect/.test(og['main.tf']) && /On-prem data integration/.test(og['README.md']));
+        // self-host model maps to a GKE GPU node pool
+        applyPreset('assistant', 'expert_copilot'); state.overrides.deployment = 'onprem'; deriveOverrides();
+        const sg = window.TfGen.generate(buildDeploySpec(exForm)).files['main.tf'];
+        assert('self-host model emits a GPU node pool', /google_container_node_pool/.test(sg) && /guest_accelerator/.test(sg));
+      } else {
+        assert('tf-generator.js is loaded as a sibling module', false);
+      }
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides();
       const pass = results.every(r => r[1]);
       const bar = $('#testbar'); bar.style.display = 'block'; bar.className = pass ? 'pass' : 'fail';
       bar.innerHTML = (pass ? '✓ all self-tests pass - ' : '✗ FAILURES - ') + results.map(r => `${r[1] ? '✓' : '✗'} ${r[0]}`).join(' · ');
@@ -2897,6 +3119,10 @@
       'inputs.freshness': 'How current the grounding data must be.',
       'overrides.deployment': 'Where inference runs: managed GCP, hybrid, or on-prem.',
       'overrides.multiRegion': 'Run active in multiple regions for failover and locality.',
+      'overrides.cmek': 'Encrypt data with customer-managed keys in Cloud KMS. Off uses Google-managed keys, which deploys in one shot with no key setup.',
+      'overrides.enforceVpcSc': 'Wrap the Google services in a VPC Service Controls perimeter. Needs an org or folder access policy, so leave off for a sandbox apply and on for production.',
+      'overrides.agentRuntime': 'Where the agent runs. Agent Engine is the managed runtime with built-in sessions, memory, and observability. GKE Autopilot self-manages the runtime and needs a two-phase apply.',
+      'overrides.dedicatedVpc': 'On: the export creates a dedicated VPC for the system and attaches GKE, AlloyDB, and Redis to it (AlloyDB gets Private Service Access). Off: it uses the project default network instead.',
       'overrides.pattern': 'One agent, or a coordinated team of specialist agents.',
       'overrides.reactMaxIter': 'Maximum reason-act-observe loops allowed per request.',
       'overrides.platform': 'Agent framework and runtime that hosts the system.',
@@ -2964,7 +3190,7 @@
       if (new URLSearchParams(location.search).has('test')) selfTest();
     }
     init();
-    window.__designer = { state, computeMetrics, deriveOverrides, selfTest };
+    window.__designer = { state, computeMetrics, deriveOverrides, selfTest, buildDeploySpec, buildMainDiagram, applyPreset, render };
   </script>
 </body>
 
