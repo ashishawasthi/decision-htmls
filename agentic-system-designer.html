@@ -1094,7 +1094,7 @@
 
       <fieldset data-grp="target">
         <legend>Deployment target</legend>
-        <div class="ctl" data-ov="dedicatedVpc"><label>Dedicated VPC</label>
+        <div class="ctl" data-ov="dedicatedVpc"><label>Dedicated VPC network</label>
           <input type="checkbox" data-bind="overrides.dedicatedVpc">
         </div>
         <div class="ctl" data-ov="agentRuntime"><label>Agent runtime</label>
@@ -1433,6 +1433,7 @@
     const DIAGRAM_PALETTE = {
       dark: {
         perim: '#9aa5b1',
+        vpc: '#6ea8ff',
         client: { fill: '#16384a', stroke: '#5ec8f8', color: '#dbeefb' },
         gateway: { fill: '#40301a', stroke: '#f4a259', color: '#ffe6cc' },
         orch: { fill: '#2a2348', stroke: '#7c5cff', color: '#e7e0ff' },
@@ -1443,6 +1444,7 @@
       },
       light: {
         perim: '#6e7781',
+        vpc: '#3b6fd4',
         client: { fill: '#dbeefb', stroke: '#0a7ea4', color: '#06323f' },
         gateway: { fill: '#ffe6cc', stroke: '#bc6716', color: '#3d2406' },
         orch: { fill: '#e7e0ff', stroke: '#6639ba', color: '#2a1a4d' },
@@ -1517,12 +1519,12 @@
 
     /* ===================== Default override values ===================== */
     const DEFAULT_OVERRIDES = () => ({
-      deployment: 'gcp', multiRegion: true, agentRuntime: 'agentengine', dedicatedVpc: true, cmek: false, enforceVpcSc: false,
+      deployment: 'gcp', multiRegion: false, agentRuntime: 'agentengine', dedicatedVpc: true, cmek: false, enforceVpcSc: false,
       pattern: 'multi', numAgents: 4, reactMaxIter: 6, platform: 'adk',
       reasoningModel: 'gemini-35-flash', fastModel: 'gemini-31-flash-lite', smartRouting: true, routingSplit: 70, judgeDiversity: false,
       ragEngine: 'vais', retrieval: 'rerank', metadataPrefilter: true, vectorDB: 'vertex', ingestionSep: false, hnswM: 32, hnswEf: 128,
       gateway: true, auditLog: true, rulesEngine: true, sandbox: false,
-      stateStore: 'redis_spanner', contextCache: true, reuseInputPct: 50,
+      stateStore: 'redis_alloydb', contextCache: true, reuseInputPct: 50,
       accelerator: 'h100', quant: 'fp8', pagedAttn: true, gpuTier: 'cud_3y', gpuUtil: 70,
       exactCache: false, semanticCache: false, autocomplete: false, warming: false, cacheHit: 5,
       guardrails: false, toolAuthz: false, costKillSwitch: false, residencyPin: false, hitlApproval: 'none', feedbackLoop: false, modelRiskGov: false, safeRollout: false,
@@ -1639,11 +1641,11 @@
         if (o.reasoningModel === 'llama4-selfhost') o.reasoningModel = 'gemini-35-flash';
         if (o.fastModel === 'llama4-selfhost') o.fastModel = 'gemini-31-flash-lite';
       }
-      // State store: AlloyDB is the regional agentic default for automation. Upgrade to Spanner only for
-      // active-active multi-region writes (AlloyDB is single-primary, so it cannot serve those). One-way, from
-      // the regional default only, so a deliberate Spanner, Cloud SQL, or Redis-tier pick stays put; the linter
-      // separately recommends Spanner when peak write throughput is very high.
-      if (state.purpose === 'automation' && o.multiRegion && o.stateStore === 'alloydb' && !locks.stateStore) o.stateStore = 'spanner';
+      // State store: AlloyDB is the single-region default (assistant: Redis + AlloyDB; automation: AlloyDB).
+      // Upgrade the durable tier to Spanner only when active-active multi-region is on (AlloyDB is single-primary,
+      // so it cannot serve active-active writes). One-way, from the regional default only, so a deliberate
+      // Spanner/Cloud SQL/other pick stays put; the linter separately recommends Spanner for very high writes.
+      if (o.multiRegion && !locks.stateStore) { if (o.stateStore === 'alloydb') o.stateStore = 'spanner'; else if (o.stateStore === 'redis_alloydb') o.stateStore = 'redis_spanner'; }
       state.locks = locks;
       // Governance is a pure, read-only function of the first-level inputs. Computed last so it
       // sees the resolved topology, then rendered in the Governance & controls output panel.
@@ -1917,7 +1919,8 @@
       Plan: 'Reads the trigger and turns it into a clear, structured task spec, then breaks that into ordered steps and assigns them to the executor agents. It also sets the acceptance criteria the quality gate enforces.',
       Exec: 'The specialist agents that do the work (generation, review, test, docs, migrate), running in parallel where possible.',
       QG: 'Automated checks (tests, linters, policy rules) that must pass before the result moves to approval.',
-      State: 'Transactional run state, so long workflows can resume after a failure. Default is AlloyDB: PostgreSQL-compatible, HA, with pgvector/ScaNN for agent memory and columnar HTAP, and cheaper than Spanner for a single region. Use Spanner when you need active-active multi-region writes, five-nines, or extreme write throughput. Durable audit and long-term event history belong in BigQuery, not this transactional store.',
+      State: 'Transactional run and session state, so long workflows and conversations can resume after a failure. Default is AlloyDB: PostgreSQL-compatible, HA, with pgvector/ScaNN for agent memory and columnar HTAP, and cheaper than Spanner for a single region. Use Spanner when you need active-active multi-region writes, five-nines, or extreme write throughput. Durable audit and long-term event history belong in BigQuery, not this transactional store.',
+      StateDur: 'Spanner durable tier for active-active multi-region writes (AlloyDB is single-primary and cannot serve those). Managed and reached through a Private Service Connect endpoint, so it lives outside the dedicated VPC while the hot Redis store stays inside it.',
     };
     const nodeIdFromSvg = el => { const m = (el.id || '').match(/flowchart-([A-Za-z0-9]+)-\d+$/); return m ? m[1] : null; };
     // Role of each data source, shown as a hover tooltip on the checkbox. BigQuery's role
@@ -2027,14 +2030,15 @@
       // Data plane: an offline index (written by the ingestion branch with a dashed/async edge,
       // read by retrieval) plus live-queried sources. storeReader reads the index at query time;
       // liveReader queries the live sources. Drawn from the selected sources, not the ingestion toggle.
-      const dataPlane = (storeReader, liveReader) => {
+      const dataPlane = (storeReader, liveReader, storePre) => {
         const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
         const idxSel = i.dataSources.filter(s => INDEXED_SRC.includes(s));
         const liveSel = i.dataSources.filter(s => LIVE_SRC.includes(s));
         const hasIndex = idxSel.length;   // indexed content to retrieve from
         if (ragOn && hasIndex) {
           const storeLabel = o.ragEngine === 'vais' ? 'Vertex AI Search ⊕' : 'Vector store + BM25 ⊕';
-          L.push(node('Store', storeLabel, 'data', 'cyl')); L.push(`${storeReader} --> Store`);
+          if (!storePre) L.push(node('Store', storeLabel, 'data', 'cyl'));   // pre-declared inside the VPC subgraph when self-built
+          L.push(`${storeReader} --> Store`);
           // offline ingestion branch only when there is content to crawl, parse, and index
           if (idxSel.length) {
             // Cloud Storage holds the source documents and the agent artifact that feed the index
@@ -2072,6 +2076,34 @@
       const perim = o.enforceVpcSc;
       const openPerim = () => { if (perim) L.push('subgraph PERIM["VPC-SC perimeter"]'); };
       const closePerim = () => { if (perim) L.push('end'); };
+      // Dedicated VPC network: a layer 3/4 boundary around the self-hosted / private resources - the
+      // GKE agent runtime, a self-built vector store + retrieval, and AlloyDB/Redis (reached over
+      // Private Service Access). Mirrors the Terraform createVpc = dedicatedVpc && networkUser rule so
+      // the diagram and the export agree on when a VPC exists. It is a network boundary, distinct from
+      // the VPC-SC service perimeter, and nests inside it when both are on; managed services stay out.
+      const gke = o.agentRuntime === 'gke';
+      const selfbuilt = o.ragEngine === 'selfbuilt';
+      const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
+      const hasIndex = i.dataSources.some(s => INDEXED_SRC.includes(s));
+      const storeInVpc = ragOn && hasIndex && selfbuilt;     // self-built vector store, not managed Vertex AI Search
+      const retrInVpc = ragOn && selfbuilt;                  // the retrieval funnel runs on the self-built search
+      const stateInVpc = /alloydb|redis/.test(o.stateStore); // AlloyDB / Memorystore attach to the VPC over PSA
+      // The Redis tier is self-hosted on GKE, else managed Memorystore. Spanner (the active-active durable
+      // tier) is managed and reached via a PSC endpoint, so it sits outside the VPC while the hot Redis store
+      // stays inside; AlloyDB / Cloud SQL follow the VPC rule above.
+      const redisName = gke ? 'Redis on GKE' : 'Memorystore';
+      const stateSpanner = o.stateStore === 'redis_spanner';   // straddles the boundary: Redis in, Spanner out
+      const stateLabel = ({
+        redis: `State store (${redisName})`,
+        redis_alloydb: `State store (${redisName} + AlloyDB)`,
+        redis_spanner: `State store (${redisName})`,
+        alloydb: 'State store (AlloyDB)',
+        spanner: 'State store (Spanner)',
+        cloudsql: 'State store (Cloud SQL)',
+      })[o.stateStore] || STATE_STORE_LABEL[o.stateStore] || 'State store';
+      let vpcDrawn = false;
+      const openVpc = (hasMember) => { if (o.dedicatedVpc && hasMember) { vpcDrawn = true; L.push('subgraph VPC["Dedicated VPC network"]'); } };
+      const closeVpc = () => { if (vpcDrawn) L.push('end'); };
       if (state.purpose === 'assistant') {
         L.push(node('Client', 'Client UI', 'client'));
         let head = 'Client';
@@ -2083,18 +2115,30 @@
         // agent and model (the respHit fraction of traffic); a miss falls through to the agent.
         const cacheOn = responseCacheOn(o);
         if (cacheOn) { L.push(node('Cache', cacheLabel(o), 'data', 'cyl')); L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Client'); }
-        openPerim();
-        // Agent Engine runs the orchestrator, planner, generator, and validator as one runtime
-        agentEngine(['Orchestrator', 'Planner', 'Generator', 'Validator']);
         // Self-built draws an explicit retrieval funnel; managed Vertex AI Search retrieves inside
         // its store node, so the generator reads the store directly.
-        const showFunnel = ['hybrid', 'dense', 'rerank'].includes(o.retrieval) && o.ragEngine === 'selfbuilt';
-        if (showFunnel) { L.push(node('Retr', 'Retrieval funnel ⊕', 'retr')); L.push('Generator --> Retr'); }
+        const showFunnel = retrInVpc;
+        openPerim();
+        // Self-hosted runtime, search, and store sit inside the dedicated VPC; the managed Agent
+        // Engine runtime and the managed Google services stay outside it but inside the perimeter.
+        openVpc(gke || retrInVpc || storeInVpc || stateInVpc);
+        if (gke) agentEngine(['Orchestrator', 'Planner', 'Generator', 'Validator']);
+        if (showFunnel) L.push(node('Retr', 'Retrieval funnel ⊕', 'retr'));
+        if (storeInVpc) L.push(node('Store', 'Vector store + BM25 ⊕', 'data', 'cyl'));
+        if (stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
+        closeVpc();
+        if (!gke) agentEngine(['Orchestrator', 'Planner', 'Generator', 'Validator']);
+        if (showFunnel) L.push('Generator --> Retr');
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Generator --> Sand'); }
         modelLeg('Generator');
         // data plane: offline index (written by ingestion, read by retrieval) + live sources
-        dataPlane(showFunnel ? 'Retr' : 'Generator', 'Generator');
+        dataPlane(showFunnel ? 'Retr' : 'Generator', 'Generator', storeInVpc);
         secretsNode('Generator');
+        // session / conversation state the agent persists (Memorystore/AlloyDB) - inside the VPC when private
+        if (!stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
+        L.push('Generator -. session .-> State');
+        // Spanner durable tier is managed (reached via a PSC endpoint), so it sits outside the VPC even though Redis is inside
+        if (stateSpanner) { L.push(node('StateDur', 'Spanner<br/>active-active durable', 'data', 'cyl')); L.push('State -. durable .-> StateDur'); }
         L.push(node('Obs', 'Observability', 'obs')); L.push('Validator --> Obs');
         closePerim();
         // cross-boundary entry edge (ingress into the perimeter) and human review (outside)
@@ -2110,13 +2154,23 @@
         const cacheOn = responseCacheOn(o);
         if (cacheOn) { L.push(node('Cache', cacheLabel(o), 'data', 'cyl')); L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Trig'); }
         openPerim();
+        // Self-hosted runtime and store, plus a private AlloyDB/Redis state store, sit inside the
+        // VPC; the managed Agent Engine runtime and the managed Google services stay outside it.
+        openVpc(gke || storeInVpc || stateInVpc);
         // Agent Engine planner leads in the automation flow; the auto quality gate is the validator
-        agentEngine(['Planner', 'Orchestrator', 'Generator', 'Validator']);
+        if (gke) agentEngine(['Planner', 'Orchestrator', 'Generator', 'Validator']);
+        if (storeInVpc) L.push(node('Store', 'Vector store + BM25 ⊕', 'data', 'cyl'));
+        if (stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
+        closeVpc();
+        if (!gke) agentEngine(['Planner', 'Orchestrator', 'Generator', 'Validator']);
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Generator --> Sand'); }
         modelLeg('Generator');
-        dataPlane('Generator', 'Generator');
+        dataPlane('Generator', 'Generator', storeInVpc);
         secretsNode('Generator');
-        L.push(node('State', STATE_STORE_LABEL[o.stateStore] || 'State store', 'data', 'cyl')); L.push('Validator --> State');
+        if (!stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
+        L.push('Validator --> State');
+        // Spanner durable tier is managed (reached via a PSC endpoint), so it sits outside the VPC even though Redis is inside
+        if (stateSpanner) { L.push(node('StateDur', 'Spanner<br/>active-active durable', 'data', 'cyl')); L.push('State -. durable .-> StateDur'); }
         L.push(node('Obs', 'Observability', 'obs')); L.push('Validator --> Obs');
         closePerim();
         L.push(cacheOn ? 'Cache -- miss --> Planner' : `${head} --> Planner`);
@@ -2125,6 +2179,8 @@
       }
       const dp = DIAGRAM_PALETTE[isLightTheme() ? 'light' : 'dark'];
       if (perim) L.push(`style PERIM stroke:${dp.perim},stroke-dasharray: 4 4,fill:transparent;`);
+      // solid, network-blue border distinguishes the VPC network boundary from the dashed VPC-SC perimeter
+      if (vpcDrawn) L.push(`style VPC stroke:${dp.vpc},stroke-width:2px,fill:transparent;`);
       for (const k of ['client', 'gateway', 'orch', 'retr', 'data', 'obs', 'gov']) {
         L.push(`classDef ${k} fill:${dp[k].fill},stroke:${dp[k].stroke},color:${dp[k].color};`);
       }
@@ -3025,6 +3081,19 @@
       applyPreset('automation', 'internal_lowstakes'); state.overrides.stateStore = 'cloudsql'; deriveOverrides();
       assert('a deliberate Cloud SQL pick is preserved and labels the node', state.overrides.stateStore === 'cloudsql' && /State store \(Cloud SQL\)/.test(buildMainDiagram()));
       assert('automation routes audit history to BigQuery in the linter', runLinter(computeMetrics()).some(x => x.src === 'auditLog' && /BigQuery/.test(x.msg)));
+      // single-region default uses Redis + AlloyDB (all VPC-resident); the Redis tier is labelled Memorystore (managed)
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides();
+      assert('single-region default keeps the durable tier on AlloyDB, no Spanner', state.overrides.stateStore === 'redis_alloydb' && !/Spanner/.test(buildMainDiagram()));
+      assert('the default labels the managed Redis tier as Memorystore', /State store \(Memorystore \+ AlloyDB\)/.test(buildMainDiagram()));
+      // self-managed (GKE) labels the Redis tier as self-hosted in the cluster
+      applyPreset('assistant', 'self_managed'); deriveOverrides();
+      assert('self-managed labels the Redis tier as self-hosted on GKE', /Redis on GKE/.test(buildMainDiagram()));
+      // active-active upgrades the durable tier to Spanner and draws it OUTSIDE the VPC (PSC, managed), Memorystore inside
+      applyPreset('assistant', 'expert_copilot'); state.overrides.multiRegion = true; deriveOverrides();
+      { const d = buildMainDiagram(); const vo = d.indexOf('subgraph VPC['); const ve = d.indexOf('\nend', vo);
+        assert('active-active assistant upgrades the durable tier to Spanner', state.overrides.stateStore === 'redis_spanner');
+        assert('the hot Memorystore store sits inside the dedicated VPC', vo >= 0 && /State\[\(/.test(d.slice(vo, ve)));
+        assert('Spanner (durable) is drawn outside the VPC box', /StateDur\[\("Spanner/.test(d) && d.indexOf('StateDur') > ve); }
       // RAG defaults to managed Vertex AI Search; the engine drives the diagram, BOM, and knobs
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
       assert('RAG engine defaults to managed Vertex AI Search', state.overrides.ragEngine === 'vais' && bomHtml().includes('Vertex AI Search'));
@@ -3153,6 +3222,24 @@
       assert('Self-Managed preset ships CMEK + VPC-SC and response caching', state.overrides.cmek === true && state.overrides.enforceVpcSc === true && responseCacheOn(state.overrides));
       assert('Self-Managed exists for both purposes and seeds GKE in assistant too', !!PRESETS.assistant.self_managed && (() => { applyPreset('assistant', 'self_managed'); return state.overrides.agentRuntime === 'gke' && state.overrides.cmek === true && state.overrides.enforceVpcSc === true && state.overrides.ragEngine === 'selfbuilt'; })());
       assert('Dedicated VPC defaults on', DEFAULT_OVERRIDES().dedicatedVpc === true);
+      // Dedicated VPC network boundary in the diagram: wraps the self-hosted resources and, when the
+      // perimeter is also on, nests inside it (PERIM > VPC > the GKE runtime subgraph AE).
+      applyPreset('assistant', 'self_managed'); deriveOverrides();
+      { const dvpc = buildMainDiagram();
+        assert('Self-Managed assistant draws the Dedicated VPC network boundary', /subgraph VPC\["Dedicated VPC network"\]/.test(dvpc));
+        assert('the dedicated VPC nests inside the VPC-SC perimeter with the GKE runtime inside the VPC', dvpc.indexOf('subgraph PERIM') >= 0 && dvpc.indexOf('subgraph PERIM') < dvpc.indexOf('subgraph VPC') && dvpc.indexOf('subgraph VPC') < dvpc.indexOf('subgraph AE')); }
+      state.overrides.dedicatedVpc = false;
+      assert('toggling Dedicated VPC off removes the network boundary', !/subgraph VPC\[/.test(buildMainDiagram()));
+      applyPreset('automation', 'self_managed'); deriveOverrides();
+      assert('Self-Managed automation also wraps its self-hosted resources in a dedicated VPC', /subgraph VPC\["Dedicated VPC network"\]/.test(buildMainDiagram()));
+      // managed assistant (Agent Engine + Vertex AI Search): the private Redis session store surfaces the
+      // VPC even with no self-hosted compute, matching the Terraform that provisions Memorystore in a VPC.
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides();
+      { const dmgd = buildMainDiagram();
+        assert('a managed assistant draws its session state store', /State\[/.test(dmgd));
+        assert('the private Redis session store surfaces the dedicated VPC on a managed assistant', /subgraph VPC\["Dedicated VPC network"\]/.test(dmgd)); }
+      state.overrides.stateStore = 'spanner';
+      assert('a managed assistant on Spanner-only state (nothing private) draws no VPC boundary', !/subgraph VPC\[/.test(buildMainDiagram()));
       applyPreset('assistant', 'strictpii_verify'); assert('Strict-PII verification ships CMEK + VPC-SC', state.overrides.cmek === true && state.overrides.enforceVpcSc === true);
       applyPreset('automation', 'strictpii'); assert('Strict-PII automation ships CMEK + VPC-SC', state.overrides.cmek === true && state.overrides.enforceVpcSc === true);
       applyPreset('assistant', 'expert_copilot'); assert('Expert copilot leaves CMEK + VPC-SC off', state.overrides.cmek === false && state.overrides.enforceVpcSc === false);
@@ -3231,9 +3318,9 @@
       'overrides.deployment': 'Where inference runs: managed GCP, hybrid, or on-prem.',
       'overrides.multiRegion': 'Run active in multiple regions for failover and locality.',
       'overrides.cmek': 'Encrypt data with customer-managed keys in Cloud KMS. Off uses Google-managed keys, which deploys in one shot with no key setup.',
-      'overrides.enforceVpcSc': 'Wrap the Google services in a VPC Service Controls perimeter. Needs an org or folder access policy, so leave off for a sandbox apply and on for production.',
+      'overrides.enforceVpcSc': 'Wrap the Google services in a VPC Service Controls perimeter - a data-egress boundary around managed APIs, distinct from the Dedicated VPC network. Needs an org or folder access policy, so leave off for a sandbox apply and on for production.',
       'overrides.agentRuntime': 'Where the agent runs. Agent Engine is the managed runtime with built-in sessions, memory, and observability. GKE Autopilot self-manages the runtime and needs a two-phase apply.',
-      'overrides.dedicatedVpc': 'On: the export creates a dedicated VPC for the system and attaches GKE, AlloyDB, and Redis to it (AlloyDB gets Private Service Access). Off: it uses the project default network instead.',
+      'overrides.dedicatedVpc': 'A private network (layer 3/4 isolation) for the self-hosted parts of the system - distinct from the VPC-SC service perimeter, which is a data-egress boundary around Google APIs. On: the diagram wraps the self-hosted resources (GKE runtime, self-built search, AlloyDB/Redis) in a Dedicated VPC network boundary, and the export creates that VPC and attaches GKE, AlloyDB, and Redis to it (AlloyDB gets Private Service Access). Off: it uses the project default network instead.',
       'overrides.pattern': 'One agent, or a coordinated team of specialist agents.',
       'overrides.reactMaxIter': 'Maximum reason-act-observe loops allowed per request.',
       'overrides.platform': 'Agent framework and runtime that hosts the system.',
