@@ -5,6 +5,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gen AI Deployment Options &amp; Estimates</title>
+  <script>
+    /* Resolve the theme before first paint to avoid a flash. 'theme' is shared across all
+       pages; it is set only when the user has explicitly chosen, absent means follow the OS. */
+    (function () {
+      var saved = localStorage.getItem('theme');
+      var theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
   <style>
     :root {
       --bg: #0f1115;
@@ -21,6 +30,37 @@
       --api: #60a5fa;
       --selfhost: #a78bfa;
       --onprem: #f472b6;
+      /* tints for model badges and the warning box, plus text that sits on a saturated fill */
+      --api-tint: rgba(96, 165, 250, 0.2);
+      --selfhost-tint: rgba(167, 139, 250, 0.2);
+      --warn-tint: rgba(251, 191, 36, 0.2);
+      --bad-tint: rgba(248, 113, 113, 0.2);
+      --warn-box: rgba(251, 191, 36, 0.1);
+      --on-fill: #052e16;
+    }
+
+    /* Light palette. Dark above stays the default, so the page is unchanged in dark mode. */
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --panel: #f6f8fa;
+      --panel-2: #eaeef2;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --muted: #57606a;
+      --accent: #0969da;
+      --good: #1a7f37;
+      --bad: #cf222e;
+      --warn: #9a6700;
+      --winner: #1a7f37;
+      --api: #0969da;
+      --selfhost: #6639ba;
+      --onprem: #c2255c;
+      --api-tint: rgba(9, 105, 218, 0.12);
+      --selfhost-tint: rgba(102, 57, 186, 0.12);
+      --warn-tint: rgba(154, 103, 0, 0.15);
+      --bad-tint: rgba(207, 34, 46, 0.12);
+      --warn-box: rgba(154, 103, 0, 0.1);
+      --on-fill: #ffffff;
     }
 
     * {
@@ -69,9 +109,46 @@
 
     .backlink svg { display: block; }
 
+    .header-actions {
+      position: absolute;
+      top: 20px;
+      right: 28px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #themeBtn {
+      width: 40px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--muted);
+      cursor: pointer;
+      transition: color .15s ease, border-color .15s ease, background .15s ease;
+    }
+
+    #themeBtn:hover {
+      color: var(--text);
+      border-color: var(--accent);
+      background: var(--panel-2);
+    }
+
+    #themeBtn svg { display: block; }
+
+    /* Sun in dark mode, moon in light mode (the theme you'd switch to). */
+    #themeBtn .ic-moon { display: none; }
+    :root[data-theme="light"] #themeBtn .ic-sun { display: none; }
+    :root[data-theme="light"] #themeBtn .ic-moon { display: block; }
+
     header h1 {
       margin: 0 0 6px;
       font-size: 24px;
+      padding-right: 52px;
     }
 
     header p {
@@ -300,7 +377,7 @@
       top: 8px;
       right: 8px;
       background: var(--winner);
-      color: #052e16;
+      color: var(--on-fill);
       font-size: 10px;
       font-weight: 700;
       padding: 2px 8px;
@@ -377,7 +454,7 @@
     }
 
     .warning {
-      background: rgba(251, 191, 36, 0.1);
+      background: var(--warn-box);
       border: 1px solid var(--warn);
       color: var(--warn);
       border-radius: 4px;
@@ -486,22 +563,22 @@
     }
 
     .model-card .badge.api {
-      background: rgba(96, 165, 250, 0.2);
+      background: var(--api-tint);
       color: var(--api);
     }
 
     .model-card .badge.open {
-      background: rgba(167, 139, 250, 0.2);
+      background: var(--selfhost-tint);
       color: var(--selfhost);
     }
 
     .model-card .badge.preview {
-      background: rgba(251, 191, 36, 0.2);
+      background: var(--warn-tint);
       color: var(--warn);
     }
 
     .model-card .badge.deprecated {
-      background: rgba(248, 113, 113, 0.2);
+      background: var(--bad-tint);
       color: var(--bad);
     }
 
@@ -645,7 +722,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #052e16;
+      color: var(--on-fill);
       font-size: 9px;
       font-weight: 700;
       overflow: hidden;
@@ -657,6 +734,9 @@
 
   <header>
     <a class="backlink" href="index.html" aria-label="Back to all tools" title="Back to all tools"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></a>
+    <div class="header-actions">
+      <button id="themeBtn" title="Toggle light / dark theme" aria-label="Toggle light / dark theme"><svg class="ic-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg><svg class="ic-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
+    </div>
     <h1>Gen AI Deployment Options &amp; Estimates</h1>
     <p>Compare <b style="color:var(--api)">Vertex AI managed APIs</b> (Gemini, Claude, partner models) vs <b
         style="color:var(--selfhost)">GCP self-host</b> (open weights on GPU VMs with CUD/spot) vs <b
@@ -1829,6 +1909,22 @@
       el.addEventListener('change', render);
     });
     render();
+
+    // Theme toggle. The choice is shared site-wide under the 'theme' key; with none saved,
+    // the boot script and this listener follow the OS setting. All colours are CSS variables,
+    // so the page re-themes live with no re-render.
+    (function () {
+      function setTheme(t, persist) {
+        document.documentElement.setAttribute('data-theme', t);
+        if (persist) localStorage.setItem('theme', t);
+      }
+      document.getElementById('themeBtn').addEventListener('click', function () {
+        setTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light', true);
+      });
+      window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function (e) {
+        if (!localStorage.getItem('theme')) setTheme(e.matches ? 'light' : 'dark', false);
+      });
+    })();
 
   </script>
 

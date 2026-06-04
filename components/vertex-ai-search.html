@@ -5,6 +5,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vertex AI Search in agentic systems</title>
+    <script>
+    /* Resolve the theme before first paint to avoid a flash. 'theme' is shared across all
+       pages; it is set only when the user has explicitly chosen, absent means follow the OS. */
+    (function () {
+      var saved = localStorage.getItem('theme');
+      var t = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <style>
     :root {
       --bg: #0f1419;
@@ -18,6 +27,23 @@
       --warn: #d29922;
       --err: #f85149;
       --data: #e6c84c;
+    }
+
+    /* Light theme. Dark above stays the default, so pages are unchanged in dark mode. */
+    :root { --accent-tint: rgba(76, 154, 255, .08); }
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --panel: #f6f8fa;
+      --panel2: #eaeef2;
+      --border: #d0d7de;
+      --muted: #57606a;
+      --text: #1f2328;
+      --accent: #0969da;
+      --ok: #1a7f37;
+      --warn: #9a6700;
+      --err: #cf222e;
+      --data: #9a7d0a;
+      --accent-tint: rgba(9, 105, 218, .08);
     }
 
     * { box-sizing: border-box; }
@@ -103,7 +129,7 @@
     li { margin: 3px 0; }
 
     .note {
-      background: rgba(76, 154, 255, .08);
+      background: var(--accent-tint);
       border: 1px solid var(--border);
       border-left: 3px solid var(--accent);
       border-radius: 6px;

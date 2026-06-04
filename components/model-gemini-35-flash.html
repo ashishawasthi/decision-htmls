@@ -5,8 +5,34 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gemini 3.5 Flash in agentic systems</title>
+    <script>
+    /* Resolve the theme before first paint to avoid a flash. 'theme' is shared across all
+       pages; it is set only when the user has explicitly chosen, absent means follow the OS. */
+    (function () {
+      var saved = localStorage.getItem('theme');
+      var t = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <style>
     :root { --bg:#0f1419; --panel:#161b22; --panel2:#1c2430; --border:#2a3441; --muted:#8b98a8; --text:#e6edf3; --accent:#4c9aff; --ok:#3fb950; --warn:#d29922; --err:#f85149; --data:#e6c84c; }
+
+    /* Light theme. Dark above stays the default, so pages are unchanged in dark mode. */
+    :root { --accent-tint: rgba(76, 154, 255, .08); }
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --panel: #f6f8fa;
+      --panel2: #eaeef2;
+      --border: #d0d7de;
+      --muted: #57606a;
+      --text: #1f2328;
+      --accent: #0969da;
+      --ok: #1a7f37;
+      --warn: #9a6700;
+      --err: #cf222e;
+      --data: #9a7d0a;
+      --accent-tint: rgba(9, 105, 218, .08);
+    }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; line-height:1.6; }
     main { max-width:880px; margin:0 auto; padding:40px 24px 80px; }
@@ -33,7 +59,7 @@
     .card h3 { margin-top:0; }
     ul { margin:6px 0; padding-left:20px; }
     li { margin:3px 0; }
-    .note { background:rgba(76,154,255,.08); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:6px; padding:10px 14px; font-size:13.5px; color:var(--muted); margin:14px 0; }
+    .note { background:var(--accent-tint); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:6px; padding:10px 14px; font-size:13.5px; color:var(--muted); margin:14px 0; }
     .note b { color:var(--text); }
     a.src { color:var(--accent); text-decoration:none; }
     a.src:hover { text-decoration:underline; }

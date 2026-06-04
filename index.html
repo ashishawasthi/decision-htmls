@@ -5,6 +5,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gen AI System Decisions</title>
+  <script>
+    /* Resolve the theme before first paint to avoid a flash. 'theme' is shared across all
+       pages; it is set only when the user has explicitly chosen, absent means follow the OS. */
+    (function () {
+      var saved = localStorage.getItem('theme');
+      var theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
   <style>
     :root {
       --bg: #0f1115;
@@ -19,6 +28,22 @@
       --onprem: #f472b6;
       --bar: #3b82f6;
       --design: #7c5cff;
+    }
+
+    /* Light palette. Dark above stays the default, so the page is unchanged in dark mode. */
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --panel: #f6f8fa;
+      --panel-2: #eaeef2;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --muted: #57606a;
+      --accent: #0969da;
+      --api: #0969da;
+      --selfhost: #6639ba;
+      --onprem: #c2255c;
+      --bar: #0969da;
+      --design: #6639ba;
     }
 
     * {
@@ -37,11 +62,58 @@
     }
 
     header {
+      position: relative;
       padding: 48px 32px 24px;
       border-bottom: 1px solid var(--border);
       max-width: 1100px;
       margin: 0 auto;
       width: 100%;
+    }
+
+    .header-actions {
+      position: absolute;
+      top: 44px;
+      right: 32px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #themeBtn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--muted);
+      cursor: pointer;
+      transition: color .15s ease, border-color .15s ease, background .15s ease;
+    }
+
+    #themeBtn:hover {
+      color: var(--text);
+      border-color: var(--accent);
+      background: var(--panel-2);
+    }
+
+    #themeBtn svg {
+      display: block;
+    }
+
+    /* Sun in dark mode, moon in light mode (the theme you'd switch to). */
+    #themeBtn .ic-moon {
+      display: none;
+    }
+
+    :root[data-theme="light"] #themeBtn .ic-sun {
+      display: none;
+    }
+
+    :root[data-theme="light"] #themeBtn .ic-moon {
+      display: block;
     }
 
     header .eyebrow {
@@ -204,7 +276,7 @@
     footer .disclaimer {
       margin-top: 10px;
       font-size: 11px;
-      color: #6b7280;
+      color: var(--muted);
       max-width: 820px;
     }
 
@@ -221,6 +293,18 @@
     <div class="eyebrow">Interactive Tools on Static Pages</div>
     <h1>Gen AI System Decisions</h1>
     <p>Companion tools for thinking through GenAI system decisions and troubleshooting on Google Cloud</p>
+    <div class="header-actions">
+      <button id="themeBtn" title="Toggle light / dark theme" aria-label="Toggle light / dark theme"><svg class="ic-sun"
+          viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4" />
+          <path
+            d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+        </svg><svg class="ic-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg></button>
+    </div>
   </header>
 
   <main>
@@ -289,6 +373,24 @@
       <a href="DISCLAIMER.md">full disclaimer</a>.
     </p>
   </footer>
+
+  <script>
+    /* Theme toggle. The choice is shared site-wide under the 'theme' key; with none saved,
+       the boot script (and this listener) follow the OS setting. */
+    (function () {
+      var btn = document.getElementById('themeBtn');
+      function setTheme(t, persist) {
+        document.documentElement.setAttribute('data-theme', t);
+        if (persist) localStorage.setItem('theme', t);
+      }
+      btn.addEventListener('click', function () {
+        setTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light', true);
+      });
+      window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function (e) {
+        if (!localStorage.getItem('theme')) setTheme(e.matches ? 'light' : 'dark', false);
+      });
+    })();
+  </script>
 
 </body>
 

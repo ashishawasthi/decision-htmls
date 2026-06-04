@@ -6,10 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Agentic System Designer - GCP</title>
   <script>
-    /* Resolve the theme before first paint to avoid a flash. 'asd-theme' is set only
+    /* Resolve the theme before first paint to avoid a flash. 'theme' is set only
        when the user has explicitly chosen; absent means follow the OS setting. */
     (function () {
-      var saved = localStorage.getItem('asd-theme');
+      var saved = localStorage.getItem('theme');
       var theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
       document.documentElement.setAttribute('data-theme', theme);
     })();
@@ -2872,14 +2872,14 @@
     // baked into the SVG, so it has to be rebuilt for the new theme).
     function setTheme(theme, persist) {
       document.documentElement.setAttribute('data-theme', theme);
-      if (persist) localStorage.setItem('asd-theme', theme);
+      if (persist) localStorage.setItem('theme', theme);
       applyDiagramTheme();
       if (mermaidOK) renderDiagram();
     }
     $('#themeBtn').addEventListener('click', () => setTheme(isLightTheme() ? 'dark' : 'light', true));
     // With no explicit choice saved, follow the OS setting live.
     window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', e => {
-      if (!localStorage.getItem('asd-theme')) setTheme(e.matches ? 'light' : 'dark', false);
+      if (!localStorage.getItem('theme')) setTheme(e.matches ? 'light' : 'dark', false);
     });
 
     /* ===================== Self-test ===================== */
