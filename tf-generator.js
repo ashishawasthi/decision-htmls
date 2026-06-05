@@ -104,7 +104,7 @@
   function usesSpanner(s) { return s.stateStore === 'spanner' || s.stateStore.indexOf('redis_spanner') >= 0; }
   function usesCloudSql(s) { return s.stateStore === 'cloudsql'; }
   function networkUser(s) { return usesAlloy(s) || s.managedRedis || s.gke || s.selfHost || s.hybrid; }
-  function createVpc(s) { return s.dedicatedVpc && networkUser(s); }
+  function createVpc(s) { return (s.dedicatedVpc || s.hybrid) && networkUser(s); }   // hybrid always needs a VPC for the Cloud Router
   function netName(s) { return createVpc(s) ? 'google_compute_network.vpc.id' : '"default"'; }                                   // GKE network field (name or self-link)
   function netRef(s) { return createVpc(s) ? 'google_compute_network.vpc.id' : '"projects/${var.project_id}/global/networks/default"'; } // AlloyDB / Redis / PSA (full network id)
 
@@ -1246,9 +1246,18 @@
       L.push('');
       L.push('After the attachment is up, add a `google_compute_router_peer` using the IPs the attachment');
       L.push('allocates (`cloud_router_ip_address` / `customer_router_ip_address`) and your on-prem ASN to');
-      L.push('bring up the BGP session. If the agent runs on Cloud Run, add a Serverless VPC Access');
-      L.push('connector so it can reach private IPs across the link.');
+      L.push('bring up the BGP session.');
       L.push('');
+      if (s.runtime === 'agentengine') {
+        L.push('IMPORTANT - Cloud Run runtime: this design runs the agent on Agent Engine (Cloud Run), which');
+        L.push('is NOT in the VPC, so the interconnect alone does not connect it to on-premise. Before the');
+        L.push('agent can reach on-prem systems (or be reached from on-prem) over the link you must add a');
+        L.push('Serverless VPC Access connector in the VPC and a `vpc_access` block on the Cloud Run service');
+        L.push('(egress), plus an internal Application Load Balancer or Private Service Connect for on-prem');
+        L.push('to reach the agent (ingress). The firewall and router below govern VPC-resident targets.');
+        L.push('Switching the Agent Runtime to GKE puts the agent in the VPC and avoids this extra wiring.');
+        L.push('');
+      }
     }
     L.push('## On-prem data integration');
     L.push('');
