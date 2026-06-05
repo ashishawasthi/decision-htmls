@@ -180,6 +180,18 @@
       display: inline-block
     }
 
+    /* line-style swatches: match the architecture diagram's solid (request path) vs dotted (off-path) edges */
+    .legend i.ln {
+      width: 16px;
+      height: 0;
+      border-radius: 0;
+      border-top: 2px solid currentColor
+    }
+
+    .legend i.ln.dotted {
+      border-top-style: dotted
+    }
+
     main {
       display: grid;
       grid-template-columns: minmax(360px, 420px) 1fr;
@@ -1032,6 +1044,8 @@
       <span><i style="background:var(--data)"></i>data</span>
       <span><i style="background:var(--obs)"></i>observability</span>
       <span><i style="background:var(--gov)"></i>governance</span>
+      <span><i class="ln"></i>request path</span>
+      <span><i class="ln dotted"></i>async / off-path</span>
       <span><b>⊕</b> drill in</span>
       <span><span class="tag" style="margin:0">blue</span> driving input</span>
     </div>
@@ -2046,7 +2060,7 @@
             L.push(node('Idx', `Index sources<br/>${idxSel.map(s => INDEXED_LABEL[s]).join(' / ')}`, 'data'));
             L.push('GCS -. source docs .-> Idx');
             if (o.ragEngine === 'vais') { L.push('Idx -. crawl + parse + embed .-> Store'); }
-            else { L.push(node('DocAI', 'Document AI', 'data')); L.push(node('Emb', 'Chunk + embed', 'data')); L.push('Idx --> DocAI'); L.push('DocAI --> Emb'); L.push('Emb -. write .-> Store'); }
+            else { L.push(node('DocAI', 'Document AI', 'data')); L.push(node('Emb', 'Chunk + embed', 'data')); L.push('Idx -.-> DocAI'); L.push('DocAI -.-> Emb'); L.push('Emb -. write .-> Store'); }   // whole ingestion branch is offline, so dotted throughout
           }
         }
         if (liveSel.length) { L.push(node('Live', `Live data<br/>${liveSel.map(s => SRC_LABEL[s]).join(' · ')}`, 'data')); L.push(`${liveReader} --> Live`); }
@@ -2170,12 +2184,12 @@
         // Spanner durable tier is managed (reached via a PSC endpoint), so it sits outside the VPC even though Redis is inside
         if (stateSpanner) { L.push(node('StateDur', 'Spanner<br/>active-active durable', 'data', 'cyl')); L.push('State -. durable .-> StateDur'); }
         kmsNode();   // CMEK edges, emitted once every managed data store above is declared
-        L.push(node('Obs', 'Observability', 'obs')); L.push('AE --> Obs');
+        L.push(node('Obs', 'Observability', 'obs')); L.push('AE -. traces .-> Obs');
         closePerim();
         // cross-boundary entry edge (ingress into the perimeter) and human review (outside)
         L.push(cacheOn ? 'Cache -- miss --> Orchestrator' : `${head} --> Orchestrator`);
-        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push('Validator --> Appr'); }
-        if (o.feedbackLoop) { L.push(node('Fb', 'Feedback → eval', 'gov')); L.push('Obs --> Fb'); }
+        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push('Validator -. review .-> Appr'); }
+        if (o.feedbackLoop) { L.push(node('Fb', 'Feedback → eval', 'gov')); L.push('Obs -. evals .-> Fb'); }
       } else {
         L.push(node('Trig', 'Trigger (ticket/event)', 'client'));
         let head = 'Trig';
@@ -2205,7 +2219,7 @@
         // Spanner durable tier is managed (reached via a PSC endpoint), so it sits outside the VPC even though Redis is inside
         if (stateSpanner) { L.push(node('StateDur', 'Spanner<br/>active-active durable', 'data', 'cyl')); L.push('State -. durable .-> StateDur'); }
         kmsNode();   // CMEK edges, emitted once every managed data store above is declared
-        L.push(node('Obs', 'Observability', 'obs')); L.push('AE --> Obs');
+        L.push(node('Obs', 'Observability', 'obs')); L.push('AE -. traces .-> Obs');
         closePerim();
         L.push(cacheOn ? 'Cache -- miss --> Orchestrator' : `${head} --> Orchestrator`);
         // human review of the quality gate (outside the perimeter), with resume back into the agent
@@ -3155,6 +3169,8 @@
       assert('self-built restores the pipeline BOM + knobs', bomHtml().includes('Vertex AI Vector Search') && bomHtml().includes('Document AI') && bomHtml().includes('BM25') && visibleInputs().selfbuilt === true);
       const dgS = buildMainDiagram();
       assert('self-built diagram shows Document AI to vector store', /Document AI/.test(dgS) && /Chunk \+ embed/.test(dgS) && /Vector store \+ BM25/.test(dgS) && /-\. write \.->/.test(dgS));
+      // the ingestion branch is offline, so every edge in it is dotted - no solid Idx->DocAI->Emb steps
+      assert('self-built ingestion is drawn as a fully dotted offline branch', /Idx -\.-> DocAI/.test(dgS) && /DocAI -\.-> Emb/.test(dgS) && !/Idx --> DocAI/.test(dgS) && !/DocAI --> Emb/.test(dgS));
       assert('self-built shows the retrieval funnel', /Retrieval funnel/.test(dgS));
       applyPreset('assistant', 'expert_copilot'); state.overrides.deployment = 'onprem'; deriveOverrides();
       assert('on-prem forces the self-built engine', state.overrides.ragEngine === 'selfbuilt' && !!state.locks.ragEngine);
@@ -3279,8 +3295,11 @@
         // Cross-cutting platform connections attach to the Agent Engine as a whole, matching the
         // Terraform where one runtime service account holds aiplatform.user, secretmanager.secretAccessor,
         // logging.logWriter, and cloudtrace.agent - not the orchestrator/generator/validator individually.
-        assert('model leg, observability, and state attach to the Agent Engine, not one component', /AE --> Armor/.test(dvpc) && /Armor --> LLM/.test(dvpc) && /AE --> Obs/.test(dvpc) && /AE -\. state \.-> State/.test(dvpc));
+        assert('model leg, observability, and state attach to the Agent Engine, not one component', /AE --> Armor/.test(dvpc) && /Armor --> LLM/.test(dvpc) && /AE -\. traces \.-> Obs/.test(dvpc) && /AE -\. state \.-> State/.test(dvpc));
         assert('the old per-component runtime edges are gone', !/Generator --> Armor/.test(dvpc) && !/Validator --> Obs/.test(dvpc) && !/Generator -\. session/.test(dvpc));
+        // Line style is consistent: solid = synchronous request path (model leg stays solid); dotted = off
+        // the request path. Telemetry and the feedback loop are off-path, so they are dotted, not solid.
+        assert('telemetry and feedback are dotted (off the request path), the model leg stays solid', /AE -\. traces \.-> Obs/.test(dvpc) && /Obs -\. evals \.-> Fb/.test(dvpc) && !/--> Obs/.test(dvpc) && !/Obs --> Fb/.test(dvpc) && /AE --> Armor/.test(dvpc));
         // CMEK reaches every managed store drawn: Cloud Storage and the managed AlloyDB state tier here.
         // The Redis-on-GKE cache is self-hosted, so it takes no key edge, and there is no combined box.
         assert('CMEK encrypts Cloud Storage and the managed state store', /KMS\["Cloud KMS \(CMEK\)"\]/.test(dvpc) && /KMS -\. encrypts \.-> GCS/.test(dvpc) && /KMS -\. encrypts \.-> State/.test(dvpc));
