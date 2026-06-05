@@ -12,9 +12,10 @@
  *     and the response cache (Redis) can be self-hosted in the same cluster so the agent reaches them
  *     over in-cluster DNS. Two-phase apply (cluster first).
  *
- * Scope: Google Cloud only. On-prem data integration is documented in the README as guidelines,
- * never provisioned. The agent code is generic: the task wording, the grounding source, and the
- * model ids come from config, not from the code.
+ * Scope: Google Cloud only. The Hybrid deployment additionally emits the cloud-side bridge to an
+ * existing Cloud Interconnect (Cloud Router, VLAN attachment, firewall, private DNS), gated on tfvars;
+ * the on-prem database itself is still the customer's. The agent code is generic: the task wording,
+ * the grounding source, and the model ids come from config, not from the code.
  *
  * Style constraint: plain ASCII only in everything this file emits. No long dash, no curly quote,
  * no ellipsis.
@@ -87,6 +88,10 @@
       dedicatedVpc: spec.dedicatedVpc !== false
     };
     // derived deployment shape
+    // Hybrid is a connectivity mode: the same managed system plus a cloud-side bridge to an existing
+    // Cloud Interconnect (Cloud Router + VLAN attachment + firewall + private DNS), so on-premise users
+    // can reach the system and it can reach on-prem systems. It needs a VPC to attach the router to.
+    s.hybrid = spec.deployment === 'hybrid';
     s.gke = s.runtime === 'gke';
     s.selfHostSearch = s.retrievalOn && s.ragEngine === 'selfbuilt' && s.vectorDB === 'elastic' && s.gke;
     s.selfHostCache = s.gke && s.needsRedis;
@@ -98,7 +103,7 @@
   function usesAlloy(s) { return s.stateStore.indexOf('alloydb') >= 0; }
   function usesSpanner(s) { return s.stateStore === 'spanner' || s.stateStore.indexOf('redis_spanner') >= 0; }
   function usesCloudSql(s) { return s.stateStore === 'cloudsql'; }
-  function networkUser(s) { return usesAlloy(s) || s.managedRedis || s.gke || s.selfHost; }
+  function networkUser(s) { return usesAlloy(s) || s.managedRedis || s.gke || s.selfHost || s.hybrid; }
   function createVpc(s) { return s.dedicatedVpc && networkUser(s); }
   function netName(s) { return createVpc(s) ? 'google_compute_network.vpc.id' : '"default"'; }                                   // GKE network field (name or self-link)
   function netRef(s) { return createVpc(s) ? 'google_compute_network.vpc.id' : '"projects/${var.project_id}/global/networks/default"'; } // AlloyDB / Redis / PSA (full network id)
@@ -127,6 +132,7 @@
     if (s.gke || s.selfHost) apis.push('container.googleapis.com');
     if (networkUser(s)) apis.push('compute.googleapis.com');
     if (usesAlloy(s)) apis.push('servicenetworking.googleapis.com');
+    if (s.hybrid) apis.push('dns.googleapis.com');
     return apis;
   }
 
@@ -207,6 +213,13 @@
     v('gateway_image', 'string', q('us-docker.pkg.dev/cloudrun/container/hello'), 'Container image for the agent service. Replace with your build of the agent/ directory.');
     v('labels', 'map(string)', '{\n    managed-by = "agentic-system-designer"\n  }', 'Labels applied to resources that support them.');
     if (s.enforceVpcSc) v('access_policy_id', 'string', q(''), 'Access Context Manager access policy id (org or folder scoped). Set to create the VPC-SC perimeter; leave empty to deploy without it.');
+    if (s.hybrid) {
+      v('onprem_interconnect', 'string', q(''), 'Self-link of your existing Cloud Interconnect (Dedicated) to attach to. Leave empty to deploy without the on-prem link; set it to create the VLAN attachment and BGP session.');
+      v('onprem_cidrs', 'list(string)', '[]', 'On-premise IP ranges allowed to reach the system over the interconnect. Empty disables the on-prem ingress firewall rule.');
+      v('cloud_router_asn', 'number', '64514', 'BGP ASN for the Cloud Router that peers with your on-prem edge.');
+      v('onprem_dns_domain', 'string', q(''), 'On-premise DNS domain to forward from the VPC (for example corp.example.com.). Needs onprem_dns_servers too; empty skips the private forwarding zone.');
+      v('onprem_dns_servers', 'list(string)', '[]', 'On-premise DNS server IPs the forwarding zone targets. Empty skips the private forwarding zone.');
+    }
     return blocks.join('\n\n') + '\n';
   }
 
@@ -224,6 +237,14 @@
       'validation_instruction = ' + q(s.validationInstruction)
     ];
     if (s.enforceVpcSc) lines.push('# access_policy_id     = "ACCESS_POLICY_NUMERIC_ID"  # set to create the VPC-SC perimeter');
+    if (s.hybrid) {
+      lines.push('# Hybrid on-prem link. Set these to connect the system to your existing Cloud Interconnect.');
+      lines.push('# onprem_interconnect  = "projects/PROJECT/global/interconnects/NAME"  # existing interconnect self-link');
+      lines.push('# onprem_cidrs         = ["10.0.0.0/8"]  # on-prem ranges allowed to reach the system');
+      lines.push('# cloud_router_asn     = 64514');
+      lines.push('# onprem_dns_domain    = "corp.example.com."');
+      lines.push('# onprem_dns_servers   = ["10.0.0.53"]  # on-prem DNS server IPs to forward to');
+    }
     return lines.join('\n') + '\n';
   }
 
@@ -982,6 +1003,85 @@
       ].join('\n'));
     }
 
+    if (s.hybrid) {
+      // Cloud-side bridge to an existing Cloud Interconnect so on-premise users can reach the system
+      // (and it can reach on-prem). Every resource is gated on its tfvars, so an unset bundle still
+      // plans clean (count 0). The BGP peer - peer IP is allocated by the attachment, the on-prem ASN
+      // is site-specific - is added per the README once the attachment is up.
+      B.push([
+        '# Cloud Router that peers with your on-prem edge over the interconnect.',
+        'resource "google_compute_router" "onprem" {',
+        '  count   = var.onprem_interconnect == "" ? 0 : 1',
+        '  name    = "${local.name}-cr"',
+        '  region  = var.region',
+        '  network = ' + netName(s),
+        '  bgp {',
+        '    asn = var.cloud_router_asn',
+        '  }',
+        DEP,
+        '}',
+        '',
+        '# VLAN attachment riding your existing Dedicated Interconnect.',
+        'resource "google_compute_interconnect_attachment" "onprem" {',
+        '  count        = var.onprem_interconnect == "" ? 0 : 1',
+        '  name         = "${local.name}-vlan"',
+        '  region       = var.region',
+        '  type         = "DEDICATED"',
+        '  router       = google_compute_router.onprem[0].id',
+        '  interconnect = var.onprem_interconnect',
+        '}',
+        '',
+        'resource "google_compute_router_interface" "onprem" {',
+        '  count                   = var.onprem_interconnect == "" ? 0 : 1',
+        '  name                    = "${local.name}-if"',
+        '  region                  = var.region',
+        '  router                  = google_compute_router.onprem[0].name',
+        '  interconnect_attachment = google_compute_interconnect_attachment.onprem[0].name',
+        '}'
+      ].join('\n'));
+
+      B.push([
+        '# Allow your on-prem ranges to reach the system over the interconnect.',
+        'resource "google_compute_firewall" "allow_onprem" {',
+        '  count         = length(var.onprem_cidrs) > 0 ? 1 : 0',
+        '  name          = "${local.name}-allow-onprem"',
+        '  network       = ' + netName(s),
+        '  direction     = "INGRESS"',
+        '  source_ranges = var.onprem_cidrs',
+        '  allow {',
+        '    protocol = "tcp"',
+        '    ports    = ["80", "443", "8080"]',
+        '  }',
+        DEP,
+        '}'
+      ].join('\n'));
+
+      B.push([
+        '# Resolve on-prem hostnames inside the VPC by forwarding the on-prem domain to your resolvers.',
+        'resource "google_dns_managed_zone" "onprem_forward" {',
+        '  count       = var.onprem_dns_domain != "" && length(var.onprem_dns_servers) > 0 ? 1 : 0',
+        '  name        = "${local.name}-onprem"',
+        '  dns_name    = var.onprem_dns_domain',
+        '  description = "Forward on-prem domain resolution across the interconnect."',
+        '  visibility  = "private"',
+        '  private_visibility_config {',
+        '    networks {',
+        '      network_url = ' + netRef(s),
+        '    }',
+        '  }',
+        '  forwarding_config {',
+        '    dynamic "target_name_servers" {',
+        '      for_each = toset(var.onprem_dns_servers)',
+        '      content {',
+        '        ipv4_address = target_name_servers.value',
+        '      }',
+        '    }',
+        '  }',
+        DEP,
+        '}'
+      ].join('\n'));
+    }
+
     if (s.enforceVpcSc) {
       B.push([
         '# VPC Service Controls perimeter. Needs an Access Context Manager access policy at the',
@@ -1021,6 +1121,7 @@
       outs.push(['agent_endpoint', 'try(kubernetes_service_v1.agent.status[0].load_balancer[0].ingress[0].ip, "pending")', 'LoadBalancer IP of the agent service (after the second apply phase).']);
     }
     if (createVpc(s)) outs.push(['network', 'google_compute_network.vpc.name', 'Dedicated VPC network.']);
+    if (s.hybrid) outs.push(['onprem_vlan_attachment', 'try(google_compute_interconnect_attachment.onprem[0].name, "not configured - set onprem_interconnect")', 'VLAN attachment bridging to your on-prem interconnect.']);
     if (s.managedSearch && s.hasUnstructured) outs.push(['docs_data_store', 'google_discovery_engine_data_store.docs.data_store_id', 'Unstructured docs data store id.']);
     if (s.managedSearch && s.hasWebsite) outs.push(['site_data_store', 'google_discovery_engine_data_store.site.data_store_id', 'Owned site data store id.']);
     var blocks = outs.map(function (o) {
@@ -1128,13 +1229,37 @@
       L.push('2. Wire your own grounding source; this design has no managed search index.');
     }
     L.push('');
-    L.push('## On-prem data integration (guidelines, not provisioned)');
+    if (s.hybrid) {
+      L.push('## Hybrid: connecting to your existing Cloud Interconnect');
+      L.push('');
+      L.push('This bundle emits the cloud-side bridge to your on-premise network: a Cloud Router, a VLAN');
+      L.push('attachment on your existing Dedicated Interconnect, an ingress firewall rule, and a private');
+      L.push('DNS forwarding zone. Every piece is gated on a variable, so an unset apply is a no-op for the');
+      L.push('bridge. To turn it on, set in `terraform.tfvars`:');
+      L.push('');
+      L.push('- `onprem_interconnect` - self-link of your existing Cloud Interconnect (creates the Cloud');
+      L.push('  Router and the VLAN attachment). Partner Interconnect uses a pairing key instead; adjust');
+      L.push('  the attachment block if so.');
+      L.push('- `onprem_cidrs` - on-prem IP ranges allowed to reach the system (creates the firewall rule).');
+      L.push('- `cloud_router_asn` - the BGP ASN for the Cloud Router (default 64514).');
+      L.push('- `onprem_dns_domain` + `onprem_dns_servers` - to forward on-prem name resolution into the VPC.');
+      L.push('');
+      L.push('After the attachment is up, add a `google_compute_router_peer` using the IPs the attachment');
+      L.push('allocates (`cloud_router_ip_address` / `customer_router_ip_address`) and your on-prem ASN to');
+      L.push('bring up the BGP session. If the agent runs on Cloud Run, add a Serverless VPC Access');
+      L.push('connector so it can reach private IPs across the link.');
+      L.push('');
+    }
+    L.push('## On-prem data integration');
     L.push('');
-    L.push('This Terraform does not provision any on-prem database or the network link to it. To wire an');
-    L.push('on-prem source into this system:');
+    L.push('This Terraform does not provision your on-prem database. To wire an on-prem source into this');
+    L.push('system' + (s.hybrid ? ' over the interconnect bridge above' : '') + ':');
     L.push('');
-    L.push('- Connectivity: set up Cloud VPN (HA VPN) or Cloud Interconnect between your VPC and the');
-    L.push('  on-prem network. Add a Serverless VPC Access connector so Cloud Run can reach private IPs.');
+    if (!s.hybrid) {
+      L.push('- Connectivity: set up Cloud VPN (HA VPN) or Cloud Interconnect between your VPC and the');
+      L.push('  on-prem network. Add a Serverless VPC Access connector so Cloud Run can reach private IPs.');
+      L.push('  (Select the Hybrid deployment in the designer to have the interconnect bridge emitted.)');
+    }
     L.push('- Firewall and routes: allow the agent egress range to the database host and port only.');
     L.push('- DNS: use Cloud DNS private zones or peering so the on-prem hostname resolves inside the VPC.');
     L.push('- Credentials: store the database user and password in Secret Manager' + (s.hasOnprem ? ' (the `onprem-db` secret is created for this)' : '') + ' and grant the agent service account access.');
