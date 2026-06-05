@@ -345,6 +345,24 @@
         '  member        = "serviceAccount:${data.google_storage_project_service_account.gcs.email_address}"',
         '}'
       ].join('\n'));
+      // Grant every other managed store's service agent encrypt/decrypt on the key. service_identity
+      // (google-beta) provisions the agent so the binding exists before the store is created; each
+      // store then references the key (added per resource below). Self-hosted stores get no binding.
+      var kmsAgent = function (name, service, member) {
+        var idRes = service
+          ? 'resource "google_project_service_identity" "' + name + '" {\n  provider = google-beta\n  service  = ' + q(service) + '\n' + DEP + '\n}\n\n'
+          : '';
+        return idRes +
+          'resource "google_kms_crypto_key_iam_member" "' + name + '" {\n' +
+          '  crypto_key_id = google_kms_crypto_key.key.id\n' +
+          '  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"\n' +
+          '  member        = "serviceAccount:' + member + '"\n}';
+      };
+      if (usesAlloy(s)) B.push(kmsAgent('alloydb', 'alloydb.googleapis.com', '${google_project_service_identity.alloydb.email}'));
+      if (usesSpanner(s)) B.push(kmsAgent('spanner', 'spanner.googleapis.com', '${google_project_service_identity.spanner.email}'));
+      if (usesCloudSql(s)) B.push(kmsAgent('cloudsql', 'sqladmin.googleapis.com', '${google_project_service_identity.cloudsql.email}'));
+      if (s.managedRedis) B.push(kmsAgent('redis', 'redis.googleapis.com', '${google_project_service_identity.redis.email}'));
+      B.push('data "google_bigquery_default_service_account" "bq" {}\n\n' + kmsAgent('bigquery', null, '${data.google_bigquery_default_service_account.bq.email}'));
     }
 
     var enc = s.cmek ? ['  encryption {', '    default_kms_key_name = google_kms_crypto_key.key.id', '  }'].join('\n') : '';
@@ -787,6 +805,8 @@
     }
 
     if (usesAlloy(s)) {
+      var alloyEnc = s.cmek ? ['  encryption_config {', '    kms_key_name = google_kms_crypto_key.key.id', '  }'] : [];
+      var alloyDeps = s.cmek ? 'google_service_networking_connection.psa, google_kms_crypto_key_iam_member.alloydb' : 'google_service_networking_connection.psa';
       B.push([
         'resource "google_alloydb_cluster" "state" {',
         '  cluster_id      = "${local.name}-state"',
@@ -794,8 +814,9 @@
         '  deletion_policy = "FORCE"',
         '  network_config {',
         '    network = ' + netRef(s),
-        '  }',
-        '  depends_on = [google_service_networking_connection.psa]',
+        '  }'
+      ].concat(alloyEnc).concat([
+        '  depends_on = [' + alloyDeps + ']',
         '}',
         '',
         'resource "google_alloydb_instance" "state" {',
@@ -806,8 +827,9 @@
         '    cpu_count = 2',
         '  }',
         '}'
-      ].join('\n'));
+      ]).join('\n'));
     } else if (usesSpanner(s)) {
+      var spanEnc = s.cmek ? ['  encryption_config {', '    kms_key_name = google_kms_crypto_key.key.id', '  }', '  depends_on = [google_kms_crypto_key_iam_member.spanner]'] : [];
       B.push([
         'resource "google_spanner_instance" "state" {',
         '  name             = "${local.name}-state"',
@@ -819,46 +841,54 @@
         '',
         'resource "google_spanner_database" "state" {',
         '  instance = google_spanner_instance.state.name',
-        '  name     = "agent"',
-        '}'
-      ].join('\n'));
+        '  name     = "agent"'
+      ].concat(spanEnc).concat(['}']).join('\n'));
     } else if (usesCloudSql(s)) {
+      var sqlEnc = s.cmek ? ['  encryption_key_name = google_kms_crypto_key.key.id'] : [];
+      var sqlDep = s.cmek ? '  depends_on = [google_project_service.enabled, google_kms_crypto_key_iam_member.cloudsql]' : DEP;
       B.push([
         'resource "google_sql_database_instance" "state" {',
         '  name                = "${local.name}-state"',
         '  region              = var.region',
         '  database_version    = "POSTGRES_15"',
-        '  deletion_protection = false',
+        '  deletion_protection = false'
+      ].concat(sqlEnc).concat([
         '  settings {',
         '    tier = "db-custom-2-7680"',
         '  }',
-        DEP,
+        sqlDep,
         '}'
-      ].join('\n'));
+      ]).join('\n'));
     }
 
     if (s.managedRedis) {
+      var redisEnc = s.cmek ? ['  customer_managed_key = google_kms_crypto_key.key.id'] : [];
+      var redisDep = s.cmek ? '  depends_on = [google_project_service.enabled, google_kms_crypto_key_iam_member.redis]' : DEP;
       B.push([
         'resource "google_redis_instance" "cache" {',
         '  name               = "${local.name}-cache"',
         '  tier               = "BASIC"',
         '  memory_size_gb     = 1',
         '  region             = var.region',
-        '  authorized_network = ' + netRef(s),
-        DEP,
+        '  authorized_network = ' + netRef(s)
+      ].concat(redisEnc).concat([
+        redisDep,
         '}'
-      ].join('\n'));
+      ]).join('\n'));
     }
 
+    var bqEnc = s.cmek ? ['  default_encryption_configuration {', '    kms_key_name = google_kms_crypto_key.key.id', '  }'] : [];
+    var bqDep = s.cmek ? '  depends_on = [google_project_service.enabled, google_kms_crypto_key_iam_member.bigquery]' : DEP;
     B.push([
       'resource "google_bigquery_dataset" "feedback" {',
       '  dataset_id                 = replace("${local.name}_feedback", "-", "_")',
       '  location                   = var.region',
       '  labels                     = var.labels',
-      '  delete_contents_on_destroy = true',
-      DEP,
+      '  delete_contents_on_destroy = true'
+    ].concat(bqEnc).concat([
+      bqDep,
       '}'
-    ].join('\n'));
+    ]).join('\n'));
 
     if (s.isAutomation) {
       B.push([
@@ -1025,7 +1055,7 @@
     L.push('- BigQuery dataset for feedback and evaluation.');
     if (s.isAutomation) L.push('- Pub/Sub trigger topic with a dead-letter queue and the service-agent IAM it needs.');
     if (s.selfHost) L.push('- A separate GKE cluster with a GPU node pool for the self-hosted model (vLLM).');
-    if (s.cmek) L.push('- Customer-managed encryption keys (CMEK) via Cloud KMS, with key access for Cloud Storage.');
+    if (s.cmek) L.push('- Customer-managed encryption keys (CMEK) via Cloud KMS, applied to every managed store: Cloud Storage, the state store (AlloyDB / Spanner / Cloud SQL / Memorystore), the Memorystore cache, and the BigQuery feedback dataset. Self-hosted stores (a self-built vector store or Redis on GKE) and Vertex AI Search are not covered here.');
     if (s.enforceVpcSc) L.push('- A VPC Service Controls perimeter (needs an org access policy).');
     L.push('');
     L.push('## Apply');
@@ -1053,7 +1083,10 @@
       L.push('');
     }
     if (s.cmek) {
-      L.push('CMEK is on. The KMS key ring, key, and the Cloud Storage key binding are created here. To');
+      L.push('CMEK is on. The KMS key ring, key, and a service-agent key binding for each managed store');
+      L.push('(Cloud Storage, the state store, the Memorystore cache, and BigQuery) are created here. Run');
+      L.push('terraform plan first: the service agents are provisioned via google_project_service_identity,');
+      L.push('and on a brand-new project the first apply can need a re-run while the agents propagate. To');
       L.push('deploy with Google-managed keys instead, set CMEK to Google-managed in the designer.');
       L.push('');
     }

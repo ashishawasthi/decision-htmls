@@ -1897,7 +1897,8 @@
       Orchestrator: 'Inside Agent Engine: decomposes the request into steps, calls tools and retrieval, coordinates the generate-evaluate-revise loop, and composes the final answer.',
       Generator: 'Inside Agent Engine: calls the models through Model Armor and reads retrieval to produce the draft, then revises it from the Validator critique until it passes (the Self-Refine loop).',
       Validator: 'Inside Agent Engine: the automated quality gate. It evaluates the draft against the acceptance criteria and, on a fail, returns a critique to the Generator to revise; on a pass the answer is returned or sent for human review.',
-      Secrets: 'Secret Manager holds tool and database credentials; with CMEK on, data is encrypted with customer-managed Cloud KMS keys. The agent service account reads only the secrets it needs.',
+      SecretMgr: 'Secret Manager holds the tool and database credentials the agent needs. The agent service account reads only the secrets it is granted, scoped per tool, so a leak of one credential does not expose the rest.',
+      KMS: 'Cloud KMS holds the customer-managed encryption key (CMEK). It encrypts the managed data-at-rest stores - Cloud Storage, the managed state store (AlloyDB / Spanner / Cloud SQL / Memorystore), the Spanner durable tier, the managed Memorystore cache, and the BigQuery feedback dataset - so data at rest is under a key you own and can rotate or revoke. Self-hosted stores (a self-built vector store or Redis on GKE) use disk and application encryption instead.',
       Cache: 'A response cache on the request path: on a hit it returns a stored answer and skips the agent and model entirely, cutting cost and latency on the repeat-heavy head of traffic. Exact-match keys on the normalized query; semantic match keys on the query embedding within a similarity threshold. Sized by the effective hit rate. Invalidation is TTL plus version busting: each entry expires on a TTL set from the data freshness (real-time off, minutes, end-of-day about 24h, static long), and the cache key is namespaced by model, prompt, and index version so shipping a new model or prompt drops stale answers automatically.',
       Orch: 'Plans each request, calls tools and retrieval, and composes the final answer. Single agent or a multi-agent team depending on the pattern.',
       Retr: 'Narrows candidates in stages (metadata pre-filter → dense + BM25 → rerank) so the model is grounded on only the most relevant passages.',
@@ -2064,15 +2065,35 @@
         L.push('Validator -. revise .-> Generator');
         L.push('end');
       };
-      // Model Armor sits inline on the model leg (sanitize input and output). Routing and fail-over
-      // are configured inside the agent; audit goes to Observability.
+      // Model Armor sits inline on the model leg (sanitize input and output). The leg originates from
+      // the Agent Engine as a whole, not one component: the orchestrator, generator, and validator all
+      // make model calls under one runtime identity (roles/aiplatform.user), and Armor screens every one.
       const armorOn = !!(o.guardrails || o.residencyPin || o.toolAuthz);
       const modelLeg = (from) => {
         L.push(node('LLM', 'Model(s)', 'orch'));
         if (armorOn) { L.push(node('Armor', 'Model Armor<br/>injection, redaction', 'gateway')); L.push(`${from} --> Armor`); L.push('Armor --> LLM'); }
         else { L.push(`${from} --> LLM`); }
       };
-      const secretsNode = (from) => { if (o.toolAuthz || o.cmek) { L.push(node('Secrets', 'Secret Manager & CMEK', 'gov')); L.push(`${from} -. secrets .-> Secrets`); } };
+      // Two distinct governance facilities, each showing its real relationship. Secret Manager is read
+      // by the agent service account (the runtime, not one component - roles/secretmanager.secretAccessor
+      // sits on the single agent SA), so the edge is drawn from the Agent Engine when tool authz is on.
+      // Cloud KMS encrypts data at rest (when CMEK is on): it points at every managed store the Terraform
+      // wires the key to - Cloud Storage, the managed state store (AlloyDB / Spanner / Cloud SQL /
+      // Memorystore), the Spanner durable tier, and the managed Memorystore cache. Self-hosted stores
+      // (self-built vector store, Redis on GKE) take disk/app encryption, not a managed key, so no edge.
+      const secretMgrNode = (from) => { if (o.toolAuthz) { L.push(node('SecretMgr', 'Secret Manager', 'gov')); L.push(`${from} -. secrets .-> SecretMgr`); } };
+      const kmsNode = () => {
+        if (!o.cmek) return;
+        const cacheOn = responseCacheOn(o);
+        const targets = [];
+        if (gcsDrawn) targets.push('GCS');               // Cloud Storage (docs + agent artifact)
+        if (stateManaged) targets.push('State');         // managed AlloyDB / Spanner / Cloud SQL / Memorystore
+        if (stateSpanner) targets.push('StateDur');      // Spanner active-active durable tier
+        if (cacheOn && !gke) targets.push('Cache');      // managed Memorystore response cache
+        if (!targets.length) return;
+        L.push(node('KMS', 'Cloud KMS (CMEK)', 'gov'));
+        targets.forEach(t => L.push(`KMS -. encrypts .-> ${t}`));
+      };
       // VPC-SC perimeter wraps the Google services when enforcement is on. Ingress and human review
       // sit outside it; cross-boundary edges are emitted after the perimeter closes.
       const perim = o.enforceVpcSc;
@@ -2087,6 +2108,7 @@
       const selfbuilt = o.ragEngine === 'selfbuilt';
       const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
       const hasIndex = i.dataSources.some(s => INDEXED_SRC.includes(s));
+      const gcsDrawn = ragOn && hasIndex;                    // Cloud Storage (source docs + agent artifact) is drawn by the ingestion branch
       const storeInVpc = ragOn && hasIndex && selfbuilt;     // self-built vector store, not managed Vertex AI Search
       const retrInVpc = ragOn && selfbuilt;                  // the retrieval funnel runs on the self-built search
       const stateInVpc = /alloydb|redis/.test(o.stateStore); // AlloyDB / Memorystore attach to the VPC over PSA
@@ -2095,6 +2117,9 @@
       // stays inside; AlloyDB / Cloud SQL follow the VPC rule above.
       const redisName = gke ? 'Redis on GKE' : 'Memorystore';
       const stateSpanner = o.stateStore === 'redis_spanner';   // straddles the boundary: Redis in, Spanner out
+      // The State node is CMEK-eligible unless it is purely self-hosted Redis on GKE; AlloyDB / Spanner /
+      // Cloud SQL / managed Memorystore all take a customer key. Mirrors what tf-generator.js encrypts.
+      const stateManaged = !(gke && (o.stateStore === 'redis' || o.stateStore === 'redis_spanner'));
       const stateLabel = ({
         redis: `State store (${redisName})`,
         redis_alloydb: `State store (${redisName} + AlloyDB)`,
@@ -2134,16 +2159,18 @@
         if (cacheOn) { L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Client'); }
         if (showFunnel) L.push('Generator --> Retr');
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Generator --> Sand'); }
-        modelLeg('Generator');
+        modelLeg('AE');
         // data plane: offline index (written by ingestion, read by retrieval) + live sources
         dataPlane(showFunnel ? 'Retr' : 'Generator', 'Generator', storeInVpc);
-        secretsNode('Generator');
-        // session / conversation state the agent persists (Memorystore/AlloyDB) - inside the VPC when private
+        secretMgrNode('AE');
+        // session / conversation state the runtime persists (Memorystore/AlloyDB) - inside the VPC when
+        // private. Persisted under the one runtime identity, so the edge is from the Agent Engine.
         if (!stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
-        L.push('Generator -. session .-> State');
+        L.push('AE -. state .-> State');
         // Spanner durable tier is managed (reached via a PSC endpoint), so it sits outside the VPC even though Redis is inside
         if (stateSpanner) { L.push(node('StateDur', 'Spanner<br/>active-active durable', 'data', 'cyl')); L.push('State -. durable .-> StateDur'); }
-        L.push(node('Obs', 'Observability', 'obs')); L.push('Validator --> Obs');
+        kmsNode();   // CMEK edges, emitted once every managed data store above is declared
+        L.push(node('Obs', 'Observability', 'obs')); L.push('AE --> Obs');
         closePerim();
         // cross-boundary entry edge (ingress into the perimeter) and human review (outside)
         L.push(cacheOn ? 'Cache -- miss --> Orchestrator' : `${head} --> Orchestrator`);
@@ -2170,14 +2197,15 @@
         if (!gke) agentEngine();
         if (cacheOn) { L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Trig'); }
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Generator --> Sand'); }
-        modelLeg('Generator');
+        modelLeg('AE');
         dataPlane('Generator', 'Generator', storeInVpc);
-        secretsNode('Generator');
+        secretMgrNode('AE');
         if (!stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
-        L.push('Validator --> State');
+        L.push('AE -. state .-> State');
         // Spanner durable tier is managed (reached via a PSC endpoint), so it sits outside the VPC even though Redis is inside
         if (stateSpanner) { L.push(node('StateDur', 'Spanner<br/>active-active durable', 'data', 'cyl')); L.push('State -. durable .-> StateDur'); }
-        L.push(node('Obs', 'Observability', 'obs')); L.push('Validator --> Obs');
+        kmsNode();   // CMEK edges, emitted once every managed data store above is declared
+        L.push(node('Obs', 'Observability', 'obs')); L.push('AE --> Obs');
         closePerim();
         L.push(cacheOn ? 'Cache -- miss --> Orchestrator' : `${head} --> Orchestrator`);
         // human review of the quality gate (outside the perimeter), with resume back into the agent
@@ -2962,7 +2990,7 @@
       // control-plane split: the API Gateway box and the model-leg controls derive from the same booleans, one inbound, one on the model leg
       assert('external splits into edge + model controls', inboundControls(state.overrides, state.inputs).length > 0 && outboundControls(state.overrides, state.inputs).length > 0);
       assert('edge carries auth, model carries output filter', inboundControls(state.overrides, state.inputs).includes('auth') && outboundControls(state.overrides, state.inputs).includes('output filter'));
-      { const d = buildMainDiagram(); assert('diagram wires Model Armor onto the model leg', /Generator --> Armor/.test(d) && /Armor --> LLM/.test(d) && !/ModelGW/.test(d)); }
+      { const d = buildMainDiagram(); assert('diagram wires Model Armor onto the model leg from the Agent Engine', /AE --> Armor/.test(d) && /Armor --> LLM/.test(d) && !/Generator --> Armor/.test(d) && !/ModelGW/.test(d)); }
       assert('latency: a model-leg control adds to each model call', (() => {
         applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['doc_corpus'];
         state.inputs.audienceSensitivity = 'internal_low'; deriveOverrides();
@@ -3248,11 +3276,28 @@
         const dvpc = buildMainDiagram();
         assert('Self-Managed assistant draws the Dedicated VPC network boundary', /subgraph VPC\["Dedicated VPC network"\]/.test(dvpc));
         assert('the dedicated VPC nests inside the VPC-SC perimeter with the GKE runtime inside the VPC', dvpc.indexOf('subgraph PERIM') >= 0 && dvpc.indexOf('subgraph PERIM') < dvpc.indexOf('subgraph VPC') && dvpc.indexOf('subgraph VPC') < dvpc.indexOf('subgraph AE'));
+        // Cross-cutting platform connections attach to the Agent Engine as a whole, matching the
+        // Terraform where one runtime service account holds aiplatform.user, secretmanager.secretAccessor,
+        // logging.logWriter, and cloudtrace.agent - not the orchestrator/generator/validator individually.
+        assert('model leg, observability, and state attach to the Agent Engine, not one component', /AE --> Armor/.test(dvpc) && /Armor --> LLM/.test(dvpc) && /AE --> Obs/.test(dvpc) && /AE -\. state \.-> State/.test(dvpc));
+        assert('the old per-component runtime edges are gone', !/Generator --> Armor/.test(dvpc) && !/Validator --> Obs/.test(dvpc) && !/Generator -\. session/.test(dvpc));
+        // CMEK reaches every managed store drawn: Cloud Storage and the managed AlloyDB state tier here.
+        // The Redis-on-GKE cache is self-hosted, so it takes no key edge, and there is no combined box.
+        assert('CMEK encrypts Cloud Storage and the managed state store', /KMS\["Cloud KMS \(CMEK\)"\]/.test(dvpc) && /KMS -\. encrypts \.-> GCS/.test(dvpc) && /KMS -\. encrypts \.-> State/.test(dvpc));
+        assert('CMEK draws no edge to the self-hosted Redis-on-GKE cache', !/KMS -\. encrypts \.-> Cache/.test(dvpc));
+        assert('CMEK on with no privileged tools draws no Secret Manager node and no combined box', !/SecretMgr\[/.test(dvpc) && !/Secret Manager & CMEK/.test(dvpc));
       }
       state.overrides.dedicatedVpc = false;
       assert('toggling Dedicated VPC off removes the network boundary', !/subgraph VPC\[/.test(buildMainDiagram()));
       applyPreset('automation', 'self_managed'); deriveOverrides();
       assert('Self-Managed automation also wraps its self-hosted resources in a dedicated VPC', /subgraph VPC\["Dedicated VPC network"\]/.test(buildMainDiagram()));
+      {
+        // automation has privileged tools (toolAuthz on) and CMEK on, so both governance nodes are
+        // drawn as separate boxes: the agent reads credentials from Secret Manager, Cloud KMS encrypts.
+        const dsm = buildMainDiagram();
+        assert('tool authz draws a Secret Manager node the Agent Engine reads from', /SecretMgr\["Secret Manager"\]/.test(dsm) && /AE -\. secrets \.-> SecretMgr/.test(dsm));
+        assert('Secret Manager and Cloud KMS are separate boxes, not one combined node', /KMS\["Cloud KMS \(CMEK\)"\]/.test(dsm) && !/Secret Manager & CMEK/.test(dsm));
+      }
       // managed assistant (Agent Engine + Vertex AI Search): the private Redis session store surfaces the
       // VPC even with no self-hosted compute, matching the Terraform that provisions Memorystore in a VPC.
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
@@ -3305,6 +3350,9 @@
         mt = window.TfGen.generate(buildDeploySpec(exForm)).files['main.tf'];
         assert('GKE runtime emits an Autopilot cluster and a kubernetes deployment', /enable_autopilot/.test(mt) && /kubernetes_deployment/.test(mt) && !/google_vertex_ai_reasoning_engine/.test(mt));
         assert('CMEK on emits Cloud KMS and VPC-SC on emits the perimeter', /google_kms_crypto_key/.test(mt) && /google_access_context_manager_service_perimeter/.test(mt));
+        // CMEK reaches every managed store, not just Cloud Storage: a key binding per service agent plus
+        // the encryption block on the state store and the BigQuery dataset.
+        assert('CMEK encrypts the managed state store and BigQuery, not only Cloud Storage', /google_kms_crypto_key_iam_member" "bigquery"/.test(mt) && /default_encryption_configuration/.test(mt) && /(encryption_config|encryption_key_name)/.test(mt));
         // on-prem data source: no connectivity Terraform, but a README integration section
         applyPreset('assistant', 'strictpii_verify'); deriveOverrides();
         const og = window.TfGen.generate(buildDeploySpec(exForm)).files;
