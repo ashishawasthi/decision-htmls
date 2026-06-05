@@ -201,43 +201,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency / cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Single-primary relational at smaller scale, lower cost</td>
           <td>Cloud SQL</td>
-          <td>low ms; per instance and storage</td>
         </tr>
         <tr>
           <td>Postgres-compatible with HTAP and pgvector</td>
           <td><a class="src" href="alloydb.html">AlloyDB</a></td>
-          <td>low ms; per vCPU and storage</td>
         </tr>
         <tr>
           <td>Key-value at massive scale, no SQL or multi-row transactions</td>
           <td>Bigtable</td>
-          <td>single-digit ms; per node and storage</td>
         </tr>
         <tr>
           <td>Horizontal scale plus multi-region active-active relational</td>
           <td>Spanner</td>
-          <td>low single-digit to low tens of ms; per node plus storage</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> low single-digit to low tens of milliseconds for typical reads and writes, with multi-region
-        writes paying a cross-region commit cost for strong consistency. It is built to hold these numbers as you scale
-        out, not to beat a local single-node database on a single small query.</li>
-      <li><b>Cost:</b> billed per compute capacity (nodes or processing units) plus storage, with multi-region
-        configurations costing more than regional. Provisioned capacity means you pay for the footprint, not per query,
-        so right-sizing nodes matters. Treat any figure as a rough range and verify against current Google Cloud
-        pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -270,7 +254,7 @@
       <li><a class="src" href="https://cloud.google.com/spanner">Cloud Spanner product page (Google Cloud)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

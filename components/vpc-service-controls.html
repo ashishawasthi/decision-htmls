@@ -203,45 +203,31 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency or cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>A boundary that blocks exfiltration and pins residency</td>
           <td>VPC Service Controls</td>
-          <td>no direct charge; design and operations effort</td>
         </tr>
         <tr>
           <td>Grant and scope who can do what</td>
           <td>IAM (layers with, does not replace)</td>
-          <td>no direct charge; identity and access, not a perimeter</td>
         </tr>
         <tr>
           <td>Org-wide guardrails on allowed configurations</td>
           <td>Organization Policy (complementary)</td>
-          <td>no direct charge; constraints, not a data boundary</td>
         </tr>
         <tr>
           <td>Private access to Google APIs without public IPs</td>
           <td>Private Service Connect (complementary)</td>
-          <td>connectivity cost; private path, pairs with the perimeter</td>
         </tr>
         <tr>
           <td>Remove sensitive data from content</td>
           <td><a class="src" href="cloud-dlp.html">Cloud DLP</a> (complementary)</td>
-          <td>per unit processed; redaction, not a network boundary</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> the perimeter is enforced at the control plane on API access, so it adds no meaningful latency to
-        in-perimeter request paths. The real cost is design and operations: getting ingress and egress rules right.</li>
-      <li><b>Cost:</b> no direct charge for VPC Service Controls itself. Budget instead for the engineering effort to
-        design the perimeter and for any private connectivity (such as Private Service Connect) you pair with it.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -278,7 +264,7 @@
           Connect overview (Google Cloud Docs)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

@@ -158,7 +158,7 @@
     <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Knowledge graph</div>
     <span class="tag">Entity and relationship store</span>
     <h1>Knowledge graph in agentic systems</h1>
-    <p class="lead">A knowledge graph is a store for <b>entities and the relationships between them</b> (Spanner Graph, or
+    <p class="lead">A knowledge graph is a store for <b>entities and the relationships between them</b> (<a class="src" href="spanner.html">Spanner</a> Graph, or
       a third party such as Neo4j), enabling multi-hop reasoning, entity resolution, and lineage. The one fact that
       drives the design: it answers <b>"how are these connected"</b>, which semantic vector search cannot. The rule that
       follows: reach for it when relationships and structured reasoning matter, and pair it with vector retrieval rather
@@ -202,42 +202,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency / cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Multi-hop relationships, entity resolution, lineage</td>
           <td>Knowledge graph (Spanner Graph or Neo4j)</td>
-          <td>ms to tens of ms per traversal</td>
         </tr>
         <tr>
           <td>Semantic similarity over unstructured text</td>
           <td>Vector RAG (<a class="src" href="vertex-vector-search.html">Vertex AI Vector Search</a>)</td>
-          <td>around 12 ms per query</td>
         </tr>
         <tr>
           <td>Shallow joins and aggregates over structured rows</td>
           <td>Relational SQL (<a class="src" href="spanner.html">Spanner</a>, <a class="src" href="alloydb.html">AlloyDB</a>, or Cloud SQL)</td>
-          <td>low ms for indexed joins</td>
         </tr>
         <tr>
           <td>Both connections and unstructured context</td>
           <td>Graph for traversal plus vector search for retrieval</td>
-          <td>combined, run in parallel</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> roughly milliseconds to tens of milliseconds per traversal for a bounded walk, which can fit
-        an interactive budget. Latency grows with hop depth and fan-out, so an unbounded deep traversal is the thing to
-        watch.</li>
-      <li><b>Cost:</b> depends on the engine. Spanner Graph rides Spanner compute and storage pricing; a third-party
-        store such as Neo4j carries its own licensing or instance cost. Rough ranges only as of May 2026; verify
-        against current Google Cloud or vendor docs.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -248,7 +233,7 @@
         the latency budget. Reserve deeper walks for asynchronous automation.</li>
       <li><b>Model for the questions:</b> design nodes and edges around the relationships the agent actually needs to
         traverse, and index the entry-point properties so lookups start fast.</li>
-      <li><b>Spanner Graph if already on Spanner:</b> querying the graph in the same database as the operational data
+      <li><b><a class="src" href="spanner.html">Spanner</a> Graph if already on Spanner:</b> querying the graph in the same database as the operational data
         avoids a separate system and keeps entities and relationships consistent.</li>
     </ul>
 
@@ -270,7 +255,7 @@
       <li><a class="src" href="https://neo4j.com/developer/graph-database/">What is a graph database (Neo4j)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

@@ -201,37 +201,23 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency or cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>No operations, elastic traffic, fastest path to production</td>
           <td>Managed Vertex AI model APIs</td>
-          <td>pay per token; best below high steady utilization</td>
         </tr>
         <tr>
           <td>Data residency, open-model control, cost at sustained scale</td>
           <td>vLLM on GKE</td>
-          <td>GPU node-hours, sized to peak decode throughput</td>
         </tr>
         <tr>
           <td>Maximum control, existing hardware, strict on-prem mandate</td>
           <td><a class="src" href="onprem.html">On-prem</a> GPUs</td>
-          <td>highest fixed cost and lead time</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> driven by model size, accelerator, quantization, and batch fullness. Continuous batching keeps
-        throughput high under load but, pushed too hard, it trades per-request latency for tokens-per-second, so size for
-        peak decode throughput at your target tail latency.</li>
-      <li><b>Cost:</b> GPU node-hours, paid whether or not the GPUs are busy. The fleet is sized to peak decode
-        throughput, so the economics turn on utilization: high and steady favors self-hosting, spiky or low favors a
-        managed token API. Verify current accelerator rates against Google Cloud pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -260,10 +246,9 @@
           an LLM with vLLM on GKE (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/kubernetes-engine/docs/concepts/about-gpus">About GPUs in
           GKE (Google Cloud Docs)</a></li>
-      <li><a class="src" href="https://cloud.google.com/compute/gpus-pricing">GPU pricing on Google Cloud</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

@@ -89,7 +89,6 @@
         <tr><td>Runtime</td><td>You operate it; LangGraph Server adds scaling and background jobs</td></tr>
         <tr><td>Portability</td><td>Multi-cloud, on-prem, no lock-in</td></tr>
         <tr><td>Observability</td><td>LangSmith: checkpointing, streaming, time-travel debugging</td></tr>
-        <tr><td>Platform cost line</td><td>Framework is free (open source); self-hosting adds infra/ops and, for the supported path, a LangGraph Platform Enterprise contract (separate cost lines, not zero)</td></tr>
         <tr><td>Best role in this tool</td><td>Platform = LangGraph</td></tr>
       </tbody>
     </table>
@@ -110,7 +109,7 @@
           <li>Teams without the operations capacity to run and scale the runtime themselves.</li>
           <li>Fastest possible start: a low-code builder reaches a working agent sooner.</li>
           <li>Designs that assume autoscaling out of the box; true concurrency needs LangGraph Server.</li>
-          <li>Judging it on the free framework alone: the real bill is the self-managed infra (Postgres, Redis, compute), monitoring, on-call, and, for the supported self-hosted path, a LangGraph Platform Enterprise contract (custom, cited around $2k to $5k per month) that the managed runtimes bundle.</li>
+          <li>Judging it on the free framework alone: the real effort is the self-managed infra (Postgres, Redis, compute), monitoring, on-call, and, for the supported self-hosted path, a LangGraph Platform Enterprise contract that the managed runtimes bundle.</li>
         </ul>
       </div>
     </div>
@@ -131,16 +130,15 @@
     <ul>
       <li><b>It is the Platform input.</b> Choosing LangGraph sets the build-and-run layer to the portable, self-operated
         framework.</li>
-      <li><b>Cost line, with the hidden part made visible.</b> The LangGraph framework is free, so its platform line is
-        $0. To keep the comparison honest, the tool adds two more lines for the supported self-hosted
-        path: a <b>Self-managed infra + ops</b> line for what you run yourself (a Kubernetes cluster, a PostgreSQL
-        checkpoint store, Redis for streaming, and self-hosted monitoring), and a <b>LangGraph Platform Enterprise</b>
-        line, since self-hosting is an Enterprise-tier add-on whose pricing is custom and not published (cited around
-        $2k to $5k per month, defaulted here to the upper end and editable). <a class="src" href="agent-engine.html">ADK + Agent Engine</a>
+      <li><b>Cost line, with the hidden part made visible.</b> The LangGraph framework itself is free, but the tool keeps
+        the comparison honest by surfacing the self-managed pieces of the supported self-hosted path: a
+        <b>Self-managed infra + ops</b> line for what you run yourself (a Kubernetes cluster, a PostgreSQL checkpoint
+        store, Redis for streaming, and self-hosted monitoring), and a <b>LangGraph Platform Enterprise</b> line, since
+        self-hosting is an Enterprise-tier add-on. <a class="src" href="agent-engine.html">ADK + Agent Engine</a>
         and <a class="src" href="agent-studio.html">Agent Studio</a> fold the runtime and infra into their per-request
         price, which is why they look pricier per call. Once all of it is counted, the managed runtimes are usually
-        cheaper until very high volume; a managed Plus SaaS LangGraph deployment that skips the Enterprise add-on is a
-        different, lower-cost point you can model by editing the lines down.</li>
+        cheaper until very high volume; a managed SaaS LangGraph deployment that skips the Enterprise add-on is a
+        different, lower-cost point you can model.</li>
       <li><b>Portability is the reason.</b> The tool frames it as the no-lock-in choice; pick it when running the same
         agent across clouds or on-prem outranks offloading operations.</li>
     </ul>
@@ -152,7 +150,7 @@
       <li><a class="src" href="https://www.zenml.io/blog/google-adk-vs-langgraph">Google ADK vs LangGraph: which develops and deploys AI agents better (ZenML)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current vendor docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

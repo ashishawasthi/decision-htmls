@@ -205,42 +205,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency / cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Governed, auditable model and version control native to Vertex</td>
           <td>Vertex Model Registry</td>
-          <td>minimal; metadata and storage only</td>
         </tr>
         <tr>
           <td>A quick version pin with no governance overhead</td>
           <td>DIY version pinning in config or a feature flag</td>
-          <td>near zero cost; no lineage or approvals</td>
         </tr>
         <tr>
           <td>Open-source, portable registry across environments</td>
           <td>MLflow Model Registry (self-managed)</td>
-          <td>low license cost; operational and hosting cost</td>
         </tr>
         <tr>
           <td>Measuring quality of a version before promotion</td>
           <td><a class="src" href="vertex-ai-eval.html">Vertex AI Eval</a> (feeds approval decisions)</td>
-          <td>per eval run; judge-model tokens</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> not on the request path. The registry is a control-plane and governance layer used at deploy
-        and audit time, not per inference, so it adds no user-facing latency. Serving latency comes from the endpoint, not
-        the registry.</li>
-      <li><b>Cost:</b> minimal. You pay for metadata and stored model artifacts, not for a running service, so the
-        registry itself is a rounding error next to inference spend. Cost stays in serving and evaluation, not in
-        governance. Verify current rates against Google Cloud pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -273,10 +258,9 @@
       <li><a class="src"
           href="https://docs.cloud.google.com/vertex-ai/docs/model-registry/model-deployment-monitoring">Model
           governance and lineage on Vertex AI (Google Cloud Docs)</a></li>
-      <li><a class="src" href="https://cloud.google.com/vertex-ai/pricing">Vertex AI pricing</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

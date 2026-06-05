@@ -28,6 +28,8 @@
       --onprem: #f472b6;
       --bar: #3b82f6;
       --design: #7c5cff;
+      --serving: #34d399;
+      --napkin: #818cf8;
     }
 
     /* Light palette. Dark above stays the default, so the page is unchanged in dark mode. */
@@ -44,6 +46,8 @@
       --onprem: #c2255c;
       --bar: #0969da;
       --design: #6639ba;
+      --serving: #0f9d6b;
+      --napkin: #5b54d6;
     }
 
     * {
@@ -259,6 +263,51 @@
       --accent-color: var(--design);
     }
 
+    .card.serving {
+      --accent-color: var(--serving);
+    }
+
+    .card.napkin {
+      --accent-color: var(--napkin);
+    }
+
+    .deferred {
+      margin-top: 32px;
+      padding-top: 22px;
+      border-top: 1px solid var(--border);
+    }
+
+    .deferred h2 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin: 0 0 10px;
+    }
+
+    .deferred p {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0 0 10px;
+      max-width: 820px;
+    }
+
+    .deferred ul {
+      margin: 0;
+      padding-left: 18px;
+      max-width: 820px;
+    }
+
+    .deferred li {
+      color: var(--muted);
+      font-size: 12.5px;
+      margin: 6px 0;
+    }
+
+    .deferred a {
+      color: var(--accent);
+    }
+
     footer {
       padding: 24px 32px 32px;
       max-width: 1100px;
@@ -327,6 +376,40 @@
         </div>
       </a>
 
+      <a class="card serving" href="llm-serving-performance-calculator.html">
+        <div class="label">Serve &middot; How fast, how many</div>
+        <h2>LLM Serving Performance</h2>
+        <p class="description">Roofline back-of-napkin for inference: <b style="color:var(--serving)">TTFT and per-token
+            latency</b>, throughput against batch size, KV-cache-bounded concurrency, and how many GPUs or Cloud TPUs an
+          SLO needs. Prefill compute-bound vs decode memory-bound. Deterministic, no LLM.</p>
+        <div class="meta">
+          <span class="tag">TTFT / TPOT / roofline</span>
+          <span class="tag">KV cache &amp; concurrency</span>
+          <span class="tag">GPU + Cloud TPU</span>
+          <span class="tag">BF16 / FP8 / INT4</span>
+        </div>
+        <div class="footer">
+          <span class="open">Open <span class="arrow">&rarr;</span></span>
+        </div>
+      </a>
+
+      <a class="card napkin" href="system-design-napkin.html">
+        <div class="label">Estimate &middot; Resource sizing</div>
+        <h2>System Design Napkin</h2>
+        <p class="description">Back-of-the-envelope for a system design round: turn DAU into <b
+            style="color:var(--napkin)">QPS</b>, size storage and bandwidth, see cache relieve the backend, apply
+          Little's Law to concurrency and pools, and decompose a slow request. Generic distributed systems.</p>
+        <div class="meta">
+          <span class="tag">QPS / storage / bandwidth</span>
+          <span class="tag">Little's Law</span>
+          <span class="tag">Latency ladder &amp; nines</span>
+          <span class="tag">Why is it slow</span>
+        </div>
+        <div class="footer">
+          <span class="open">Open <span class="arrow">&rarr;</span></span>
+        </div>
+      </a>
+
       <a class="card cost" href="agent-infra-cost-calculator.html">
         <div class="label">Cost &middot; Where to run</div>
         <h2>Gen AI Deployment Options &amp; Estimates</h2>
@@ -362,10 +445,24 @@
       </a>
 
     </div>
+
+    <section class="deferred">
+      <h2>Deferred to existing calculators</h2>
+      <p>Some numbers already have solid public calculators, so these tools link out instead of reinventing them:</p>
+      <ul>
+        <li><b>Inference and serving memory, including KV-cache VRAM sizing</b> (the "does this model fit on this GPU at
+          this context length" question):
+          <a href="https://ai.google.dev/gemma/docs/core">Google Gemma memory requirements</a>,
+          <a href="https://huggingface.co/spaces/hf-accelerate/model-memory-usage">Hugging Face Model Memory Utility</a>,
+          and the <a href="https://huggingface.co/spaces/NyxKrage/LLM-Model-VRAM-Calculator">LLM Model VRAM Calculator</a>.
+          The LLM Serving Performance tool covers latency, throughput, and concurrency, not VRAM fit; the Gemma Memory
+          Calculator covers QLoRA training memory.</li>
+      </ul>
+    </section>
   </main>
 
   <footer>
-    <p class="footer-note">All three tools are self-contained static HTML, with no build and no dependencies. Open any
+    <p class="footer-note">All five tools are self-contained static HTML, with no build and no dependencies. Open any
       of them directly in a browser.</p>
     <p class="disclaimer">
       Rough estimates for planning and learning, not exact figures. A personal project, provided as is and not

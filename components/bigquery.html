@@ -217,41 +217,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Point lookup by key (profile, session, flags)</td>
           <td>Bigtable, <a class="src" href="alloydb.html">AlloyDB</a>, or <a class="src" href="spanner.html">Spanner</a></td>
-          <td>single-digit ms</td>
         </tr>
         <tr>
           <td>Semantic retrieval for RAG</td>
           <td><a class="src" href="vertex-vector-search.html">Vertex AI Vector Search</a></td>
-          <td>around 12 ms</td>
         </tr>
         <tr>
           <td>Transactional reads and writes</td>
-          <td>Spanner, AlloyDB, or Cloud SQL</td>
-          <td>low ms</td>
+          <td><a class="src" href="spanner.html">Spanner</a>, <a class="src" href="alloydb.html">AlloyDB</a>, or Cloud SQL</td>
         </tr>
         <tr>
           <td>Large analytical scans and aggregation</td>
           <td>BigQuery</td>
-          <td>hundreds of ms to seconds</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> high and variable per query, often a second or more. It is built for throughput on large data,
-        not for tail-latency SLOs.</li>
-      <li><b>Cost:</b> on-demand at roughly $6.25 per TB scanned, plus storage at roughly $0.02 per GB-month, or
-        capacity (slots / editions) pricing. Spend tracks bytes scanned, so it is usage-dependent. That is why the
-        designer leaves BigQuery cost as a manual entry rather than guessing a number.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -269,7 +255,7 @@
     <p>The presets encode the split. On the assistant side BigQuery pairs only with the agentic copilot and is absent
       from the sub-second Q&amp;A preset; on the automation side every preset includes BigQuery.</p>
     <div class="note"><b>Latency now reflects this.</b> The designer charges an illustrative synchronous scan latency
-      (around 1.2s) when BigQuery is on an assistant request path, and flags BigQuery with a warning when it is selected
+      when BigQuery is on an assistant request path, and flags BigQuery with a warning when it is selected
       on a sub-second assistant SLO. So an assistant that reads BigQuery in the request path no longer looks faster in
       the tool than it would run.</div>
 
@@ -291,7 +277,7 @@
           choose? BigQuery vs Bigtable (Medium)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Serving Performance Calculator</title>
+  <script>
+    /* Resolve the theme before first paint to avoid a flash. 'theme' is shared across all
+       pages; it is set only when the user has explicitly chosen, absent means follow the OS. */
+    (function () {
+      var saved = localStorage.getItem('theme');
+      var t = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #181b22;
+      --panel-2: #1f232c;
+      --border: #2a2f3a;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #34d399;
+      --good: #34d399;
+      --bad: #f87171;
+      --warn: #fbbf24;
+      --gpu: #34d399;
+      --tpu: #60a5fa;
+      --compute: #f472b6;
+      --memory: #60a5fa;
+      --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+      --good-tint: rgba(52, 211, 153, 0.12);
+      --warn-tint: rgba(251, 191, 36, 0.12);
+      --bad-tint: rgba(248, 113, 113, 0.12);
+    }
+
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --panel: #f6f8fa;
+      --panel-2: #eaeef2;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --muted: #57606a;
+      --accent: #0f9d6b;
+      --good: #0f9d6b;
+      --bad: #cf222e;
+      --warn: #9a6700;
+      --gpu: #0f9d6b;
+      --tpu: #0969da;
+      --compute: #bf3989;
+      --memory: #0969da;
+      --good-tint: rgba(15, 157, 107, 0.10);
+      --warn-tint: rgba(154, 103, 0, 0.10);
+      --bad-tint: rgba(207, 34, 46, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    header {
+      position: relative;
+      padding: 22px 32px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .backlink {
+      position: absolute;
+      top: 20px;
+      left: 28px;
+      width: 40px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--muted);
+      text-decoration: none;
+      transition: color .15s ease, border-color .15s ease, background .15s ease, transform .15s ease;
+    }
+
+    .backlink:hover {
+      color: var(--text);
+      border-color: var(--accent);
+      background: var(--panel-2);
+      transform: translateX(-3px);
+    }
+
+    .backlink:active { transform: translateX(-1px); }
+    .backlink svg { display: block; }
+
+    .header-actions {
+      position: absolute;
+      top: 20px;
+      right: 28px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #themeBtn {
+      width: 40px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--muted);
+      cursor: pointer;
+      transition: color .15s ease, border-color .15s ease, background .15s ease;
+    }
+
+    #themeBtn:hover { color: var(--text); border-color: var(--accent); background: var(--panel-2); }
+    #themeBtn svg { display: block; }
+    #themeBtn .ic-moon { display: none; }
+    :root[data-theme="light"] #themeBtn .ic-sun { display: none; }
+    :root[data-theme="light"] #themeBtn .ic-moon { display: block; }
+
+    header h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+      padding: 0 52px;
+      text-align: left;
+    }
+
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      max-width: 1000px;
+    }
+
+    main {
+      padding: 24px 32px 48px;
+      max-width: 1500px;
+      margin: 0 auto;
+    }
+
+    .calc-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+      gap: 24px;
+    }
+
+    @media (max-width: 1050px) {
+      .calc-grid { grid-template-columns: 1fr; }
+    }
+
+    section h2 {
+      font-size: 14px;
+      margin: 0 0 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    fieldset {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin: 0 0 14px;
+    }
+
+    legend { padding: 0 8px; font-weight: 600; font-size: 14px; }
+    fieldset label { display: block; padding: 4px 0; font-size: 13px; cursor: pointer; }
+    fieldset label input[type=radio], fieldset label input[type=checkbox] { margin-right: 8px; }
+
+    select, input[type=number] {
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 5px 8px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+
+    select { min-width: 220px; }
+
+    .tradeoff {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--border);
+      font-style: italic;
+    }
+
+    .input-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; }
+    .input-row label { flex: 1; padding: 0; }
+    .input-row input[type=number] { width: 110px; text-align: right; }
+    .input-row .unit { color: var(--muted); font-size: 11px; min-width: 84px; }
+
+    .range-row { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+    .range-row input[type=range] { flex: 1; }
+    .range-row label { min-width: 150px; font-size: 13px; }
+    .range-row output { min-width: 66px; font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 600; text-align: right; }
+
+    .seg { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+    .seg button {
+      flex: 1; background: var(--panel-2); color: var(--muted); border: none;
+      padding: 6px 8px; font-size: 12px; cursor: pointer; font-family: inherit;
+      border-right: 1px solid var(--border);
+    }
+    .seg button:last-child { border-right: none; }
+    .seg button.on { background: var(--accent); color: #08110d; font-weight: 600; }
+    :root[data-theme="light"] .seg button.on { color: #fff; }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin: 0 0 16px;
+    }
+
+    .panel h3 {
+      margin: 0 0 12px;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+    .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 7px; padding: 10px 12px; }
+    .stat .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .stat .v { font-size: 21px; font-weight: 600; font-family: var(--mono); margin-top: 3px; }
+    .stat .v small { font-size: 12px; color: var(--muted); font-weight: 400; }
+    .stat .sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+    .stat.accent .v { color: var(--accent); }
+    .stat.warn { background: var(--warn-tint); }
+    .stat.bad { background: var(--bad-tint); }
+
+    .formula {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--muted);
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-top: 10px;
+      white-space: pre-wrap;
+      line-height: 1.7;
+    }
+    .formula b { color: var(--text); font-weight: 600; }
+
+    .bound {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--mono);
+    }
+    .bound.mem { background: var(--memory); color: #06121f; }
+    .bound.comp { background: var(--compute); color: #1f0814; }
+    :root[data-theme="light"] .bound.mem, :root[data-theme="light"] .bound.comp { color: #fff; }
+
+    .hbm-bar { display: flex; height: 22px; border-radius: 5px; overflow: hidden; border: 1px solid var(--border); margin: 6px 0 4px; }
+    .hbm-bar .seg-w { background: var(--compute); }
+    .hbm-bar .seg-kv { background: var(--memory); }
+    .hbm-bar .seg-free { background: var(--panel-2); }
+    .legend-row { display: flex; gap: 16px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+    .legend-row span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+    .lg-w::before { background: var(--compute); }
+    .lg-kv::before { background: var(--memory); }
+    .lg-free::before { background: var(--border); }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 4px; }
+    th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); font-family: var(--mono); }
+    th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.04em; }
+    th:first-child, td:first-child { text-align: left; }
+    tr.hl td { background: var(--good-tint); }
+
+    .src { font-size: 11.5px; color: var(--muted); }
+    .src a { color: var(--accent); }
+    .src ul { margin: 6px 0 0; padding-left: 18px; }
+    .src li { margin: 3px 0; }
+
+    .note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+    .warnbox { background: var(--warn-tint); border: 1px solid var(--warn); border-radius: 6px; padding: 8px 10px; font-size: 11.5px; margin-top: 10px; }
+
+    .foot { padding: 18px 32px 28px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--border); max-width: 1500px; margin: 0 auto; }
+    .foot a { color: inherit; text-decoration: underline; }
+  </style>
+</head>
+
+<body>
+  <header>
+    <a class="backlink" href="index.html" title="Back to all tools" aria-label="Back to all tools">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 12H5M12 19l-7-7 7-7" />
+      </svg>
+    </a>
+    <h1>LLM Serving Performance Calculator</h1>
+    <p>Roofline back-of-napkin for LLM inference: time to first token, per-token latency, throughput against batch
+      size, KV-cache-bounded concurrency, and how many GPUs or Cloud TPUs an SLO needs. Deterministic, no LLM.
+      This is a performance and capacity tool, not a memory-fit tool (for "does it fit in VRAM" use the
+      <a href="qlora-gemma4-memory-calculator.html" style="color:var(--accent)">memory calculator</a> or Google's
+      Gemma memory page).</p>
+    <div class="header-actions">
+      <button id="themeBtn" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">
+        <svg class="ic-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+        </svg>
+        <svg class="ic-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <div class="calc-grid">
+
+      <!-- LEFT: inputs -->
+      <section>
+        <h2>Model</h2>
+        <fieldset>
+          <legend>Model + precision</legend>
+          <div class="input-row">
+            <label for="model">Model</label>
+            <select id="model"></select>
+          </div>
+          <div id="modelMeta" class="tradeoff" style="font-style:normal;"></div>
+          <div style="margin:10px 0 4px; font-size:13px;">Serving precision (weights)</div>
+          <div class="seg" id="precSeg">
+            <button data-prec="bf16">BF16</button>
+            <button data-prec="fp8" class="on">FP8</button>
+            <button data-prec="int4">INT4</button>
+          </div>
+          <label style="margin-top:10px;"><input type="checkbox" id="kvFp8"> Quantize KV cache to FP8 (1 byte/elem)</label>
+          <div class="tradeoff">Weight precision sets bytes per parameter (BF16 = 2, FP8 = 1, INT4 = 0.5). INT4
+            weights are 0.25x the BF16 weight memory. KV-cache quantization halves the cache footprint, which roughly
+            doubles the number of concurrent requests that fit.</div>
+        </fieldset>
+
+        <h2>Accelerator</h2>
+        <fieldset>
+          <legend>GPU / TPU + parallelism</legend>
+          <div class="input-row">
+            <label for="accel">Accelerator</label>
+            <select id="accel"></select>
+          </div>
+          <div id="accelMeta" class="tradeoff" style="font-style:normal;"></div>
+          <div class="range-row">
+            <label for="tp">Devices (tensor parallel)</label>
+            <input type="range" id="tp" min="1" max="16" step="1" value="2">
+            <output id="tpOut">2</output>
+          </div>
+          <div class="range-row">
+            <label for="mfu">MFU (compute efficiency)</label>
+            <input type="range" id="mfu" min="0.2" max="0.7" step="0.05" value="0.4">
+            <output id="mfuOut">40%</output>
+          </div>
+          <div class="tradeoff">Tensor parallelism shards the weights across devices and adds their HBM bandwidth and
+            compute together, with a small communication tax above 1 device. MFU (model FLOPs utilization) is the
+            fraction of peak compute you actually reach; 0.3 to 0.5 is realistic for decode-heavy serving.</div>
+        </fieldset>
+
+        <h2>Workload</h2>
+        <fieldset>
+          <legend>Request shape</legend>
+          <div class="input-row">
+            <label for="promptTok">Prompt tokens (input)</label>
+            <input type="number" id="promptTok" value="2000" min="1" step="100">
+            <span class="unit">tokens</span>
+          </div>
+          <div class="input-row">
+            <label for="outTok">Output tokens</label>
+            <input type="number" id="outTok" value="500" min="1" step="50">
+            <span class="unit">tokens</span>
+          </div>
+          <div class="input-row">
+            <label for="ctxTok">Avg context held in KV</label>
+            <input type="number" id="ctxTok" value="2500" min="1" step="100">
+            <span class="unit">tokens</span>
+          </div>
+          <div class="range-row">
+            <label for="batch">Batch size (concurrent decode)</label>
+            <input type="range" id="batch" min="1" max="256" step="1" value="32">
+            <output id="batchOut">32</output>
+          </div>
+          <div class="tradeoff">Avg context is prompt + generated so far; it sizes the KV cache per request. Batch size
+            is how many requests decode together. Continuous batching reads the weights once per step for the whole
+            batch, so throughput climbs with batch until compute or the KV budget caps it.</div>
+        </fieldset>
+
+        <h2>Capacity target</h2>
+        <fieldset>
+          <legend>SLO + load</legend>
+          <div class="input-row">
+            <label for="peakQps">Target peak QPS</label>
+            <input type="number" id="peakQps" value="20" min="0" step="1">
+            <span class="unit">req / s</span>
+          </div>
+          <div class="input-row">
+            <label for="sloTpot">TPOT SLO (per output token)</label>
+            <input type="number" id="sloTpot" value="40" min="1" step="5">
+            <span class="unit">ms / token</span>
+          </div>
+          <div class="input-row">
+            <label for="costHr">Accelerator cost (per device)</label>
+            <input type="number" id="costHr" value="0" min="0" step="0.5">
+            <span class="unit">$ / hr</span>
+          </div>
+          <div class="tradeoff">Set cost to a per-device on-demand rate to see a rough cost per million output tokens.
+            Leave at 0 to hide cost. Capacity sizing picks the largest batch that still meets the TPOT SLO, then counts
+            replicas for the target QPS. TCO and pricing tiers live in the
+            <a href="agent-infra-cost-calculator.html" style="color:var(--accent)">cost calculator</a>.</div>
+        </fieldset>
+      </section>
+
+      <!-- RIGHT: outputs -->
+      <section>
+        <div class="panel">
+          <h3>Single-request latency</h3>
+          <div class="stat-grid" id="latStats"></div>
+          <div class="formula" id="latFormula"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Throughput &amp; roofline</h3>
+          <div class="stat-grid" id="tputStats"></div>
+          <div class="formula" id="rooflineFormula"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Concurrency (KV-cache budget)</h3>
+          <div class="hbm-bar" id="hbmBar"></div>
+          <div class="legend-row">
+            <span class="lg-w">Weights</span>
+            <span class="lg-kv">KV at current batch</span>
+            <span class="lg-free">Free for more KV</span>
+          </div>
+          <div class="stat-grid" id="concStats" style="margin-top:12px;"></div>
+          <div class="formula" id="kvFormula"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Capacity sizing for SLO</h3>
+          <div class="stat-grid" id="capStats"></div>
+          <div class="note" id="capNote"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Batch sweep (throughput vs latency)</h3>
+          <table id="sweepTable">
+            <thead>
+              <tr>
+                <th>Batch</th>
+                <th>TPOT (ms)</th>
+                <th>System tok/s</th>
+                <th>Bound</th>
+                <th>Max conc.</th>
+                <th id="sweepCostHead">$/1M out</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="note">The row matching your batch is highlighted. Throughput rises with batch (continuous
+            batching) until decode turns compute-bound or the KV budget runs out.</div>
+        </div>
+
+        <div class="panel src">
+          <h3>Source &amp; assumptions</h3>
+          <div id="assume"></div>
+          <ul>
+            <li>Decode is memory-bandwidth bound: per step the weights (and active KV) are read from HBM once for the
+              whole batch, so step time = (weight bytes + batch x KV bytes) / aggregate HBM bandwidth, and per-token
+              compute = 2 x params x batch FLOPs is compared against it (the larger wins).</li>
+            <li>Prefill / TTFT is compute bound: 2 x params x prompt tokens FLOPs / (aggregate peak FLOPs x MFU).</li>
+            <li>KV bytes per token = 2 x layers x kv_heads x head_dim x bytes_per_elem (grouped-query aware; uses
+              kv_heads, not query heads).</li>
+            <li>Accelerator FLOPs are dense BF16. NVIDIA's headline 1979 TFLOPS for H100 / H200 is the with-sparsity
+              number; dense is about 990. Confirm against
+              <a href="https://www.nvidia.com/en-us/data-center/h200/">NVIDIA</a> and
+              <a href="https://docs.cloud.google.com/tpu/docs/v6e">Google Cloud TPU</a> docs.</li>
+            <li>TPU FLOPs and bandwidth are per chip and approximate; treat them as order-of-magnitude for an interview,
+              not a procurement spec.</li>
+            <li>This ignores speculative decoding, chunked prefill, prefix-cache reuse, and PagedAttention block waste
+              (under about 4%). It is a first-principles floor, not a vLLM benchmark.</li>
+          </ul>
+        </div>
+
+        <div class="panel src">
+          <h3>Reference links</h3>
+          <p style="margin:0 0 4px; font-weight:600; color:var(--text);">Accelerator specs (HBM capacity, bandwidth, peak FLOPS)</p>
+          <ul>
+            <li>NVIDIA:
+              <a href="https://www.nvidia.com/en-us/data-center/tesla-t4/">T4</a>,
+              <a href="https://www.nvidia.com/en-us/data-center/l4/">L4</a>,
+              <a href="https://www.nvidia.com/en-us/data-center/a100/">A100</a>,
+              <a href="https://www.nvidia.com/en-us/data-center/h100/">H100</a>,
+              <a href="https://www.nvidia.com/en-us/data-center/h200/">H200</a></li>
+            <li>Google Cloud:
+              <a href="https://docs.cloud.google.com/tpu/docs/v5e">TPU v5e</a>,
+              <a href="https://docs.cloud.google.com/tpu/docs/v5p">TPU v5p</a>,
+              <a href="https://docs.cloud.google.com/tpu/docs/v6e">TPU v6e (Trillium)</a></li>
+          </ul>
+          <p style="margin:8px 0 4px; font-weight:600; color:var(--text);">Model architecture (parameters, layers, KV heads, head dim)</p>
+          <ul>
+            <li><a href="https://ai.google.dev/gemma/docs/core">Gemma</a>,
+              <a href="https://huggingface.co/meta-llama/Llama-3.1-70B">Llama 3.1</a>,
+              <a href="https://huggingface.co/Qwen/Qwen2.5-72B">Qwen2.5</a>,
+              <a href="https://huggingface.co/mistralai/Mixtral-8x7B-v0.1">Mistral / Mixtral</a></li>
+          </ul>
+          <p style="margin:8px 0 4px; font-weight:600; color:var(--text);">Inference performance method (KV cache, prefill vs decode, roofline)</p>
+          <ul>
+            <li>NVIDIA, <a href="https://developer.nvidia.com/blog/mastering-llm-techniques-inference-optimization/">Mastering LLM Techniques: Inference Optimization</a></li>
+            <li>Google DeepMind, <a href="https://jax-ml.github.io/scaling-book/">How to Scale Your Model</a> (TPU roofline and arithmetic intensity)</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div class="foot">A personal project, provided as is and not affiliated with or endorsed by any vendor. See the
+    <a href="DISCLAIMER.md">full disclaimer</a>. Rough estimates for planning and interview practice, not exact
+    figures.</div>
+
+  <script>
+    "use strict";
+
+    /* ===================== Model catalog =====================
+       Architecture fields mirror the memory calculator's records so KV math stays consistent:
+       params (total, for weight bytes + prefill FLOPs), layers, kvHeads, headDim. active is the
+       per-token active params for mixture-of-experts models (drives weight-read bytes per step). */
+    const MODELS = {
+      "gemma-3-4b":   { name: "Gemma 3 4B",        params: 4.3e9,   layers: 34,  kvHeads: 4,  headDim: 256, fp8: true },
+      "gemma-3-12b":  { name: "Gemma 3 12B",       params: 12.2e9,  layers: 48,  kvHeads: 8,  headDim: 256, fp8: true },
+      "gemma-3-27b":  { name: "Gemma 3 27B",       params: 27.4e9,  layers: 62,  kvHeads: 16, headDim: 128, fp8: true },
+      "llama-31-8b":  { name: "Llama 3.1 8B",      params: 8.03e9,  layers: 32,  kvHeads: 8,  headDim: 128, fp8: true },
+      "llama-31-70b": { name: "Llama 3.1 70B",     params: 70.6e9,  layers: 80,  kvHeads: 8,  headDim: 128, fp8: true },
+      "llama-31-405b":{ name: "Llama 3.1 405B",    params: 406e9,   layers: 126, kvHeads: 8,  headDim: 128, fp8: true },
+      "qwen25-72b":   { name: "Qwen2.5 72B",       params: 72.7e9,  layers: 80,  kvHeads: 8,  headDim: 128, fp8: true },
+      "mistral-7b":   { name: "Mistral 7B",        params: 7.24e9,  layers: 32,  kvHeads: 8,  headDim: 128, fp8: true },
+      "mixtral-8x7b": { name: "Mixtral 8x7B (MoE)",params: 46.7e9,  active: 12.9e9, layers: 32, kvHeads: 8, headDim: 128, fp8: true, moe: true },
+    };
+
+    /* ===================== Accelerator catalog =====================
+       hbmGB per device, bwTBs = HBM bandwidth (TB/s), bf16TF = dense BF16 TFLOPS, fp8TF = dense FP8 TFLOPS
+       (0 = not supported). TPU values are per chip and approximate. */
+    const ACCEL = {
+      "t4":      { name: "NVIDIA T4 (16 GB)",            type: "gpu", hbmGB: 16,  bwTBs: 0.32,  bf16TF: 65,   fp8TF: 0,    note: "Turing, GDDR6, FP16 only (no BF16/FP8)" },
+      "l4":      { name: "NVIDIA L4 (24 GB)",            type: "gpu", hbmGB: 24,  bwTBs: 0.30,  bf16TF: 121,  fp8TF: 242,  note: "Ada, GDDR6" },
+      "a100-40": { name: "NVIDIA A100 (40 GB)",          type: "gpu", hbmGB: 40,  bwTBs: 1.555, bf16TF: 312,  fp8TF: 0,    note: "Ampere, HBM2, no FP8" },
+      "a100-80": { name: "NVIDIA A100 (80 GB)",          type: "gpu", hbmGB: 80,  bwTBs: 2.039, bf16TF: 312,  fp8TF: 0,    note: "Ampere, HBM2e, no FP8" },
+      "h100":    { name: "NVIDIA H100 SXM (80 GB)",      type: "gpu", hbmGB: 80,  bwTBs: 3.35,  bf16TF: 990,  fp8TF: 1979, note: "Hopper, HBM3; dense BF16 about 990 TFLOPS" },
+      "h200":    { name: "NVIDIA H200 SXM (141 GB)",     type: "gpu", hbmGB: 141, bwTBs: 4.8,   bf16TF: 990,  fp8TF: 1979, note: "Hopper, HBM3e" },
+      "tpu-v5e": { name: "Cloud TPU v5e (16 GB/chip)",   type: "tpu", hbmGB: 16,  bwTBs: 0.82,  bf16TF: 197,  fp8TF: 0,    note: "per chip, approximate" },
+      "tpu-v5p": { name: "Cloud TPU v5p (95 GB/chip)",   type: "tpu", hbmGB: 95,  bwTBs: 2.76,  bf16TF: 459,  fp8TF: 0,    note: "per chip, approximate" },
+      "tpu-v6e": { name: "Cloud TPU v6e Trillium (32 GB/chip)", type: "tpu", hbmGB: 32, bwTBs: 1.6, bf16TF: 918, fp8TF: 0, note: "per chip, approximate" },
+    };
+
+    const PREC_BYTES = { bf16: 2, fp8: 1, int4: 0.5 };
+    const HBM_USABLE = 0.90;        // fraction of HBM available after runtime/framework overhead
+    const TP_COMM_EFF = 0.90;       // bandwidth/compute efficiency penalty per added device
+    const TTFT_OVERHEAD_MS = 8;     // fixed scheduling/sampling overhead on the prefill path
+    const SWEEP_BATCHES = [1, 8, 32, 128];
+
+    /* ===================== State + helpers ===================== */
+    const $ = sel => document.querySelector(sel);
+    const state = {
+      model: "llama-31-70b", prec: "fp8", kvFp8: false,
+      accel: "h100", tp: 2, mfu: 0.4,
+      promptTok: 2000, outTok: 500, ctxTok: 2500, batch: 32,
+      peakQps: 20, sloTpot: 40, costHr: 0,
+    };
+
+    const GB = 1e9;
+    const TB = 1e12;
+    function fmtMs(ms) { return ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : ms.toFixed(1) + " ms"; }
+    function fmtTps(t) { return t >= 1e6 ? (t / 1e6).toFixed(2) + "M" : t >= 1e3 ? (t / 1e3).toFixed(1) + "k" : Math.round(t).toString(); }
+    function fmtGB(b) { return (b / GB).toFixed(b / GB < 10 ? 2 : 1) + " GB"; }
+    function fmtMB(b) { return (b / 1e6).toFixed(1) + " MB"; }
+    function fmtInt(n) { return Math.round(n).toLocaleString("en-US"); }
+
+    /* Per-device active weight read each decode step. For dense models that is the full params;
+       for MoE it is the active params (only the routed experts are read per token). */
+    function weightBytes(m, prec) {
+      const p = m.moe ? m.active : m.params;
+      return p * PREC_BYTES[prec];
+    }
+    function totalWeightBytes(m, prec) { return m.params * PREC_BYTES[prec]; }   // full model footprint
+    function kvBytesPerToken(m, kvFp8) {
+      return 2 * m.layers * m.kvHeads * m.headDim * (kvFp8 ? 1 : 2);   // K and V, kv_heads (GQA)
+    }
+
+    /* ===================== Core compute ===================== */
+    function compute(s) {
+      const m = MODELS[s.model], a = ACCEL[s.accel];
+      const prec = (s.prec === "fp8" && a.fp8TF === 0) ? "bf16" : s.prec;   // fall back if FP8 unsupported
+      const tp = Math.max(1, s.tp);
+      const commEff = tp > 1 ? TP_COMM_EFF : 1;
+
+      // aggregate device resources across the tensor-parallel group
+      const aggBw = a.bwTBs * TB * tp * commEff;                 // bytes / s
+      const peakFlops = (prec === "fp8" && a.fp8TF > 0 ? a.fp8TF : a.bf16TF) * 1e12 * tp * commEff; // FLOP/s
+      const hbmTotal = a.hbmGB * tp * GB;                        // bytes
+
+      const wBytesStep = weightBytes(m, prec);                   // read per decode step (active params for MoE)
+      const wBytesFull = totalWeightBytes(m, prec);              // resident footprint
+      const kvPerTok = kvBytesPerToken(m, s.kvFp8);
+      const kvPerReq = kvPerTok * s.ctxTok;
+
+      // ---- decode step time at a given batch (memory vs compute, larger wins) ----
+      function stepTime(batch) {
+        const memBytes = wBytesStep + batch * kvPerTok * s.ctxTok;   // weights + active KV read this step
+        const tMem = memBytes / aggBw;
+        const tComp = (2 * (m.moe ? m.active : m.params) * batch) / peakFlops; // 2*N*batch FLOPs, no MFU haircut on the floor
+        return { t: Math.max(tMem, tComp), tMem, tComp, bound: tComp > tMem ? "compute" : "memory" };
+      }
+
+      const st = stepTime(s.batch);
+      const tpotMs = st.t * 1000;
+      const sysTps = s.batch / st.t;            // tokens/s across the batch
+      const perStreamTps = 1 / st.t;            // tokens/s for one request
+
+      // ---- TTFT (prefill, compute bound) ----
+      const prefillFlops = 2 * m.params * s.promptTok;
+      const tPrefillComp = prefillFlops / (peakFlops * s.mfu);
+      const tPrefillMem = wBytesFull / aggBw;   // must at least read weights once
+      const ttftMs = Math.max(tPrefillComp, tPrefillMem) * 1000 + TTFT_OVERHEAD_MS;
+      const ttftBound = tPrefillComp > tPrefillMem ? "compute" : "memory";
+
+      const e2eMs = ttftMs + (s.outTok - 1) * tpotMs;
+
+      // ---- roofline ----
+      const ridge = peakFlops / aggBw;          // FLOP per byte to saturate compute
+      const aiDecode = 2 * s.batch / PREC_BYTES[prec];   // decode arithmetic intensity ~ 2*batch/bytes_per_param
+      const batchToSaturate = Math.ceil(ridge * PREC_BYTES[prec] / 2);
+
+      // ---- KV-bounded concurrency ----
+      const freeForKv = hbmTotal * HBM_USABLE - wBytesFull;
+      const maxConc = Math.max(0, Math.floor(freeForKv / kvPerReq));
+      const fits = wBytesFull < hbmTotal * HBM_USABLE;
+      const kvAtBatch = s.batch * kvPerReq;
+
+      // ---- capacity sizing for SLO ----
+      // largest batch (cap by KV budget and 1024) whose TPOT <= SLO
+      let bSlo = 0;
+      const bCap = Math.min(1024, maxConc || 1);
+      for (let b = 1; b <= bCap; b++) {
+        if (stepTime(b).t * 1000 <= s.sloTpot) bSlo = b; else break;
+      }
+      let replicas = 0, perReplicaTps = 0, sloFeasible = bSlo > 0;
+      const requiredTps = s.peakQps * s.outTok;     // output tokens/s demanded
+      if (sloFeasible) {
+        perReplicaTps = bSlo / stepTime(bSlo).t;
+        replicas = requiredTps > 0 ? Math.ceil(requiredTps / perReplicaTps) : 0;
+      }
+
+      // ---- batch sweep ----
+      const sweep = SWEEP_BATCHES.map(b => {
+        const stb = stepTime(b);
+        const conc = maxConc;
+        const sys = b / stb.t;
+        const costPer1M = s.costHr > 0 ? (s.costHr * tp / 3600) / sys * 1e6 : null;
+        return { b, tpotMs: stb.t * 1000, sysTps: sys, bound: stb.bound, conc, costPer1M, feasibleKv: b <= maxConc };
+      });
+
+      const costPer1MOut = s.costHr > 0 ? (s.costHr * tp / 3600) / sysTps * 1e6 : null;
+
+      return {
+        m, a, prec, tp, aggBw, peakFlops, hbmTotal,
+        wBytesStep, wBytesFull, kvPerTok, kvPerReq, kvAtBatch,
+        tpotMs, sysTps, perStreamTps, decodeBound: st.bound, tMem: st.tMem, tComp: st.tComp,
+        ttftMs, ttftBound, e2eMs,
+        ridge, aiDecode, batchToSaturate,
+        maxConc, freeForKv, fits,
+        bSlo, replicas, perReplicaTps, sloFeasible, requiredTps,
+        sweep, costPer1MOut,
+        precFellBack: prec !== s.prec,
+      };
+    }
+
+    /* ===================== Render ===================== */
+    function statHtml(k, v, sub, cls) {
+      return `<div class="stat ${cls || ""}"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`;
+    }
+
+    function render() {
+      const r = compute(state);
+
+      // latency
+      $("#latStats").innerHTML =
+        statHtml("TTFT", fmtMs(r.ttftMs), `prefill, ${r.ttftBound}-bound`, "accent") +
+        statHtml("TPOT", r.tpotMs.toFixed(1) + " <small>ms/tok</small>", `decode, <span class="bound ${r.decodeBound === "memory" ? "mem" : "comp"}">${r.decodeBound}-bound</span>`) +
+        statHtml("Per-stream", fmtTps(r.perStreamTps) + " <small>tok/s</small>", "one request") +
+        statHtml("End to end", fmtMs(r.e2eMs), `${fmtInt(state.promptTok)} in, ${fmtInt(state.outTok)} out`);
+
+      $("#latFormula").innerHTML =
+        `<b>TTFT</b> = 2 x ${(r.m.params / 1e9).toFixed(1)}B x ${fmtInt(state.promptTok)} / (${(r.peakFlops / 1e12).toFixed(0)} TFLOPS x ${(state.mfu * 100).toFixed(0)}%) + ${TTFT_OVERHEAD_MS}ms = <b>${fmtMs(r.ttftMs)}</b>\n` +
+        `<b>TPOT</b> = max(read ${fmtGB(r.wBytesStep + r.kvAtBatch)} / ${(r.aggBw / TB).toFixed(2)} TB/s , compute) = <b>${r.tpotMs.toFixed(1)} ms</b>\n` +
+        `<b>E2E</b> = TTFT + (${fmtInt(state.outTok)} - 1) x TPOT = <b>${fmtMs(r.e2eMs)}</b>`;
+
+      // throughput + roofline
+      $("#tputStats").innerHTML =
+        statHtml("System throughput", fmtTps(r.sysTps) + " <small>tok/s</small>", `batch ${state.batch}, <span class="bound ${r.decodeBound === "memory" ? "mem" : "comp"}">${r.decodeBound}-bound</span>`, "accent") +
+        statHtml("Ridge point", Math.round(r.ridge) + " <small>FLOP/B</small>", "to saturate compute") +
+        statHtml("Decode intensity", r.aiDecode.toFixed(1) + " <small>FLOP/B</small>", `batch ${state.batch}`) +
+        statHtml("Batch to compute-bound", "~" + fmtInt(r.batchToSaturate), "where decode stops being bandwidth-limited");
+
+      $("#rooflineFormula").innerHTML =
+        `Decode reads weights from HBM every token, so at small batch it is <span class="bound mem">memory-bound</span>: throughput scales with batch almost for free.\n` +
+        `It turns <span class="bound comp">compute-bound</span> near batch ${fmtInt(r.batchToSaturate)} (arithmetic intensity = ridge point ${Math.round(r.ridge)} FLOP/byte). Past that, more batch stops helping latency.`;
+
+      // concurrency
+      const wPct = Math.min(100, r.wBytesFull / r.hbmTotal * 100);
+      const kvPct = Math.min(100 - wPct, r.kvAtBatch / r.hbmTotal * 100);
+      const freePct = Math.max(0, 100 - wPct - kvPct);
+      $("#hbmBar").innerHTML =
+        `<div class="seg-w" style="width:${wPct}%"></div><div class="seg-kv" style="width:${kvPct}%"></div><div class="seg-free" style="width:${freePct}%"></div>`;
+      $("#concStats").innerHTML =
+        statHtml("KV per token", fmtMB(r.kvPerTok * 1000) + "<small>/1k</small>", `${(r.kvPerTok).toFixed(0)} B/token`) +
+        statHtml("KV per request", fmtGB(r.kvPerReq), `at ${fmtInt(state.ctxTok)} ctx`) +
+        statHtml("Max concurrent", r.fits ? fmtInt(r.maxConc) : "does not fit", r.fits ? `on ${r.tp}x ${r.a.type.toUpperCase()}` : `weights > ${(r.hbmTotal * HBM_USABLE / GB).toFixed(0)} GB usable`, r.fits ? (r.maxConc < state.batch ? "warn" : "accent") : "bad") +
+        statHtml("Weights resident", fmtGB(r.wBytesFull), `${(r.hbmTotal / GB).toFixed(0)} GB HBM total`);
+
+      $("#kvFormula").innerHTML =
+        `<b>KV/token</b> = 2 x ${r.m.layers} layers x ${r.m.kvHeads} kv-heads x ${r.m.headDim} head-dim x ${state.kvFp8 ? 1 : 2} B = <b>${(r.kvPerTok).toFixed(0)} B</b>\n` +
+        `<b>Max concurrent</b> = (${(r.hbmTotal / GB).toFixed(0)} GB x ${HBM_USABLE} - ${fmtGB(r.wBytesFull)} weights) / ${fmtGB(r.kvPerReq)} = <b>${r.fits ? fmtInt(r.maxConc) : "0"}</b>`;
+
+      // capacity
+      if (r.sloFeasible) {
+        $("#capStats").innerHTML =
+          statHtml("Batch at SLO", fmtInt(r.bSlo), `TPOT <= ${state.sloTpot} ms`, "accent") +
+          statHtml("Per-replica", fmtTps(r.perReplicaTps) + " <small>tok/s</small>", "at that batch") +
+          statHtml("Demand", fmtTps(r.requiredTps) + " <small>tok/s</small>", `${state.peakQps} QPS x ${fmtInt(state.outTok)} out`) +
+          statHtml("Replicas needed", fmtInt(r.replicas), `each ${r.tp}x ${r.a.name.split("(")[0].trim()}`, "accent");
+        $("#capNote").innerHTML =
+          `To hold ${state.peakQps} QPS within a ${state.sloTpot} ms/token SLO you can batch up to ${fmtInt(r.bSlo)} requests per replica` +
+          `${r.maxConc <= r.bSlo ? ` (the KV budget caps concurrency at ${fmtInt(r.maxConc)}, which is the binding limit)` : ""}, ` +
+          `giving ${fmtTps(r.perReplicaTps)} output tok/s each, so you need <b>${fmtInt(r.replicas)}</b> replica${r.replicas === 1 ? "" : "s"} of ${r.tp}x ${r.a.name.split("(")[0].trim()}` +
+          `${r.costPer1MOut != null ? `. At $${state.costHr}/device/hr that is about $${r.costPer1MOut.toFixed(2)} per million output tokens at your current batch.` : "."}`;
+      } else {
+        $("#capStats").innerHTML = statHtml("Batch at SLO", "0", "SLO not reachable", "bad");
+        $("#capNote").innerHTML = `Even batch 1 cannot meet a ${state.sloTpot} ms/token TPOT on this hardware` +
+          ` (TPOT floor is ${r.tpotMs.toFixed(1)} ms at batch ${state.batch}). Loosen the SLO, add tensor-parallel devices, quantize, or pick a faster accelerator.`;
+      }
+
+      // sweep
+      const showCost = state.costHr > 0;
+      $("#sweepCostHead").style.display = showCost ? "" : "none";
+      $("#sweepTable tbody").innerHTML = r.sweep.map(row => {
+        const hl = row.b === state.batch ? "hl" : "";
+        return `<tr class="${hl}"><td>${row.b}</td><td>${row.tpotMs.toFixed(1)}</td><td>${fmtTps(row.sysTps)}</td>` +
+          `<td><span class="bound ${row.bound === "memory" ? "mem" : "comp"}">${row.bound}</span></td>` +
+          `<td>${row.feasibleKv ? "ok" : "over " + fmtInt(row.conc)}</td>` +
+          `${showCost ? `<td>$${row.costPer1M.toFixed(2)}</td>` : ""}</tr>`;
+      }).join("");
+
+      // assumptions line
+      $("#assume").innerHTML =
+        `<b>${r.m.name}</b> on <b>${r.tp}x ${r.a.name}</b> at <b>${r.prec.toUpperCase()}</b>` +
+        `${r.precFellBack ? ` (FP8 not supported here, using BF16)` : ""}: ` +
+        `${(r.m.params / 1e9).toFixed(0)}B params, ${r.m.layers} layers, ${r.m.kvHeads} kv-heads x ${r.m.headDim} head-dim. ` +
+        `Aggregate ${(r.aggBw / TB).toFixed(2)} TB/s bandwidth, ${(r.peakFlops / 1e12).toFixed(0)} TFLOPS, ${(r.hbmTotal / GB).toFixed(0)} GB HBM` +
+        `${r.tp > 1 ? ` (${r.tp} devices, ${((1 - TP_COMM_EFF) * 100).toFixed(0)}% comm tax)` : ""}.` +
+        (r.m.moe ? ` MoE: ${(r.m.active / 1e9).toFixed(1)}B active params read per token, ${(r.m.params / 1e9).toFixed(0)}B resident.` : "");
+    }
+
+    /* ===================== Wiring ===================== */
+    function buildSelects() {
+      $("#model").innerHTML = Object.entries(MODELS).map(([id, m]) => `<option value="${id}">${m.name}</option>`).join("");
+      $("#accel").innerHTML = Object.entries(ACCEL).map(([id, a]) => `<option value="${id}">${a.name}</option>`).join("");
+      $("#model").value = state.model;
+      $("#accel").value = state.accel;
+    }
+
+    function syncMeta() {
+      const m = MODELS[state.model], a = ACCEL[state.accel];
+      $("#modelMeta").textContent = `${(m.params / 1e9).toFixed(0)}B params, ${m.layers} layers, ${m.kvHeads} KV heads, ${m.headDim} head dim${m.moe ? `, MoE ${(m.active / 1e9).toFixed(1)}B active` : ""}`;
+      $("#accelMeta").textContent = `${a.hbmGB} GB HBM, ${a.bwTBs} TB/s, ${a.bf16TF} TF BF16${a.fp8TF ? " / " + a.fp8TF + " TF FP8" : ""}. ${a.note}`;
+    }
+
+    function bind() {
+      $("#model").addEventListener("change", e => { state.model = e.target.value; syncMeta(); render(); });
+      $("#accel").addEventListener("change", e => { state.accel = e.target.value; syncMeta(); render(); });
+      $("#kvFp8").addEventListener("change", e => { state.kvFp8 = e.target.checked; render(); });
+      document.querySelectorAll("#precSeg button").forEach(b => b.addEventListener("click", () => {
+        state.prec = b.dataset.prec;
+        document.querySelectorAll("#precSeg button").forEach(x => x.classList.toggle("on", x === b));
+        render();
+      }));
+      const ranges = [
+        ["#tp", "tp", "#tpOut", v => v],
+        ["#mfu", "mfu", "#mfuOut", v => (v * 100).toFixed(0) + "%"],
+        ["#batch", "batch", "#batchOut", v => v],
+      ];
+      ranges.forEach(([sel, key, out, fmt]) => {
+        $(sel).addEventListener("input", e => {
+          state[key] = parseFloat(e.target.value);
+          $(out).textContent = fmt(state[key]);
+          render();
+        });
+      });
+      const nums = [["#promptTok", "promptTok"], ["#outTok", "outTok"], ["#ctxTok", "ctxTok"], ["#peakQps", "peakQps"], ["#sloTpot", "sloTpot"], ["#costHr", "costHr"]];
+      nums.forEach(([sel, key]) => $(sel).addEventListener("input", e => {
+        const v = parseFloat(e.target.value);
+        state[key] = isNaN(v) ? 0 : v;
+        render();
+      }));
+    }
+
+    /* theme toggle */
+    (function () {
+      const btn = $("#themeBtn");
+      function setTheme(t, persist) { document.documentElement.setAttribute("data-theme", t); if (persist) localStorage.setItem("theme", t); }
+      btn.addEventListener("click", () => setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light", true));
+      window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", e => { if (!localStorage.getItem("theme")) setTheme(e.matches ? "light" : "dark", false); });
+    })();
+
+    /* ===================== Self-test ===================== */
+    function selfTest() {
+      const results = [];
+      const assert = (n, c) => results.push([n, !!c]);
+      const near = (a, b, tol) => Math.abs(a - b) <= tol;
+
+      // determinism
+      const r1 = JSON.stringify(compute(state)), r2 = JSON.stringify(compute(state));
+      assert("determinism: same inputs give same outputs", r1 === r2);
+
+      // 70B FP16 single-stream memory-bound floor: 140GB / 3.35 TB/s ~= 42ms ~= 24 tok/s on one H100
+      const h100 = compute({ ...state, model: "llama-31-70b", accel: "h100", prec: "bf16", tp: 1, batch: 1, ctxTok: 1 });
+      assert("70B BF16 batch-1 TPOT ~42ms on 1x H100", near(h100.tpotMs, 42, 4));
+      assert("70B BF16 batch-1 ~24 tok/s on 1x H100", near(h100.perStreamTps, 24, 3));
+      assert("70B batch-1 decode is memory-bound", h100.decodeBound === "memory");
+
+      // H200 has more bandwidth: 140GB / 4.8 TB/s ~= 29ms ~= 34 tok/s
+      const h200 = compute({ ...state, model: "llama-31-70b", accel: "h200", prec: "bf16", tp: 1, batch: 1, ctxTok: 1 });
+      assert("70B BF16 batch-1 ~34 tok/s on 1x H200", near(h200.perStreamTps, 34, 3));
+      assert("H200 faster than H100 at batch 1", h200.perStreamTps > h100.perStreamTps);
+
+      // INT4 weight memory is 0.25x BF16 (per-param bytes 0.5 vs 2.0)
+      const bf = compute({ ...state, model: "llama-31-70b", prec: "bf16" });
+      const i4 = compute({ ...state, model: "llama-31-70b", prec: "int4" });
+      assert("INT4 weight memory = 0.25x BF16", near(i4.wBytesFull / bf.wBytesFull, 0.25, 0.001));
+
+      // KV quantization roughly doubles concurrency
+      const kv16 = compute({ ...state, model: "llama-31-70b", accel: "h200", tp: 2, kvFp8: false });
+      const kv8 = compute({ ...state, model: "llama-31-70b", accel: "h200", tp: 2, kvFp8: true });
+      assert("FP8 KV roughly doubles max concurrency", kv8.maxConc >= kv16.maxConc * 1.9);
+
+      // throughput rises with batch while memory-bound
+      const b1 = compute({ ...state, batch: 1 }).sysTps;
+      const b32 = compute({ ...state, batch: 32 }).sysTps;
+      assert("system throughput rises with batch", b32 > b1);
+
+      // tensor parallel adds bandwidth: 70B fits and runs faster on 2 GPUs
+      const tp1 = compute({ ...state, model: "llama-31-70b", accel: "h100", tp: 1, batch: 1, ctxTok: 1 });
+      const tp2 = compute({ ...state, model: "llama-31-70b", accel: "h100", tp: 2, batch: 1, ctxTok: 1 });
+      assert("2x H100 decodes faster than 1x at batch 1", tp2.perStreamTps > tp1.perStreamTps);
+
+      // MoE reads only active params per token, so it decodes faster than a dense model of equal total size
+      const moe = compute({ ...state, model: "mixtral-8x7b", accel: "h100", tp: 2, batch: 1, ctxTok: 1 });
+      assert("MoE active-param read makes decode fast", moe.perStreamTps > 0 && moe.wBytesStep < totalWeightBytes(MODELS["mixtral-8x7b"], "bf16"));
+
+      const pass = results.filter(r => r[1]).length;
+      const fail = results.length - pass;
+      if (fail === 0) {
+        console.log(`%c[self-test] ${pass}/${results.length} passed`, "color:#34d399;font-weight:600");
+      } else {
+        console.error(`[self-test] ${fail} FAILED of ${results.length}`);
+        results.filter(r => !r[1]).forEach(r => console.error("  FAIL:", r[0]));
+      }
+      return { pass, fail };
+    }
+
+    /* ===================== Boot ===================== */
+    buildSelects();
+    syncMeta();
+    bind();
+    render();
+    selfTest();
+  </script>
+</body>
+
+</html>

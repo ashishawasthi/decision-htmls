@@ -224,42 +224,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency / cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Hot data off the request path, low ms reads</td>
           <td>Replicate or cache into <a class="src" href="alloydb.html">AlloyDB</a>, <a class="src" href="spanner.html">Spanner</a>, or Bigtable</td>
-          <td>single-digit ms</td>
         </tr>
         <tr>
           <td>Authoritative record that cannot move</td>
           <td>On-prem DB over Interconnect, VPN, or Private Service Connect</td>
-          <td>variable, often tens of ms or more plus link cost</td>
         </tr>
         <tr>
           <td>Fresh changes streamed out of the legacy system</td>
           <td>Change data capture into <a class="src" href="pubsub.html">Pub/Sub</a>, then a cloud store</td>
-          <td>near-real-time, pipeline cost</td>
         </tr>
         <tr>
           <td>Lowest, most stable round-trip to on-prem</td>
           <td>Dedicated or Partner Interconnect over Cloud VPN</td>
-          <td>committed bandwidth, higher fixed cost</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> variable and often higher than a cloud-native store, set by the private link and the distance
-        to your data center. Cloud VPN runs over the public internet and varies more; Dedicated Interconnect gives a
-        more predictable round-trip. Treat the figure as something to measure, not assume.</li>
-      <li><b>Cost:</b> dominated by the connectivity itself, not per-query. Interconnect carries port and VLAN
-        attachment charges plus egress; Cloud VPN carries tunnel and egress charges. Rough ranges only as of May 2026,
-        and they scale with committed bandwidth, so verify against current Google Cloud docs.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -293,7 +278,7 @@
           overview (Google Cloud Docs)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

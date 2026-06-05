@@ -222,42 +222,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency or cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Full governance: quota, routing, transforms, caching, audit, fan-out</td>
           <td>Apigee</td>
-          <td>per environment plus per-call; low single-digit ms added per hop</td>
         </tr>
         <tr>
           <td>Light auth and basic rate limiting only</td>
           <td>API Gateway (cloud-native)</td>
-          <td>lower cost, fewer policies</td>
         </tr>
         <tr>
           <td>Maximum control over routing and custom logic</td>
           <td>DIY reverse proxy (for example NGINX or Envoy)</td>
-          <td>cheapest per call, most to build and operate</td>
         </tr>
         <tr>
           <td>Service-to-service policy inside the mesh</td>
           <td>Service mesh (Cloud Service Mesh / Istio)</td>
-          <td>mesh overhead; not an external API product</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> a managed proxy hop, typically low single-digit milliseconds of added latency for lean policies.
-        Heavy policy chains, semantic cache lookups, or a synchronous safety and redaction call add more, so keep the hot
-        path minimal for interactive SLOs.</li>
-      <li><b>Cost:</b> Apigee bills per environment (the running gateway capacity) plus per API call, so cost scales with
-        org-wide traffic, not per app. Response or semantic caching offsets this by cutting repeat token spend on the
-        model itself. Treat both the platform fee and call volume as inputs you confirm against current pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -289,10 +274,9 @@
           Apigee? (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://cloud.google.com/api-gateway/docs/about-api-gateway">API Gateway overview (Google
           Cloud Docs)</a></li>
-      <li><a class="src" href="https://cloud.google.com/apigee/pricing">Apigee pricing (Google Cloud)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

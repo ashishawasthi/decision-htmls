@@ -205,48 +205,31 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency / cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Global horizontal scale, multi-region active-active relational</td>
           <td><a class="src" href="spanner.html">Spanner</a></td>
-          <td>low single-digit to low tens of ms; per node plus storage</td>
         </tr>
         <tr>
           <td>Dedicated ANN at large scale, lowest retrieval latency</td>
           <td><a class="src" href="vertex-vector-search.html">Vertex AI Vector Search</a></td>
-          <td>around 12 ms; per deployed index node-hour</td>
         </tr>
         <tr>
           <td>Vanilla Postgres, no HTAP or vector</td>
           <td>Cloud SQL</td>
-          <td>low ms; per instance and storage</td>
         </tr>
         <tr>
           <td>True OLAP warehouse for large scans</td>
           <td><a class="src" href="bigquery.html">BigQuery</a></td>
-          <td>hundreds of ms to seconds; per TB scanned</td>
         </tr>
         <tr>
           <td>Postgres plus moderate-scale vector and HTAP in one engine</td>
           <td>AlloyDB</td>
-          <td>low ms; per vCPU and storage</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> low milliseconds for transactional reads and writes and for pgvector retrieval at moderate
-        scale, with the columnar engine accelerating analytical queries that would be slow on row storage. At very
-        large vector scale a dedicated ANN index will retrieve faster.</li>
-      <li><b>Cost:</b> billed per compute (vCPU and memory) plus storage, so you pay for the provisioned instance rather
-        than per query. Consolidating transactional, analytical, and vector work in one engine can remove a separate
-        warehouse or vector service. Treat any figure as a rough range and verify against current Google Cloud
-        pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -280,7 +263,7 @@
           Cloud)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

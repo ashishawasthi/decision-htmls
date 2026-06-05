@@ -202,42 +202,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency / cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Tamper-evident, retention-locked audit trail</td>
           <td>Cloud Logging with a locked retention bucket</td>
-          <td>per GB ingested plus storage</td>
         </tr>
         <tr>
           <td>Operational logs you may need to edit or expire early</td>
           <td>Standard Cloud Logging bucket (no lock)</td>
-          <td>per GB, lower retained volume</td>
         </tr>
         <tr>
           <td>Central SIEM correlation across many sources</td>
           <td>Export sink to Chronicle, Splunk, or a third-party SIEM</td>
-          <td>export is low cost; SIEM licensing dominates</td>
         </tr>
         <tr>
           <td>Long-term cold archive at lowest storage cost</td>
           <td>Sink to a Cloud Storage bucket with object retention / Bucket Lock</td>
-          <td>cents per GB-month, archival tier</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> not on any request path. Logging is asynchronous and fire-and-forget from the agent's
-        perspective, so it does not add to user-facing latency. Treat write durability, not speed, as the requirement.</li>
-      <li><b>Cost:</b> driven by GB ingested and GB stored over the retention window. A common pattern is a generous free
-        ingestion allowance per month, then a per-GB ingestion charge (roughly single-digit dollars per GB as of May
-        2026) plus per-GB-month storage beyond the included period. Locked long retention is the main cost lever, so log
-        deliberately and redact aggressively. Verify current rates against Google Cloud pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -270,11 +255,9 @@
           log sinks and buckets (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/dlp/docs/deidentify-sensitive-data">De-identifying sensitive
           data with Sensitive Data Protection (Google Cloud Docs)</a></li>
-      <li><a class="src" href="https://cloud.google.com/stackdriver/pricing">Google Cloud Observability pricing (Cloud
-          Logging)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

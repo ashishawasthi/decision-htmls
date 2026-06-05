@@ -161,7 +161,7 @@
     <p class="lead">Document AI runs OCR plus layout and entity extraction that turns PDFs, scans, and forms into
       <b>structured, chunkable text</b>: it recovers reading order, tables, and form fields that a plain text dump loses.
       The design rule that follows: use it at <b>ingestion time</b> to prepare a clean document corpus for embedding, not
-      on the live request path, and treat its per-page cost as a real line item in the ingestion budget. Reflects Google
+      on the live request path. Reflects Google
       Cloud guidance as of May 2026; verify against current Google Cloud docs.</p>
 
     <h2>Role</h2>
@@ -204,42 +204,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency or cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Plain text from already-digital files, layout not critical</td>
           <td>Text-extraction libraries (for example pdfplumber, Apache Tika)</td>
-          <td>near-free compute, but loses tables and layout</td>
         </tr>
         <tr>
           <td>End-to-end managed RAG with adequate built-in parsing</td>
           <td><a class="src" href="vertex-ai-search.html">Vertex AI Search</a> built-in document parsing</td>
-          <td>folded into the search index cost</td>
         </tr>
         <tr>
           <td>High-fidelity OCR plus layout, tables, and entities</td>
           <td>Document AI</td>
-          <td>per page processed (a few cents per page, tier-dependent)</td>
         </tr>
         <tr>
           <td>Existing third-party OCR contract or on-prem requirement</td>
           <td>Third-party OCR engine</td>
-          <td>vendor-dependent; verify layout and table support</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> seconds per document for online processing, longer for full batch jobs. This is fine because
-        parsing runs at ingestion, off the request path, so nothing waits on a sub-second response.</li>
-      <li><b>Cost:</b> billed per page processed, with the rate depending on the processor type (for example general OCR
-        versus specialized form or layout parsers). Roughly a few cents per page as of May 2026; verify against current
-        Google Cloud pricing. At high document volumes this per-page charge can dominate total ingestion cost, so size it
-        against the corpus before committing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -267,14 +252,13 @@
     <ul class="sources">
       <li><a class="src" href="https://docs.cloud.google.com/document-ai/docs/overview">Document AI overview (Google
           Cloud Docs)</a></li>
-      <li><a class="src" href="https://cloud.google.com/document-ai/pricing">Document AI pricing (Google Cloud)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/document-ai/docs/layout-parse-chunk">Layout parser:
           parse and chunk documents (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/generative-ai-app-builder/docs/parse-chunk-documents">Parse
           and chunk documents for Vertex AI Search (Google Cloud Docs)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

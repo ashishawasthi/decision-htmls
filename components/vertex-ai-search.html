@@ -223,41 +223,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency / cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Full control of chunking, embeddings, and ANN tuning</td>
           <td><a class="src" href="vertex-vector-search.html">Vertex AI Vector Search</a> + <a class="src" href="document-ai.html">Document AI</a> pipeline</td>
-          <td>around 12 ms; per index node-hour plus pipeline</td>
         </tr>
         <tr>
           <td>Postgres plus vector in one engine, SQL pre-filtering</td>
           <td><a class="src" href="alloydb.html">AlloyDB</a> (pgvector)</td>
-          <td>low ms; per vCPU and storage</td>
         </tr>
         <tr>
           <td>Hybrid lexical plus vector with self-hosting</td>
           <td>Elasticsearch</td>
-          <td>low tens of ms; more operational overhead</td>
         </tr>
         <tr>
           <td>Managed end-to-end RAG over documents and websites</td>
           <td>Vertex AI Search</td>
-          <td>tens of ms; per query plus index storage</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> managed blended retrieval in the tens of milliseconds, comfortably inside an interactive
-        budget. The crawl, parse, and embed work is offline, so it never sits on the request path.</li>
-      <li><b>Cost:</b> billed per search query plus index (data store) storage per GiB-month, with extra for advanced
-        features such as LLM-powered summarization and for website crawling. Spend tracks query volume and indexed data
-        size rather than node-hours. Treat any figure as a rough range and verify current Google Cloud pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -295,7 +281,7 @@
           GCP RAG Spectrum: Vertex AI Search, RAG Engine, and Vector Search (Medium)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

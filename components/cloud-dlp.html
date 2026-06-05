@@ -203,46 +203,31 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency or cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Context-aware PII discovery and de-identification across many infoTypes</td>
           <td>Cloud DLP</td>
-          <td>inline inspection call; priced per unit processed</td>
         </tr>
         <tr>
           <td>Cheap, narrow pattern matches on a few known formats</td>
-          <td>DIY regex</td>
-          <td>near-zero cost; brittle, misses context and edge cases</td>
+          <td>DIY regex (brittle, misses context and edge cases)</td>
         </tr>
         <tr>
           <td>Basic built-in redaction bundled with the model</td>
-          <td>Provider-native redaction</td>
-          <td>bundled; fewer types, less control, less portable</td>
+          <td>Provider-native redaction (fewer types, less control, less portable)</td>
         </tr>
         <tr>
           <td>Stop unsafe content (injection, jailbreaks, leakage)</td>
-          <td><a class="src" href="model-armor.html">Model Armor</a> (complementary)</td>
-          <td>safety screening, not de-identification</td>
+          <td><a class="src" href="model-armor.html">Model Armor</a> (complementary; safety screening, not de-identification)</td>
         </tr>
         <tr>
           <td>Keep data inside a residency or exfiltration boundary</td>
-          <td><a class="src" href="vpc-service-controls.html">VPC Service Controls</a> (complementary)</td>
-          <td>network perimeter, not field-level redaction</td>
+          <td><a class="src" href="vpc-service-controls.html">VPC Service Controls</a> (complementary; network perimeter, not field-level redaction)</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> an inline inspection and de-identification call on the content, so it adds a hop to the request
-        path. Cost scales with how much you scan, so narrow the infoTypes and payload on interactive paths and push bulk
-        scanning to ingestion.</li>
-      <li><b>Cost:</b> priced per unit processed (by bytes or records inspected), so spend tracks data volume and how
-        often you scan. It is usage-dependent; confirm the current per-unit rate against Google Cloud pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -273,11 +258,9 @@
           sensitive data (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/sensitive-data-protection/docs/infotypes-reference">InfoType
           detector reference (Google Cloud Docs)</a></li>
-      <li><a class="src" href="https://cloud.google.com/sensitive-data-protection/pricing">Sensitive Data Protection
-          pricing (Google Cloud)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

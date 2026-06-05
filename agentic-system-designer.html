@@ -914,6 +914,41 @@
       font-size: 11px
     }
 
+    .sources {
+      margin: 8px 20px 6px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .sources summary {
+      cursor: pointer;
+      font-size: 12px;
+      padding: 6px 0;
+    }
+
+    .sources p {
+      margin: 8px 0 4px;
+      max-width: 980px;
+    }
+
+    .sources b {
+      color: var(--text);
+    }
+
+    .sources ul {
+      margin: 4px 0 0;
+      padding-left: 18px;
+      max-width: 980px;
+    }
+
+    .sources li {
+      margin: 3px 0;
+    }
+
+    .sources a {
+      color: var(--accent);
+    }
+
     #modal-root {
       position: fixed;
       inset: 0;
@@ -1415,6 +1450,32 @@
       </div>
     </section>
   </main>
+
+  <details class="sources">
+    <summary>Sources and references</summary>
+    <p><b>Pricing (about May 2026, the same basis as the cost calculator).</b> The token, accelerator,
+      managed-service, and storage rates behind the Cost and Bill of materials panels:</p>
+    <ul>
+      <li><a href="https://cloud.google.com/vertex-ai/generative-ai/pricing">Vertex AI generative AI pricing</a>:
+        Gemini and partner model tokens, context caching, grounding and web search.</li>
+      <li><a href="https://docs.anthropic.com/en/docs/about-claude/pricing">Claude pricing</a> and
+        <a href="https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude">Claude on Vertex AI</a>.</li>
+      <li><a href="https://cloud.google.com/products/compute/pricing/accelerator-optimized">GCP accelerator-optimized VM
+        pricing</a> and <a href="https://cloud.google.com/tpu/pricing">Cloud TPU pricing</a>: self-host node $/hr by
+        on-demand, CUD, and spot.</li>
+      <li><a href="https://cloud.google.com/bigquery/pricing">BigQuery pricing</a>: on-demand scan ($/TiB) and storage.</li>
+      <li><a href="https://cloud.google.com/generative-ai-app-builder/pricing">Vertex AI Search / Agent Builder
+        pricing</a>: search queries and index storage.</li>
+      <li><a href="https://cloud.google.com/storage/pricing">Cloud Storage pricing</a>: vector index and object storage
+        ($/GB-mo).</li>
+    </ul>
+    <p><b>Latency, throughput, and recall constants are illustrative.</b> Per-model time-to-first-token and
+      ms-per-output-token, self-host node tokens/s, and the HNSW recall and ANN-latency curves are calibrated so the
+      relative ordering matches published benchmarks, not measured on a specific deployment. The self-host throughput
+      model mirrors the <a href="agent-infra-cost-calculator.html">cost calculator</a>. For first-principles serving
+      latency, throughput, and KV-cache concurrency, use the
+      <a href="llm-serving-performance-calculator.html">LLM Serving Performance calculator</a>.</p>
+  </details>
 
   <div class="foot">A personal project, provided as is and not affiliated with or endorsed by any
     vendor. See the <a href="DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</div>

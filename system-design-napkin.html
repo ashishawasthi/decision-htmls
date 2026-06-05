@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System Design Napkin</title>
+  <script>
+    /* Resolve the theme before first paint to avoid a flash. 'theme' is shared across all
+       pages; it is set only when the user has explicitly chosen, absent means follow the OS. */
+    (function () {
+      var saved = localStorage.getItem('theme');
+      var t = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #181b22;
+      --panel-2: #1f232c;
+      --border: #2a2f3a;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #818cf8;
+      --good: #34d399;
+      --bad: #f87171;
+      --warn: #fbbf24;
+      --read: #60a5fa;
+      --write: #f472b6;
+      --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+      --good-tint: rgba(52, 211, 153, 0.12);
+      --warn-tint: rgba(251, 191, 36, 0.12);
+      --bad-tint: rgba(248, 113, 113, 0.12);
+      --accent-tint: rgba(129, 140, 248, 0.12);
+    }
+
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --panel: #f6f8fa;
+      --panel-2: #eaeef2;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --muted: #57606a;
+      --accent: #5b54d6;
+      --good: #0f9d6b;
+      --bad: #cf222e;
+      --warn: #9a6700;
+      --read: #0969da;
+      --write: #bf3989;
+      --good-tint: rgba(15, 157, 107, 0.10);
+      --warn-tint: rgba(154, 103, 0, 0.10);
+      --bad-tint: rgba(207, 34, 46, 0.10);
+      --accent-tint: rgba(91, 84, 214, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    header { position: relative; padding: 22px 32px 18px; border-bottom: 1px solid var(--border); }
+
+    .backlink {
+      position: absolute; top: 20px; left: 28px; width: 40px; height: 40px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 10px; border: 1px solid var(--border); background: var(--panel);
+      color: var(--muted); text-decoration: none;
+      transition: color .15s ease, border-color .15s ease, background .15s ease, transform .15s ease;
+    }
+    .backlink:hover { color: var(--text); border-color: var(--accent); background: var(--panel-2); transform: translateX(-3px); }
+    .backlink:active { transform: translateX(-1px); }
+    .backlink svg { display: block; }
+
+    .header-actions { position: absolute; top: 20px; right: 28px; display: flex; gap: 8px; align-items: center; }
+
+    #themeBtn {
+      width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+      cursor: pointer; transition: color .15s ease, border-color .15s ease, background .15s ease;
+    }
+    #themeBtn:hover { color: var(--text); border-color: var(--accent); background: var(--panel-2); }
+    #themeBtn svg { display: block; }
+    #themeBtn .ic-moon { display: none; }
+    :root[data-theme="light"] #themeBtn .ic-sun { display: none; }
+    :root[data-theme="light"] #themeBtn .ic-moon { display: block; }
+
+    header h1 { margin: 0 0 6px; font-size: 24px; padding: 0 52px; }
+    header p { margin: 0; color: var(--muted); font-size: 14px; max-width: 1000px; }
+
+    main { padding: 24px 32px 48px; max-width: 1500px; margin: 0 auto; }
+
+    .calc-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 24px; }
+    @media (max-width: 1050px) { .calc-grid { grid-template-columns: 1fr; } }
+
+    section h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+    fieldset { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin: 0 0 14px; }
+    legend { padding: 0 8px; font-weight: 600; font-size: 14px; }
+
+    select, input[type=number] {
+      background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 4px; padding: 5px 8px; font-size: 13px; font-family: inherit;
+    }
+
+    .tradeoff { font-size: 11px; color: var(--muted); margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); font-style: italic; }
+
+    .input-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; }
+    .input-row label { flex: 1; padding: 0; }
+    .input-row input[type=number] { width: 120px; text-align: right; }
+    .input-row .unit { color: var(--muted); font-size: 11px; min-width: 92px; }
+
+    .range-row { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+    .range-row input[type=range] { flex: 1; }
+    .range-row label { min-width: 150px; font-size: 13px; }
+    .range-row output { min-width: 64px; font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 600; text-align: right; }
+
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; margin: 0 0 16px; }
+    .panel h3 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+    .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 7px; padding: 10px 12px; }
+    .stat .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .stat .v { font-size: 21px; font-weight: 600; font-family: var(--mono); margin-top: 3px; }
+    .stat .v small { font-size: 12px; color: var(--muted); font-weight: 400; }
+    .stat .sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+    .stat.accent .v { color: var(--accent); }
+    .stat.read .v { color: var(--read); }
+    .stat.write .v { color: var(--write); }
+
+    .formula {
+      font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+      padding: 8px 10px; margin-top: 10px; white-space: pre-wrap; line-height: 1.7;
+    }
+    .formula b { color: var(--text); font-weight: 600; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 4px; }
+    th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); font-family: var(--mono); }
+    th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.04em; }
+    th:first-child, td:first-child { text-align: left; font-family: inherit; }
+
+    /* website-is-slow decomposer */
+    .slow-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+    .slow-row label { flex: 1; font-size: 13px; }
+    .slow-row input { width: 90px; text-align: right; }
+    .slow-bar { display: flex; height: 26px; border-radius: 5px; overflow: hidden; border: 1px solid var(--border); margin: 10px 0 6px; }
+    .slow-bar div { min-width: 1px; }
+    .slow-seg-0 { background: #60a5fa; } .slow-seg-1 { background: #34d399; } .slow-seg-2 { background: #a78bfa; }
+    .slow-seg-3 { background: #fbbf24; } .slow-seg-4 { background: #f472b6; } .slow-seg-5 { background: #fb923c; }
+    .slow-seg-6 { background: #f87171; }
+    .slow-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 10.5px; color: var(--muted); }
+    .slow-legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+    .dominant { background: var(--accent-tint); border: 1px solid var(--accent); border-radius: 6px; padding: 8px 10px; font-size: 12px; margin-top: 10px; }
+
+    .ref-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    @media (max-width: 620px) { .ref-cols { grid-template-columns: 1fr; } }
+
+    .src { font-size: 11.5px; color: var(--muted); }
+    .src a { color: var(--accent); }
+    .src ul { margin: 6px 0 0; padding-left: 18px; }
+    .src li { margin: 3px 0; }
+    .note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+
+    .foot { padding: 18px 32px 28px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--border); max-width: 1500px; margin: 0 auto; }
+    .foot a { color: inherit; text-decoration: underline; }
+  </style>
+</head>
+
+<body>
+  <header>
+    <a class="backlink" href="index.html" title="Back to all tools" aria-label="Back to all tools">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 12H5M12 19l-7-7 7-7" />
+      </svg>
+    </a>
+    <h1>System Design Napkin</h1>
+    <p>Back-of-the-envelope estimation for a system design interview: turn DAU into QPS, size storage and bandwidth,
+      see how caching relieves the backend, apply Little's Law to concurrency and pool sizing, and decompose a slow
+      request. Generic distributed systems, no AI specifics. Deterministic.</p>
+    <div class="header-actions">
+      <button id="themeBtn" title="Toggle light / dark theme" aria-label="Toggle light / dark theme">
+        <svg class="ic-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+        </svg>
+        <svg class="ic-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <div class="calc-grid">
+
+      <!-- LEFT: inputs -->
+      <section>
+        <h2>Traffic</h2>
+        <fieldset>
+          <legend>Demand</legend>
+          <div class="input-row">
+            <label for="dau">Daily active users</label>
+            <input type="number" id="dau" value="10000000" min="0" step="100000">
+            <span class="unit">users</span>
+          </div>
+          <div class="input-row">
+            <label for="actions">Requests per user / day</label>
+            <input type="number" id="actions" value="20" min="0" step="1">
+            <span class="unit">req / day</span>
+          </div>
+          <div class="range-row">
+            <label for="peak">Peak factor (peak / avg)</label>
+            <input type="range" id="peak" min="1" max="10" step="0.5" value="3">
+            <output id="peakOut">3.0x</output>
+          </div>
+          <div class="range-row">
+            <label for="readPct">Read share of traffic</label>
+            <input type="range" id="readPct" min="0" max="100" step="5" value="80">
+            <output id="readPctOut">80%</output>
+          </div>
+          <div class="tradeoff">Average QPS = DAU x requests / 86,400 seconds in a day. Peak factor lifts the average to
+            a daytime or spike peak (2 to 3x for steady consumer, 5x or more for bursty). Read share splits the load
+            into reads vs writes, which usually have very different cost and scaling paths.</div>
+        </fieldset>
+
+        <h2>Payload &amp; storage</h2>
+        <fieldset>
+          <legend>Object sizes</legend>
+          <div class="input-row">
+            <label for="reqBytes">Avg request size</label>
+            <input type="number" id="reqBytes" value="2" min="0" step="0.5">
+            <span class="unit">KB</span>
+          </div>
+          <div class="input-row">
+            <label for="respBytes">Avg response size</label>
+            <input type="number" id="respBytes" value="20" min="0" step="1">
+            <span class="unit">KB</span>
+          </div>
+          <div class="input-row">
+            <label for="writeBytes">Avg stored object (per write)</label>
+            <input type="number" id="writeBytes" value="1" min="0" step="0.5">
+            <span class="unit">KB</span>
+          </div>
+          <div class="input-row">
+            <label for="retention">Retention</label>
+            <input type="number" id="retention" value="365" min="0" step="30">
+            <span class="unit">days</span>
+          </div>
+          <div class="input-row">
+            <label for="replication">Replication factor</label>
+            <input type="number" id="replication" value="3" min="1" step="1">
+            <span class="unit">copies</span>
+          </div>
+          <div class="tradeoff">Stored bytes per day = write QPS x object size x 86,400. Total storage = that x retention
+            x replication factor. Replication of 3 is the common default for durability.</div>
+        </fieldset>
+
+        <h2>Cache &amp; fleet</h2>
+        <fieldset>
+          <legend>Caching and capacity</legend>
+          <div class="range-row">
+            <label for="cacheHit">Cache hit rate</label>
+            <input type="range" id="cacheHit" min="0" max="99" step="1" value="80">
+            <output id="cacheHitOut">80%</output>
+          </div>
+          <div class="input-row">
+            <label for="serverQps">Capacity per server</label>
+            <input type="number" id="serverQps" value="1000" min="1" step="100">
+            <span class="unit">QPS / server</span>
+          </div>
+          <div class="tradeoff">A cache absorbs the hits, so backend QPS = total QPS x (1 - hit rate). The 80/20 rule:
+            holding the hot 20% of data in RAM commonly serves most reads. Servers = ceil(peak backend QPS / capacity
+            per server), then add headroom.</div>
+        </fieldset>
+
+        <h2>Concurrency (Little's Law)</h2>
+        <fieldset>
+          <legend>Latency and pools</legend>
+          <div class="input-row">
+            <label for="svcMs">Avg service time</label>
+            <input type="number" id="svcMs" value="200" min="1" step="10">
+            <span class="unit">ms</span>
+          </div>
+          <div class="input-row">
+            <label for="p99Ms">p99 latency</label>
+            <input type="number" id="p99Ms" value="800" min="1" step="50">
+            <span class="unit">ms</span>
+          </div>
+          <div class="input-row">
+            <label for="threads">Concurrency limit (threads / conns)</label>
+            <input type="number" id="threads" value="200" min="1" step="10">
+            <span class="unit">slots</span>
+          </div>
+          <div class="tradeoff">Little's Law: concurrent requests in flight = arrival rate x average latency. A pool of
+            N slots sustains at most N / p99 requests per second. If demand exceeds that, queues build and latency
+            climbs, which is why "just add threads" has a ceiling.</div>
+        </fieldset>
+      </section>
+
+      <!-- RIGHT: outputs -->
+      <section>
+        <div class="panel">
+          <h3>Traffic to QPS</h3>
+          <div class="stat-grid" id="qpsStats"></div>
+          <div class="formula" id="qpsFormula"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Storage &amp; bandwidth</h3>
+          <div class="stat-grid" id="storeStats"></div>
+          <div class="formula" id="storeFormula"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Cache, backend &amp; fleet</h3>
+          <div class="stat-grid" id="cacheStats"></div>
+          <div class="formula" id="cacheFormula"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Concurrency &amp; pool sizing</h3>
+          <div class="stat-grid" id="concStats"></div>
+          <div class="formula" id="concFormula"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Why is it slow? Request-path budget</h3>
+          <div id="slowRows"></div>
+          <div class="slow-bar" id="slowBar"></div>
+          <div class="slow-legend" id="slowLegend"></div>
+          <div class="dominant" id="slowDominant"></div>
+          <div class="note">Fill the line items for a slow page load. The bar shows where the time goes and flags the
+            dominant term. Localize before you optimize: shaving the biggest slice is the only change a user feels.</div>
+        </div>
+
+        <div class="panel">
+          <h3>Reference numbers</h3>
+          <div class="ref-cols">
+            <div>
+              <div class="note" style="margin:0 0 4px; font-weight:600; color:var(--text);">Latency ladder</div>
+              <table id="ladderTable"><tbody></tbody></table>
+            </div>
+            <div>
+              <div class="note" style="margin:0 0 4px; font-weight:600; color:var(--text);">Availability (downtime / year)</div>
+              <table id="ninesTable"><tbody></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel src">
+          <h3>Source &amp; assumptions</h3>
+          <ul>
+            <li>QPS uses 86,400 seconds per day; storage and bandwidth use 30.4 days per month.</li>
+            <li>Powers-of-ten unit ladders (KB, MB, GB, TB, PB and Kbps, Mbps, Gbps) keep the back-of-napkin honest.</li>
+            <li>Little's Law (concurrency = arrival x latency) is a steady-state identity; the p99-based ceiling is a
+              planning rule of thumb, not a queueing-theory proof.</li>
+            <li>Latency ladder is the classic "numbers every engineer should know" order of magnitude, not measured on
+              any specific machine.</li>
+          </ul>
+        </div>
+
+        <div class="panel src">
+          <h3>Reference links</h3>
+          <ul>
+            <li>Latency ladder:
+              <a href="https://colin-scott.github.io/personal_website/research/interactive_latency.html">Latency Numbers Every Programmer Should Know</a>
+              (after Jeff Dean and Peter Norvig)</li>
+            <li>Availability percentages and downtime:
+              <a href="https://en.wikipedia.org/wiki/High_availability#Percentage_calculation">High availability (Wikipedia)</a></li>
+            <li>Little's Law:
+              <a href="https://en.wikipedia.org/wiki/Little%27s_law">Little's law (Wikipedia)</a></li>
+            <li>Back-of-the-envelope conventions (powers of two, capacity estimation):
+              <a href="https://github.com/donnemartin/system-design-primer#appendix-with-tables">System Design Primer appendix</a></li>
+          </ul>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div class="foot">A personal project, provided as is and not affiliated with or endorsed by any vendor. See the
+    <a href="DISCLAIMER.md">full disclaimer</a>. Rough estimates for planning and interview practice, not exact
+    figures.</div>
+
+  <script>
+    "use strict";
+    const $ = sel => document.querySelector(sel);
+
+    const SEC_PER_DAY = 86400;
+    const DAYS_PER_MONTH = 30.4;
+
+    const state = {
+      dau: 10000000, actions: 20, peak: 3, readPct: 80,
+      reqBytes: 2, respBytes: 20, writeBytes: 1, retention: 365, replication: 3,
+      cacheHit: 80, serverQps: 1000,
+      svcMs: 200, p99Ms: 800, threads: 200,
+      slow: { dns: 30, tcp: 40, tls: 50, ttfbApp: 120, ttfbDb: 400, transfer: 150, render: 200 },
+    };
+
+    /* ---- unit formatting (powers of ten) ---- */
+    function fmtBytes(b) {
+      const u = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
+      let i = 0; let n = b;
+      while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
+      return n.toFixed(n < 10 && i > 0 ? 2 : n < 100 && i > 0 ? 1 : 0) + " " + u[i];
+    }
+    function fmtBits(bps) {
+      const u = ["bps", "Kbps", "Mbps", "Gbps", "Tbps"];
+      let i = 0; let n = bps;
+      while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
+      return n.toFixed(n < 10 ? 2 : n < 100 ? 1 : 0) + " " + u[i];
+    }
+    function fmtNum(n) {
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+      return n < 10 ? n.toFixed(1) : Math.round(n).toString();
+    }
+    function fmtInt(n) { return Math.round(n).toLocaleString("en-US"); }
+    function fmtMs(ms) { return ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : Math.round(ms) + " ms"; }
+
+    /* ===================== Core compute ===================== */
+    function compute(s) {
+      const totalDaily = s.dau * s.actions;
+      const avgQps = totalDaily / SEC_PER_DAY;
+      const peakQps = avgQps * s.peak;
+      const readFrac = s.readPct / 100;
+      const readQps = peakQps * readFrac;
+      const writeQps = peakQps * (1 - readFrac);
+
+      // storage
+      const writeBytes = s.writeBytes * 1000;          // KB to bytes
+      const dailyWriteVol = avgQps * (1 - readFrac) * writeBytes * SEC_PER_DAY; // bytes/day at avg write rate
+      const totalStorage = dailyWriteVol * s.retention * s.replication;
+      const storagePerMonth = dailyWriteVol * DAYS_PER_MONTH * s.replication;
+
+      // bandwidth (at peak)
+      const ingressBps = peakQps * s.reqBytes * 1000 * 8;
+      const egressBps = peakQps * s.respBytes * 1000 * 8;
+      const egressMonthlyBytes = avgQps * s.respBytes * 1000 * SEC_PER_DAY * DAYS_PER_MONTH;
+
+      // cache + fleet
+      const hit = s.cacheHit / 100;
+      const backendQps = peakQps * (1 - hit);
+      const cacheRamBytes = 0.2 * totalStorage;        // 80/20 hot set in RAM
+      const servers = s.serverQps > 0 ? Math.ceil(backendQps / s.serverQps) : 0;
+      const serversNoCache = s.serverQps > 0 ? Math.ceil(peakQps / s.serverQps) : 0;
+
+      // concurrency (Little's Law)
+      const concurrent = peakQps * (s.svcMs / 1000);          // fleet-wide requests in flight
+      const perPoolCeiling = s.threads / (s.p99Ms / 1000);    // one N-slot pool sustains this QPS before queueing
+      const poolsNeeded = perPoolCeiling > 0 ? Math.ceil(peakQps / perPoolCeiling) : 0;
+      const inFlightPerPool = poolsNeeded > 0 ? concurrent / poolsNeeded : concurrent;
+
+      // website-is-slow
+      const slowParts = [
+        ["DNS lookup", s.slow.dns], ["TCP connect", s.slow.tcp], ["TLS handshake", s.slow.tls],
+        ["TTFB: app", s.slow.ttfbApp], ["TTFB: database", s.slow.ttfbDb],
+        ["Content transfer", s.slow.transfer], ["Client render", s.slow.render],
+      ];
+      const slowTotal = slowParts.reduce((a, p) => a + p[1], 0);
+      let domIdx = 0; slowParts.forEach((p, i) => { if (p[1] > slowParts[domIdx][1]) domIdx = i; });
+
+      return {
+        avgQps, peakQps, readQps, writeQps, readFrac,
+        dailyWriteVol, totalStorage, storagePerMonth,
+        ingressBps, egressBps, egressMonthlyBytes,
+        backendQps, cacheRamBytes, servers, serversNoCache, hit,
+        concurrent, perPoolCeiling, poolsNeeded, inFlightPerPool,
+        slowParts, slowTotal, domIdx,
+      };
+    }
+
+    /* ===================== Render ===================== */
+    function statHtml(k, v, sub, cls) {
+      return `<div class="stat ${cls || ""}"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`;
+    }
+
+    const LADDER = [
+      ["L1 cache reference", "0.5 ns"], ["Branch mispredict", "5 ns"], ["L2 cache reference", "7 ns"],
+      ["Main memory reference", "100 ns"], ["Compress 1 KB", "3 us"], ["SSD random read", "16 us"],
+      ["Read 1 MB from memory", "100 us"], ["Round trip in datacenter", "0.5 ms"],
+      ["Read 1 MB from SSD", "1 ms"], ["Disk seek", "10 ms"], ["Read 1 MB from disk", "20 ms"],
+      ["Round trip CA to Netherlands", "150 ms"],
+    ];
+    const NINES = [
+      ["90% (one nine)", "36.5 days"], ["99% (two nines)", "3.65 days"], ["99.9% (three nines)", "8.76 hours"],
+      ["99.95%", "4.38 hours"], ["99.99% (four nines)", "52.6 min"], ["99.999% (five nines)", "5.26 min"],
+    ];
+
+    function render() {
+      const r = compute(state);
+
+      // QPS
+      $("#qpsStats").innerHTML =
+        statHtml("Average QPS", fmtNum(r.avgQps), `${fmtInt(state.dau)} DAU x ${state.actions}/day`, "accent") +
+        statHtml("Peak QPS", fmtNum(r.peakQps), `${state.peak}x average`, "accent") +
+        statHtml("Read QPS", fmtNum(r.readQps), `${state.readPct}% of peak`, "read") +
+        statHtml("Write QPS", fmtNum(r.writeQps), `${100 - state.readPct}% of peak`, "write");
+      $("#qpsFormula").innerHTML =
+        `<b>Avg QPS</b> = ${fmtInt(state.dau)} x ${state.actions} / 86,400 = <b>${fmtNum(r.avgQps)}</b>\n` +
+        `<b>Peak QPS</b> = ${fmtNum(r.avgQps)} x ${state.peak} = <b>${fmtNum(r.peakQps)}</b>`;
+
+      // storage
+      $("#storeStats").innerHTML =
+        statHtml("Stored / day", fmtBytes(r.dailyWriteVol), `${fmtNum(r.writeQps / state.peak)} avg writes/s`) +
+        statHtml("Total storage", fmtBytes(r.totalStorage), `${state.retention}d x ${state.replication} copies`, "accent") +
+        statHtml("Peak egress", fmtBits(r.egressBps), `${state.respBytes} KB/resp`) +
+        statHtml("Egress / month", fmtBytes(r.egressMonthlyBytes), "at average rate");
+      $("#storeFormula").innerHTML =
+        `<b>Stored/day</b> = ${fmtNum(r.writeQps / state.peak)} writes/s x ${state.writeBytes} KB x 86,400 = <b>${fmtBytes(r.dailyWriteVol)}</b>\n` +
+        `<b>Total</b> = ${fmtBytes(r.dailyWriteVol)} x ${state.retention} days x ${state.replication} = <b>${fmtBytes(r.totalStorage)}</b>\n` +
+        `<b>Peak egress</b> = ${fmtNum(r.peakQps)} req/s x ${state.respBytes} KB x 8 bits = <b>${fmtBits(r.egressBps)}</b>`;
+
+      // cache + fleet
+      $("#cacheStats").innerHTML =
+        statHtml("Backend QPS", fmtNum(r.backendQps), `after ${state.cacheHit}% cache`, "accent") +
+        statHtml("Cache RAM (hot 20%)", fmtBytes(r.cacheRamBytes), "80/20 working set") +
+        statHtml("Servers", fmtInt(r.servers), `${fmtNum(r.backendQps)} / ${fmtInt(state.serverQps)} QPS`, "accent") +
+        statHtml("Servers if no cache", fmtInt(r.serversNoCache), `cache saves ${fmtInt(r.serversNoCache - r.servers)}`);
+      $("#cacheFormula").innerHTML =
+        `<b>Backend QPS</b> = ${fmtNum(r.peakQps)} x (1 - ${state.cacheHit}%) = <b>${fmtNum(r.backendQps)}</b>\n` +
+        `<b>Servers</b> = ceil(${fmtNum(r.backendQps)} / ${fmtInt(state.serverQps)}) = <b>${fmtInt(r.servers)}</b>`;
+
+      // concurrency
+      $("#concStats").innerHTML =
+        statHtml("In flight (fleet)", fmtInt(r.concurrent), `${fmtNum(r.peakQps)} x ${state.svcMs}ms`, "accent") +
+        statHtml("Per-pool ceiling", fmtNum(r.perPoolCeiling) + " <small>QPS</small>", `${state.threads} slots / ${state.p99Ms}ms p99`) +
+        statHtml("Pools / servers needed", fmtInt(r.poolsNeeded), `ceil(peak / ceiling)`, "accent") +
+        statHtml("In flight / pool", fmtInt(r.inFlightPerPool), `vs ${state.threads} slots, ${r.inFlightPerPool > state.threads ? "over" : "ok"}`, r.inFlightPerPool > state.threads ? "write" : "");
+      $("#concFormula").innerHTML =
+        `<b>In flight</b> = arrival x latency = ${fmtNum(r.peakQps)}/s x ${state.svcMs / 1000}s = <b>${fmtInt(r.concurrent)}</b> (fleet-wide)\n` +
+        `<b>Per-pool ceiling</b> = ${state.threads} slots / ${state.p99Ms / 1000}s p99 = <b>${fmtNum(r.perPoolCeiling)} QPS</b> before queues build\n` +
+        `<b>Pools needed</b> = ceil(${fmtNum(r.peakQps)} / ${fmtNum(r.perPoolCeiling)}) = <b>${fmtInt(r.poolsNeeded)}</b>`;
+
+      // website-is-slow: rows are built once (see buildSlowRows) to preserve focus while typing;
+      // here we only refresh the derived bar, legend, and verdict.
+      $("#slowBar").innerHTML = r.slowParts.map((p, i) =>
+        `<div class="slow-seg-${i}" style="width:${r.slowTotal > 0 ? (p[1] / r.slowTotal * 100) : 0}%" title="${p[0]}: ${p[1]}ms"></div>`
+      ).join("");
+      $("#slowLegend").innerHTML = r.slowParts.map((p, i) =>
+        `<span class="slow-seg-${i}">${p[0]} ${p[1]}ms</span>`
+      ).join("");
+      const dom = r.slowParts[r.domIdx];
+      $("#slowDominant").innerHTML =
+        `Total ${fmtMs(r.slowTotal)}. Dominant term: <b>${dom[0]}</b> at ${dom[1]}ms (${r.slowTotal > 0 ? (dom[1] / r.slowTotal * 100).toFixed(0) : 0}% of the budget). ` +
+        `Start there. ${r.domIdx === 4 ? "A slow database TTFB points at a missing index, an N+1 query, or a cold cache." :
+          r.domIdx === 3 ? "A slow app TTFB points at synchronous work on the request path or a downstream call." :
+            r.domIdx === 6 ? "Heavy client render points at large JS bundles or blocking resources." :
+              r.domIdx === 5 ? "Slow transfer points at payload size, compression, or a far CDN edge." :
+                r.domIdx <= 2 ? "Connection setup overhead is high; keep-alive, TLS session resumption, or a closer edge would help." : ""}`;
+    }
+
+    /* Built once so typing in a line item does not regenerate the input and steal focus. */
+    const SLOW_KEYS = ["dns", "tcp", "tls", "ttfbApp", "ttfbDb", "transfer", "render"];
+    const SLOW_LABELS = ["DNS lookup", "TCP connect", "TLS handshake", "TTFB: app", "TTFB: database", "Content transfer", "Client render"];
+    function buildSlowRows() {
+      $("#slowRows").innerHTML = SLOW_KEYS.map((k, i) =>
+        `<div class="slow-row"><label>${SLOW_LABELS[i]}</label><input type="number" data-slow="${i}" value="${state.slow[k]}" min="0" step="10"><span class="unit" style="color:var(--muted);font-size:11px;">ms</span></div>`
+      ).join("");
+      document.querySelectorAll("[data-slow]").forEach(inp => inp.addEventListener("input", e => {
+        const v = parseFloat(e.target.value);
+        state.slow[SLOW_KEYS[+e.target.dataset.slow]] = isNaN(v) ? 0 : v;
+        render();
+      }));
+    }
+    function buildReference() {
+      $("#ladderTable").innerHTML = "<tbody>" + LADDER.map(x => `<tr><td>${x[0]}</td><td>${x[1]}</td></tr>`).join("") + "</tbody>";
+      $("#ninesTable").innerHTML = "<tbody>" + NINES.map(x => `<tr><td>${x[0]}</td><td>${x[1]}</td></tr>`).join("") + "</tbody>";
+    }
+
+    /* ===================== Wiring ===================== */
+    function bind() {
+      const nums = [
+        ["#dau", "dau"], ["#actions", "actions"], ["#reqBytes", "reqBytes"], ["#respBytes", "respBytes"],
+        ["#writeBytes", "writeBytes"], ["#retention", "retention"], ["#replication", "replication"],
+        ["#serverQps", "serverQps"], ["#svcMs", "svcMs"], ["#p99Ms", "p99Ms"], ["#threads", "threads"],
+      ];
+      nums.forEach(([sel, key]) => $(sel).addEventListener("input", e => {
+        const v = parseFloat(e.target.value);
+        state[key] = isNaN(v) ? 0 : v;
+        render();
+      }));
+      const ranges = [
+        ["#peak", "peak", "#peakOut", v => v.toFixed(1) + "x"],
+        ["#readPct", "readPct", "#readPctOut", v => v + "%"],
+        ["#cacheHit", "cacheHit", "#cacheHitOut", v => v + "%"],
+      ];
+      ranges.forEach(([sel, key, out, fmt]) => $(sel).addEventListener("input", e => {
+        state[key] = parseFloat(e.target.value);
+        $(out).textContent = fmt(state[key]);
+        render();
+      }));
+    }
+
+    /* theme toggle */
+    (function () {
+      const btn = $("#themeBtn");
+      function setTheme(t, persist) { document.documentElement.setAttribute("data-theme", t); if (persist) localStorage.setItem("theme", t); }
+      btn.addEventListener("click", () => setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light", true));
+      window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", e => { if (!localStorage.getItem("theme")) setTheme(e.matches ? "light" : "dark", false); });
+    })();
+
+    /* ===================== Self-test ===================== */
+    function selfTest() {
+      const results = [];
+      const assert = (n, c) => results.push([n, !!c]);
+      const near = (a, b, tol) => Math.abs(a - b) <= tol;
+
+      // determinism
+      assert("determinism", JSON.stringify(compute(state)) === JSON.stringify(compute(state)));
+
+      // 150M DAU x 2 req/day -> ~3472 avg, peak factor 2 -> ~6944
+      const big = compute({ ...state, dau: 150e6, actions: 2, peak: 2 });
+      assert("150M x 2 -> ~3472 avg QPS", near(big.avgQps, 3472, 5));
+      assert("peak factor 2 -> ~6944 peak QPS", near(big.peakQps, 6944, 10));
+
+      // 1M requests/day -> ~12 QPS
+      const small = compute({ ...state, dau: 1e6, actions: 1, peak: 1 });
+      assert("1M req/day -> ~11.6 QPS", near(small.avgQps, 11.57, 0.1));
+
+      // Little's Law: 500 RPS x 0.2s -> 100 concurrent
+      const ll = compute({ ...state, dau: 500 * 86400, actions: 1, peak: 1, svcMs: 200 });
+      assert("500 QPS x 200ms -> 100 concurrent", near(ll.concurrent, 100, 1));
+
+      // cache relieves backend: 80% hit -> backend is 20% of peak
+      const c = compute({ ...state, cacheHit: 80 });
+      assert("80% cache -> backend = 20% of peak", near(c.backendQps, c.peakQps * 0.2, 1));
+
+      // storage scales with retention and replication
+      const s1 = compute({ ...state, retention: 365, replication: 3 });
+      const s2 = compute({ ...state, retention: 730, replication: 3 });
+      assert("doubling retention doubles storage", near(s2.totalStorage, s1.totalStorage * 2, s1.totalStorage * 0.001));
+      const s3 = compute({ ...state, retention: 365, replication: 1 });
+      assert("replication 3 is 3x replication 1", near(s1.totalStorage, s3.totalStorage * 3, s3.totalStorage * 0.001));
+
+      // per-pool ceiling: 200 slots / 0.8s = 250 QPS
+      const ms = compute({ ...state, threads: 200, p99Ms: 800 });
+      assert("200 slots / 800ms -> 250 QPS per-pool ceiling", near(ms.perPoolCeiling, 250, 0.5));
+      // pools needed scales the per-pool ceiling up to peak demand
+      assert("pools needed = ceil(peak / per-pool ceiling)", ms.poolsNeeded === Math.ceil(ms.peakQps / ms.perPoolCeiling));
+
+      // dominant term detection
+      const dom = compute({ ...state, slow: { dns: 10, tcp: 10, tls: 10, ttfbApp: 10, ttfbDb: 900, transfer: 10, render: 10 } });
+      assert("dominant term is database TTFB", dom.domIdx === 4);
+
+      const pass = results.filter(r => r[1]).length;
+      const fail = results.length - pass;
+      if (fail === 0) {
+        console.log(`%c[self-test] ${pass}/${results.length} passed`, "color:#34d399;font-weight:600");
+      } else {
+        console.error(`[self-test] ${fail} FAILED of ${results.length}`);
+        results.filter(r => !r[1]).forEach(r => console.error("  FAIL:", r[0]));
+      }
+      return { pass, fail };
+    }
+
+    /* ===================== Boot ===================== */
+    bind();
+    buildSlowRows();
+    buildReference();
+    render();
+    selfTest();
+  </script>
+</body>
+
+</html>

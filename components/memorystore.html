@@ -190,7 +190,7 @@
         <h3>Avoid</h3>
         <ul>
           <li>Durable per-request point lookups that must not be lost (profiles, entitlements, feature data at scale).
-            Use Bigtable for single-digit ms lookups with durability.</li>
+            Use Bigtable for low-latency lookups with durability.</li>
           <li>A transactional system of record or anything needing strong durability guarantees. Use <a class="src" href="spanner.html">Spanner</a>, <a class="src" href="alloydb.html">AlloyDB</a>,
             or Cloud SQL.</li>
           <li>Large analytical scans. Use <a class="src" href="bigquery.html">BigQuery</a>, off the request path.</li>
@@ -205,43 +205,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency / cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Durable per-request key lookups at massive scale</td>
           <td>Bigtable</td>
-          <td>single-digit ms; per node and storage</td>
         </tr>
         <tr>
           <td>Caching tightly coupled to query results</td>
           <td>In-database caching (buffer cache, materialized views)</td>
-          <td>low ms; part of the database cost</td>
         </tr>
         <tr>
           <td>Caching static responses near end users</td>
           <td>A CDN (Cloud CDN)</td>
-          <td>tens of ms at the edge; per egress and requests</td>
         </tr>
         <tr>
           <td>Sub-ms cache, session and short-term state, counters</td>
           <td>Memorystore</td>
-          <td>sub-millisecond in memory; per instance capacity</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> sub-millisecond for in-memory reads and writes within the region, which is why it is the layer
-        you reach for when even single-digit milliseconds is too slow. Network round-trip from the client adds to that,
-        so co-locate the cache with the workload.</li>
-      <li><b>Cost:</b> billed per provisioned in-memory capacity (instance size and tier), so you pay for the memory
-        footprint and availability tier rather than per request. Because it is in memory, capacity is the main cost
-        lever and the reason caches use TTLs and eviction. Treat any figure as a rough range and verify against current
-        Google Cloud pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -262,7 +246,7 @@
       models a sub-millisecond cache and short-term state store in front of the durable stores, plus the cache that
       short-circuits repeated model calls on the hot path.</p>
     <div class="note"><b>Durable point lookups belong on Bigtable.</b> Memorystore is a cache, so per-request key
-      lookups that must be durable should land on Bigtable (single-digit ms, durable, at massive scale), not on an
+      lookups that must be durable should land on Bigtable (low-latency, durable, at massive scale), not on an
       in-memory cache and not on an analytical warehouse. This complements the guidance on the <a class="src" href="bigquery.html">BigQuery</a> page that
       point lookups do not belong in BigQuery.</div>
 
@@ -278,7 +262,7 @@
           choose? BigQuery vs Bigtable (Medium)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

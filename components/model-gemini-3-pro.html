@@ -84,12 +84,8 @@
         <tr><td>Provider</td><td>Google (Gemini API / Vertex AI)</td></tr>
         <tr><td>Modality</td><td>Multimodal input (text, image, audio, video), text output</td></tr>
         <tr><td>Context window</td><td>About 1M tokens or more</td></tr>
-        <tr><td>Input price</td><td>$2.00 per 1M tokens</td></tr>
-        <tr><td>Output price</td><td>$12.00 per 1M tokens</td></tr>
-        <tr><td>Cached input price</td><td>$0.20 per 1M tokens</td></tr>
-        <tr><td>Integrated search tool</td><td>Yes, Google Search grounding (about $14 per 1k calls). Drives live web grounding when this is the reasoning model</td></tr>
-        <tr><td>Context cache rate</td><td>$0.20 per 1M reused input tokens</td></tr>
-        <tr><td>Latency</td><td>Slowest Gemini here. Time to first token around 550 ms (illustrative); highest answer quality</td></tr>
+        <tr><td>Integrated search tool</td><td>Yes, Google Search grounding. Drives live web grounding when this is the reasoning model</td></tr>
+        <tr><td>Latency</td><td>Slowest Gemini here, highest answer quality</td></tr>
         <tr><td>Best role in this tool</td><td>Reasoning model, when quality outranks cost</td></tr>
       </tbody>
     </table>
@@ -116,22 +112,20 @@
     <h2>How it maps to this tool</h2>
     <ul>
       <li><b>Reasoning model for quality-first designs.</b> Because the <b>Generation</b> stage is model-aware, choosing
-        it raises the modelled time to first token and the blended generation latency, and its higher output price shows
-        in the cost panel. Keep <a class="src" href="model-gemini-31-flash-lite.html">Flash-Lite</a> as the fast lane.</li>
+        it raises the modelled generation latency, and its higher cost shows in the cost panel. Keep
+        <a class="src" href="model-gemini-31-flash-lite.html">Flash-Lite</a> as the fast lane.</li>
       <li><b>Integrated search tool: yes.</b> Google Search grounding, so live web grounding runs when a web source is
-        added, billed about $14 per 1k searches.</li>
+        added.</li>
       <li><b>Cross-model judge.</b> A strong pick for <code>Cross-model judge diversity</code>, where a stronger model
         checks a cheaper one in the quality gate.</li>
     </ul>
 
     <h2>Sources</h2>
     <ul class="sources">
-      <li><a class="src" href="https://ai.google.dev/gemini-api/docs/pricing">Gemini Developer API pricing (Google AI for Developers)</a></li>
-      <li><a class="src" href="https://cloud.google.com/vertex-ai/generative-ai/pricing">Vertex AI generative AI pricing (Google Cloud)</a></li>
       <li><a class="src" href="https://deepmind.google/models/gemini/">Gemini models overview (Google DeepMind)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current vendor docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

@@ -197,7 +197,7 @@
         <ul>
           <li>Open-world questions that need information no internal corpus holds: current events, public filings,
             external entities, breaking facts.</li>
-          <li>Freshness that matters more than the few-hundred-millisecond cost of a live search, typically in
+          <li>Freshness that matters more than the added latency of a live search, typically in
             asynchronous automation.</li>
           <li>Research and enrichment runs that gather and cite external sources as part of a longer workflow.</li>
           <li>Reducing hallucination by grounding answers on retrieved pages with citations, rather than on model memory
@@ -223,42 +223,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency / cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Fresh, open-world facts the corpus lacks</td>
           <td>Web/OSINT (Vertex grounding with Google Search or external APIs)</td>
-          <td>network round-trip, per-search cost</td>
         </tr>
         <tr>
           <td>Controlled, fast retrieval over known content</td>
-          <td>Curated internal corpus with vector RAG</td>
-          <td>around 12 ms, no per-call search fee</td>
+          <td>Curated internal corpus with vector RAG (<a class="src" href="vertex-vector-search.html">Vertex AI Vector Search</a>)</td>
         </tr>
         <tr>
           <td>Fresh external content but predictable retrieval cost</td>
           <td>Scheduled crawl into the internal corpus</td>
-          <td>crawl-interval staleness, indexed reads</td>
         </tr>
         <tr>
           <td>Popular repeated open-world queries</td>
           <td>Cache grounded results for the head, search only the tail</td>
-          <td>cache hit is fast and free, miss pays the round-trip</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> a live search adds a network round-trip, commonly a few hundred milliseconds or more, which is
-        why it does not belong on a sub-second path. Caching the popular head removes that round-trip for repeat
-        queries.</li>
-      <li><b>Cost:</b> charged per search call (grounding requests or external search-API calls), so spend tracks query
-        volume. Rough ranges only as of May 2026; verify against current Google Cloud or provider docs, since the figure
-        is usage-dependent.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -273,8 +258,8 @@
     </ul>
 
     <h2>How it maps to this tool</h2>
-    <p>Web/OSINT is its own data source in the designer, and selecting it adds a grounding cost line for the per-search
-      spend. It is the source most likely to land on the wrong path, so the tool guards it explicitly.</p>
+    <p>Web/OSINT is its own data source in the designer, and selecting it flags the per-search grounding spend. It is the
+      source most likely to land on the wrong path, so the tool guards it explicitly.</p>
     <div class="note"><b>The sub-second warning is the point.</b> When web grounding sits on an assistant hot path with a
       sub-second SLO, the designer raises a latency warning, because a live search round-trip cannot meet that budget. On
       the automation side it is a strong fit: asynchronous runs absorb the latency and cost, and caching plus a crawl
@@ -292,7 +277,7 @@
           Search overview (Google Cloud Docs)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

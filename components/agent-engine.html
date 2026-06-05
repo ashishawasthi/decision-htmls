@@ -225,17 +225,6 @@
       </tbody>
     </table>
 
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> dominated by the model calls and tool calls inside each agent turn, not by the framework or
-        runtime overhead. ADK and Agent Engine add orchestration glue around those calls rather than a separate
-        bottleneck.</li>
-      <li><b>Cost:</b> two parts. Token cost for the underlying model calls dominates in most designs. On top of that,
-        the managed runtime adds infrastructure cost for hosting, sessions, and scaling, which is the price of not
-        operating it yourself. LangGraph removes the managed-runtime charge but you pay in operations instead. Verify
-        current rates against Google Cloud pricing.</li>
-    </ul>
-
     <h2>Integration patterns and tuning</h2>
     <ul>
       <li><b>Build with ADK, run on Agent Engine:</b> author agents, tools, and handoffs in ADK, then deploy to Agent
@@ -265,7 +254,7 @@
       <li><a class="src" href="https://langchain-ai.github.io/langgraph/">LangGraph documentation</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

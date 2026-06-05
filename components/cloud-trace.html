@@ -201,42 +201,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency / cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Managed tracing backend, native to Google Cloud, OTel-based</td>
           <td>Cloud Trace</td>
-          <td>per span ingested; small free monthly allowance</td>
         </tr>
         <tr>
           <td>Unified APM with traces, metrics, and logs in one vendor</td>
           <td>Datadog, Honeycomb, or similar third-party APM</td>
-          <td>per host or per-span event; licensing-driven</td>
         </tr>
         <tr>
           <td>Full control over storage and query, self-hosted</td>
           <td>DIY span logging or self-managed Jaeger / Tempo</td>
-          <td>low license cost; high operational cost</td>
         </tr>
         <tr>
           <td>SLOs, dashboards, and alerting on latency</td>
           <td>Cloud Monitoring (alongside Trace)</td>
-          <td>per metric / time series</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> negligible on the request path. Spans are exported asynchronously and reporting is designed to
-        be low overhead, so tracing does not meaningfully add to user-facing latency. Sampling keeps overhead and cost
-        in check on high-traffic paths.</li>
-      <li><b>Cost:</b> driven by spans ingested. A typical shape as of May 2026 is a free allowance of spans per month,
-        then a small per-million-spans charge beyond it. Sampling rate is the main cost lever: trace every request in low
-        traffic, sample a fraction at high volume. Verify current rates against Google Cloud pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -267,11 +252,9 @@
           for Cloud Trace (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/trace/docs/trace-context">Trace context propagation (Google
           Cloud Docs)</a></li>
-      <li><a class="src" href="https://cloud.google.com/stackdriver/pricing">Google Cloud Observability pricing (Cloud
-          Trace)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

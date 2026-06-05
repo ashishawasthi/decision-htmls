@@ -221,41 +221,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency / cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Managed global event ingestion and triggers</td>
           <td>Pub/Sub</td>
-          <td>sub-second delivery, per-volume cost</td>
         </tr>
         <tr>
           <td>Portable, self-managed streaming with full control</td>
           <td>Apache Kafka (self-hosted or Managed Service for Kafka)</td>
-          <td>low latency, you run and tune it</td>
         </tr>
         <tr>
           <td>Routing events to services with filters and CloudEvents</td>
           <td>Eventarc (built on Pub/Sub)</td>
-          <td>near-real-time, routing layer cost</td>
         </tr>
         <tr>
           <td>Simplest possible integration, staleness tolerated</td>
           <td>Scheduled polling of the source</td>
-          <td>poll interval staleness, low cost</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> typically sub-second end to end for event delivery, which makes it a good trigger and freshness
-        path. It is an asynchronous pipeline, so do not put it on a synchronous lookup that a user is waiting on.</li>
-      <li><b>Cost:</b> priced mainly on message volume and throughput (bytes published, delivered, and any retained or
-        replayed), so spend tracks event traffic. Rough ranges only as of May 2026; verify against current Google Cloud
-        docs, since the figure is workload-dependent.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -285,10 +271,9 @@
           Cloud Docs)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/eventarc/docs/overview">Eventarc overview (Google Cloud
           Docs)</a></li>
-      <li><a class="src" href="https://docs.cloud.google.com/pubsub/pricing">Pub/Sub pricing (Google Cloud Docs)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

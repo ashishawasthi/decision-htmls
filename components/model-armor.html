@@ -224,46 +224,31 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency or cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Managed, multi-category screening with low operational burden</td>
           <td>Model Armor</td>
-          <td>added screening call on input and output; per-unit cost</td>
         </tr>
         <tr>
           <td>Cheap, narrow keyword or pattern blocks</td>
           <td>DIY regex or classifier filters</td>
-          <td>near-zero cost; brittle, misses context and novel attacks</td>
         </tr>
         <tr>
           <td>Full control or on-prem, open-weights guard</td>
           <td>Self-hosted guard model (for example Llama Guard)</td>
-          <td>your own GPU inference cost; you operate and tune it</td>
         </tr>
         <tr>
           <td>Basic built-in content blocking only</td>
           <td>Provider-native safety filters</td>
-          <td>bundled with the model; fewer categories, less portable</td>
         </tr>
         <tr>
           <td>Remove PII from prompts and logs</td>
           <td><a class="src" href="cloud-dlp.html">Cloud DLP</a> (complementary, not a substitute)</td>
-          <td>per-unit processed; redaction, not safety screening</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> each screen is an extra synchronous call on the prompt and again on the response, so it adds two
-        hops to an interactive turn. Budget for it on tight SLOs, or screen the lower-risk side asynchronously.</li>
-      <li><b>Cost:</b> priced per unit screened (by request and content size), so spend scales with traffic and prompt
-        and response length. It is usage-dependent; confirm the current per-unit rate and quotas against Google Cloud
-        pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -299,7 +284,7 @@
           for LLM Applications</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

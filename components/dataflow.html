@@ -203,41 +203,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency or cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Simple, smaller-scale ingestion with no streaming</td>
           <td>Cloud Run jobs</td>
-          <td>per vCPU and memory while running; lower floor</td>
         </tr>
         <tr>
           <td>Orchestrate multi-step pipelines and dependencies</td>
           <td>Cloud Composer (Airflow) or Workflows</td>
-          <td>environment or per-step cost; pairs with, not replaces, Dataflow</td>
         </tr>
         <tr>
           <td>Large-scale streaming or batch ETL that autoscales</td>
           <td>Dataflow</td>
-          <td>per vCPU-hour plus memory and shuffle</td>
         </tr>
         <tr>
           <td>Quick experiment or tiny corpus</td>
           <td>Manual scripts</td>
-          <td>near-free, but no autoscaling, retries, or operability</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> minutes to hours for a batch reindex, seconds of processing lag for streaming. It runs off the
-        request path, so this latency sits in ingestion, not in any serving SLO.</li>
-      <li><b>Cost:</b> billed per vCPU-hour plus memory, local disk, and data shuffled, summed across autoscaled workers.
-        Spend tracks how much data you process and how parallel you run, so a full reindex is a visible, bursty cost
-        rather than a steady one. Verify current rates against Google Cloud pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -262,14 +248,13 @@
     <ul class="sources">
       <li><a class="src" href="https://docs.cloud.google.com/dataflow/docs/overview">Dataflow overview (Google Cloud
           Docs)</a></li>
-      <li><a class="src" href="https://cloud.google.com/dataflow/pricing">Dataflow pricing (Google Cloud)</a></li>
       <li><a class="src" href="https://beam.apache.org/documentation/basics/">Apache Beam programming model basics
           (Apache Beam)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/dataflow/docs/machine-learning">Dataflow ML and the
           RunInference transform (Google Cloud Docs)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

@@ -84,9 +84,8 @@
         <tr><td>Provider</td><td>Open weights (Meta Llama), served on GKE with vLLM</td></tr>
         <tr><td>Modality</td><td>Text (multimodal variants available depending on checkpoint)</td></tr>
         <tr><td>Context window</td><td>Checkpoint-dependent</td></tr>
-        <tr><td>Token price</td><td>No per-token API charge; cost is the GPU fleet (accelerator, precision, utilisation)</td></tr>
         <tr><td>Integrated search tool</td><td>No. Live web grounding is unavailable, so adding a web source raises a warning in the linter</td></tr>
-        <tr><td>Latency</td><td>Depends on the fleet. Time to first token around 500 ms (illustrative) at the modelled throughput</td></tr>
+        <tr><td>Latency</td><td>Depends on the fleet you provision</td></tr>
         <tr><td>Best role in this tool</td><td>Both roles, locked in by On-prem deployment</td></tr>
       </tbody>
     </table>
@@ -132,7 +131,7 @@
       <li><a class="src" href="https://cloud.google.com/kubernetes-engine/docs/tutorials/serve-llm-gke">Serve an LLM on GKE (Google Cloud)</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current vendor docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>

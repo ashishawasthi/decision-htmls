@@ -188,7 +188,7 @@
       <div class="card avoid">
         <h3>Avoid</h3>
         <ul>
-          <li>Synchronous, per-request gating: a judge-model call in the hot path adds seconds and cost. Sample async
+          <li>Synchronous, per-request gating: a judge-model call in the hot path adds latency and cost. Sample async
             instead.</li>
           <li>Latency or availability questions: that is <a class="src" href="cloud-trace.html">Cloud Trace</a> and Cloud Monitoring, not eval.</li>
           <li>As the sole arbiter on high-stakes output: keep a human-in-the-loop review for the riskiest decisions.</li>
@@ -203,42 +203,27 @@
         <tr>
           <th>What you need</th>
           <th>Use instead</th>
-          <th>Typical latency / cost</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Managed eval with computed, model-based, and custom metrics on Vertex</td>
           <td>Vertex AI Eval (Gen AI evaluation service)</td>
-          <td>per eval run; judge-model tokens dominate</td>
         </tr>
         <tr>
           <td>Full control over metrics and harness, portable across clouds</td>
           <td>DIY eval harness or open frameworks (for example Ragas, DeepEval)</td>
-          <td>low license cost; engineering and judge-token cost</td>
         </tr>
         <tr>
           <td>Definitive sign-off on high-stakes or ambiguous output</td>
           <td>Human review / human-in-the-loop labeling</td>
-          <td>slow and expensive per item; highest trust</td>
         </tr>
         <tr>
           <td>Latency, errors, and availability, not quality</td>
           <td><a class="src" href="cloud-trace.html">Cloud Trace</a> and Cloud Monitoring</td>
-          <td>per span / per time series</td>
         </tr>
       </tbody>
     </table>
-
-    <h2>Latency and cost profile</h2>
-    <ul>
-      <li><b>Latency:</b> not on the user-facing path. Eval runs asynchronously on a sampled stream, so judge-model
-        latency (often several seconds per item) never reaches the end user. Results land in dashboards and logs minutes
-        later, which is fine for monitoring and comparison.</li>
-      <li><b>Cost:</b> driven by eval runs, and within a run by judge-model tokens: a larger judge model and longer
-        inputs and outputs cost more per scored item. Sampling rate is the dominant lever, which is why production eval
-        runs on a small fraction of traffic rather than everything. Verify current rates against Google Cloud pricing.</li>
-    </ul>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
@@ -272,10 +257,9 @@
       <li><a class="src"
           href="https://cloud.google.com/blog/products/ai-machine-learning/enhancing-llm-quality-and-interpretability-with-the-vertex-gen-ai-evaluation-service">Enhancing
           LLM quality with the Vertex Gen AI evaluation service (Google Cloud Blog)</a></li>
-      <li><a class="src" href="https://cloud.google.com/vertex-ai/pricing">Vertex AI pricing</a></li>
     </ul>
 
-    <footer>Companion reference for the Agentic System Designer. Illustrative guidance and pricing as of May 2026; verify
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify
       against current Google Cloud docs for production decisions.
       <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
   </main>
