@@ -498,6 +498,11 @@
             <li>Prefill / TTFT is compute bound: 2 x params x prompt tokens FLOPs / (aggregate peak FLOPs x MFU).</li>
             <li>KV bytes per token = 2 x layers x kv_heads x head_dim x bytes_per_elem (grouped-query aware; uses
               kv_heads, not query heads).</li>
+            <li>For hybrid Mamba-Transformer models (Nemotron 3) only the self-attention layers hold a growing KV
+              cache, so the KV math multiplies by the attention-layer count (Super 8 of 88, Ultra 16 of 128), not
+              the total. Sliding-window or chunked-local attention (Gemma, Llama 4, gpt-oss) is treated as
+              full-context, so KV is an upper bound at long context. MoE models with Multi-head Latent Attention
+              (DeepSeek, Kimi) are excluded because this per-head GQA formula does not represent their cache.</li>
             <li>Accelerator FLOPs are dense BF16. NVIDIA's headline 1979 TFLOPS for H100 / H200 is the with-sparsity
               number; dense is about 990. Confirm against
               <a href="https://www.nvidia.com/en-us/data-center/h200/">NVIDIA</a> and
@@ -527,8 +532,9 @@
           <p style="margin:8px 0 4px; font-weight:600; color:var(--text);">Model architecture (parameters, layers, KV heads, head dim)</p>
           <ul>
             <li><a href="https://ai.google.dev/gemma/docs/core">Gemma</a>,
-              <a href="https://huggingface.co/meta-llama/Llama-3.1-70B">Llama 3.1</a>,
-              <a href="https://huggingface.co/Qwen/Qwen2.5-72B">Qwen2.5</a>,
+              <a href="https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct">Llama 3.3</a>,
+              <a href="https://huggingface.co/meta-llama/Llama-4-Scout-17B-16E-Instruct">Llama 4</a>,
+              <a href="https://huggingface.co/Qwen/Qwen3-32B">Qwen3</a>,
               <a href="https://research.nvidia.com/labs/nemotron/Nemotron-3/">NVIDIA Nemotron 3</a></li>
           </ul>
           <p style="margin:8px 0 4px; font-weight:600; color:var(--text);">Inference performance method (KV cache, prefill vs decode, roofline)</p>
@@ -551,18 +557,23 @@
     /* ===================== Model catalog =====================
        Architecture fields mirror the memory calculator's records so KV math stays consistent:
        params (total, for weight bytes + prefill FLOPs), layers, kvHeads, headDim. active is the
-       per-token active params for mixture-of-experts models (drives weight-read bytes per step). */
+       per-token active params for mixture-of-experts models (drives weight-read bytes per step).
+       attnLayers (optional) is the count of self-attention layers for hybrid Mamba-Transformer
+       models (Nemotron 3): the KV cache is sized by attnLayers, not total layers, because the
+       Mamba layers carry a fixed-size recurrent state with no context-growing KV. */
     const MODELS = {
       "gemma-3-4b":   { name: "Gemma 3 4B",        params: 4.3e9,   layers: 34,  kvHeads: 4,  headDim: 256, fp8: true },
       "gemma-3-12b":  { name: "Gemma 3 12B",       params: 12.2e9,  layers: 48,  kvHeads: 8,  headDim: 256, fp8: true },
       "gemma-3-27b":  { name: "Gemma 3 27B",       params: 27.4e9,  layers: 62,  kvHeads: 16, headDim: 128, fp8: true },
-      "llama-31-8b":  { name: "Llama 3.1 8B",      params: 8.03e9,  layers: 32,  kvHeads: 8,  headDim: 128, fp8: true },
-      "llama-31-70b": { name: "Llama 3.1 70B",     params: 70.6e9,  layers: 80,  kvHeads: 8,  headDim: 128, fp8: true },
-      "llama-31-405b":{ name: "Llama 3.1 405B",    params: 406e9,   layers: 126, kvHeads: 8,  headDim: 128, fp8: true },
-      "qwen25-72b":   { name: "Qwen2.5 72B",       params: 72.7e9,  layers: 80,  kvHeads: 8,  headDim: 128, fp8: true },
       "gemma-4-31b":  { name: "Gemma 4 31B",       params: 30.7e9,  layers: 60,  kvHeads: 16, headDim: 256, fp8: true },
-      "nemotron-3-super-120b": { name: "Nemotron 3 Super 120B (MoE)", params: 120.6e9, active: 12.7e9, layers: 88,  kvHeads: 2, headDim: 128, fp8: true, moe: true },
-      "nemotron-3-ultra-550b": { name: "Nemotron 3 Ultra 550B (MoE)", params: 550e9,   active: 55e9,   layers: 120, kvHeads: 2, headDim: 128, fp8: true, moe: true },
+      "llama-31-8b":  { name: "Llama 3.1 8B",      params: 8.03e9,  layers: 32,  kvHeads: 8,  headDim: 128, fp8: true },
+      "llama-33-70b": { name: "Llama 3.3 70B",     params: 70.6e9,  layers: 80,  kvHeads: 8,  headDim: 128, fp8: true },
+      "llama-4-scout":    { name: "Llama 4 Scout 109B (MoE)",    params: 109e9, active: 17e9, layers: 48, kvHeads: 8, headDim: 128, fp8: true, moe: true },
+      "llama-4-maverick": { name: "Llama 4 Maverick 400B (MoE)", params: 400e9, active: 17e9, layers: 48, kvHeads: 8, headDim: 128, fp8: true, moe: true },
+      "qwen3-32b":    { name: "Qwen3 32B",         params: 32.8e9,  layers: 64,  kvHeads: 8,  headDim: 128, fp8: true },
+      "qwen3-30b-a3b":{ name: "Qwen3 30B-A3B (MoE)", params: 30.5e9, active: 3.3e9, layers: 48, kvHeads: 4, headDim: 128, fp8: true, moe: true },
+      "nemotron-3-super-120b": { name: "Nemotron 3 Super 120B (MoE)", params: 120.6e9, active: 12.7e9, layers: 88,  attnLayers: 8,  kvHeads: 2, headDim: 128, fp8: true, moe: true },
+      "nemotron-3-ultra-550b": { name: "Nemotron 3 Ultra 550B (MoE)", params: 550e9,   active: 55e9,   layers: 128, attnLayers: 16, kvHeads: 2, headDim: 128, fp8: true, moe: true },
     };
 
     /* ===================== Accelerator catalog =====================
@@ -589,7 +600,7 @@
     /* ===================== State + helpers ===================== */
     const $ = sel => document.querySelector(sel);
     const state = {
-      model: "llama-31-70b", prec: "fp8", kvFp8: false,
+      model: "llama-33-70b", prec: "fp8", kvFp8: false,
       accel: "h100", tp: 2, mfu: 0.4,
       promptTok: 2000, outTok: 500, ctxTok: 2500, batch: 32,
       peakQps: 20, sloTpot: 40, sloTtft: 1000, targetUtil: 70, costHr: 0,
@@ -611,12 +622,14 @@
     }
     function totalWeightBytes(m, prec) { return m.params * PREC_BYTES[prec]; }   // full model footprint
     function kvBytesPerToken(m, kvFp8) {
-      return 2 * m.layers * m.kvHeads * m.headDim * (kvFp8 ? 1 : 2);   // K and V, kv_heads (GQA)
+      const kvLayers = m.attnLayers || m.layers;   // hybrid Mamba: only attention layers hold a KV cache
+      return 2 * kvLayers * m.kvHeads * m.headDim * (kvFp8 ? 1 : 2);   // K and V, kv_heads (GQA)
     }
 
     /* ===================== Core compute ===================== */
     function compute(s) {
       const m = MODELS[s.model], a = ACCEL[s.accel];
+      const kvLayers = m.attnLayers || m.layers;            // hybrid Mamba: only attention layers hold a KV cache
       const prec = (s.prec === "fp8" && a.fp8TF === 0) ? "bf16" : s.prec;   // fall back if FP8 unsupported
       const tp = Math.max(1, s.tp);
       const commEff = tp > 1 ? TP_COMM_EFF : 1;
@@ -696,7 +709,7 @@
 
       return {
         m, a, prec, tp, aggBw, peakFlops, hbmTotal,
-        wBytesStep, wBytesFull, kvPerTok, kvPerReq, kvAtBatch,
+        wBytesStep, wBytesFull, kvPerTok, kvPerReq, kvAtBatch, kvLayers,
         tpotMs, sysTps, perStreamTps, decodeBound: st.bound, tMem: st.tMem, tComp: st.tComp,
         ttftMs, ttftBound, e2eMs,
         ridge, aiDecode, batchToSaturate,
@@ -751,7 +764,7 @@
         statHtml("Weights resident", fmtGB(r.wBytesFull), `${(r.hbmTotal / GB).toFixed(0)} GB HBM total`);
 
       $("#kvFormula").innerHTML =
-        `<b>KV/token</b> = 2 x ${r.m.layers} layers x ${r.m.kvHeads} kv-heads x ${r.m.headDim} head-dim x ${state.kvFp8 ? 1 : 2} B = <b>${(r.kvPerTok).toFixed(0)} B</b>\n` +
+        `<b>KV/token</b> = 2 x ${r.kvLayers}${r.kvLayers !== r.m.layers ? ` attn-layers (of ${r.m.layers})` : " layers"} x ${r.m.kvHeads} kv-heads x ${r.m.headDim} head-dim x ${state.kvFp8 ? 1 : 2} B = <b>${(r.kvPerTok).toFixed(0)} B</b>\n` +
         `<b>Max concurrent</b> = (${(r.hbmTotal / GB).toFixed(0)} GB x ${HBM_USABLE} - ${fmtGB(r.wBytesFull)} weights) / ${fmtGB(r.kvPerReq)} = <b>${r.fits ? fmtInt(r.maxConc) : "0"}</b>`;
 
       // capacity
@@ -790,10 +803,10 @@
       $("#assume").innerHTML =
         `<b>${r.m.name}</b> on <b>${r.tp}x ${r.a.name}</b> at <b>${r.prec.toUpperCase()}</b>` +
         `${r.precFellBack ? ` (FP8 not supported here, using BF16)` : ""}: ` +
-        `${(r.m.params / 1e9).toFixed(0)}B params, ${r.m.layers} layers, ${r.m.kvHeads} kv-heads x ${r.m.headDim} head-dim. ` +
+        `${(r.m.params / 1e9).toFixed(0)}B params, ${r.m.layers} layers${r.m.attnLayers ? ` (${r.m.attnLayers} attention)` : ""}, ${r.m.kvHeads} kv-heads x ${r.m.headDim} head-dim. ` +
         `Aggregate ${(r.aggBw / TB).toFixed(2)} TB/s bandwidth, ${(r.peakFlops / 1e12).toFixed(0)} TFLOPS, ${(r.hbmTotal / GB).toFixed(0)} GB HBM` +
         `${r.tp > 1 ? ` (${r.tp} devices, ${((1 - TP_COMM_EFF) * 100).toFixed(0)}% comm tax)` : ""}.` +
-        (r.m.moe ? ` MoE: ${(r.m.active / 1e9).toFixed(1)}B active params read per token, ${(r.m.params / 1e9).toFixed(0)}B resident.` : "");
+        (r.m.moe ? ` MoE: ${(r.m.active / 1e9).toFixed(1)}B active params read per token, ${(r.m.params / 1e9).toFixed(0)}B resident.${r.m.attnLayers ? ` Hybrid Mamba: KV sized by ${r.m.attnLayers} attention layers, not ${r.m.layers}.` : ""}` : "");
     }
 
     /* ===================== Wiring ===================== */
@@ -806,7 +819,7 @@
 
     function syncMeta() {
       const m = MODELS[state.model], a = ACCEL[state.accel];
-      $("#modelMeta").textContent = `${(m.params / 1e9).toFixed(0)}B params, ${m.layers} layers, ${m.kvHeads} KV heads, ${m.headDim} head dim${m.moe ? `, MoE ${(m.active / 1e9).toFixed(1)}B active` : ""}`;
+      $("#modelMeta").textContent = `${(m.params / 1e9).toFixed(0)}B params, ${m.layers} layers${m.attnLayers ? ` (${m.attnLayers} attention)` : ""}, ${m.kvHeads} KV heads, ${m.headDim} head dim${m.moe ? `, MoE ${(m.active / 1e9).toFixed(1)}B active` : ""}`;
       $("#accelMeta").textContent = `${a.hbmGB} GB HBM, ${a.bwTBs} TB/s, ${a.bf16TF} TF BF16${a.fp8TF ? " / " + a.fp8TF + " TF FP8" : ""}. ${a.note}`;
     }
 
@@ -858,24 +871,24 @@
       assert("determinism: same inputs give same outputs", r1 === r2);
 
       // 70B FP16 single-stream memory-bound floor: 140GB / 3.35 TB/s ~= 42ms ~= 24 tok/s on one H100
-      const h100 = compute({ ...state, model: "llama-31-70b", accel: "h100", prec: "bf16", tp: 1, batch: 1, ctxTok: 1 });
+      const h100 = compute({ ...state, model: "llama-33-70b", accel: "h100", prec: "bf16", tp: 1, batch: 1, ctxTok: 1 });
       assert("70B BF16 batch-1 TPOT ~42ms on 1x H100", near(h100.tpotMs, 42, 4));
       assert("70B BF16 batch-1 ~24 tok/s on 1x H100", near(h100.perStreamTps, 24, 3));
       assert("70B batch-1 decode is memory-bound", h100.decodeBound === "memory");
 
       // H200 has more bandwidth: 140GB / 4.8 TB/s ~= 29ms ~= 34 tok/s
-      const h200 = compute({ ...state, model: "llama-31-70b", accel: "h200", prec: "bf16", tp: 1, batch: 1, ctxTok: 1 });
+      const h200 = compute({ ...state, model: "llama-33-70b", accel: "h200", prec: "bf16", tp: 1, batch: 1, ctxTok: 1 });
       assert("70B BF16 batch-1 ~34 tok/s on 1x H200", near(h200.perStreamTps, 34, 3));
       assert("H200 faster than H100 at batch 1", h200.perStreamTps > h100.perStreamTps);
 
       // INT4 weight memory is 0.25x BF16 (per-param bytes 0.5 vs 2.0)
-      const bf = compute({ ...state, model: "llama-31-70b", prec: "bf16" });
-      const i4 = compute({ ...state, model: "llama-31-70b", prec: "int4" });
+      const bf = compute({ ...state, model: "llama-33-70b", prec: "bf16" });
+      const i4 = compute({ ...state, model: "llama-33-70b", prec: "int4" });
       assert("INT4 weight memory = 0.25x BF16", near(i4.wBytesFull / bf.wBytesFull, 0.25, 0.001));
 
       // KV quantization roughly doubles concurrency
-      const kv16 = compute({ ...state, model: "llama-31-70b", accel: "h200", tp: 2, kvFp8: false });
-      const kv8 = compute({ ...state, model: "llama-31-70b", accel: "h200", tp: 2, kvFp8: true });
+      const kv16 = compute({ ...state, model: "llama-33-70b", accel: "h200", tp: 2, kvFp8: false });
+      const kv8 = compute({ ...state, model: "llama-33-70b", accel: "h200", tp: 2, kvFp8: true });
       assert("FP8 KV roughly doubles max concurrency", kv8.maxConc >= kv16.maxConc * 1.9);
 
       // throughput rises with batch while memory-bound
@@ -884,13 +897,17 @@
       assert("system throughput rises with batch", b32 > b1);
 
       // tensor parallel adds bandwidth: 70B fits and runs faster on 2 GPUs
-      const tp1 = compute({ ...state, model: "llama-31-70b", accel: "h100", tp: 1, batch: 1, ctxTok: 1 });
-      const tp2 = compute({ ...state, model: "llama-31-70b", accel: "h100", tp: 2, batch: 1, ctxTok: 1 });
+      const tp1 = compute({ ...state, model: "llama-33-70b", accel: "h100", tp: 1, batch: 1, ctxTok: 1 });
+      const tp2 = compute({ ...state, model: "llama-33-70b", accel: "h100", tp: 2, batch: 1, ctxTok: 1 });
       assert("2x H100 decodes faster than 1x at batch 1", tp2.perStreamTps > tp1.perStreamTps);
 
       // MoE reads only active params per token, so it decodes faster than a dense model of equal total size
       const moe = compute({ ...state, model: "nemotron-3-super-120b", accel: "h100", tp: 2, batch: 1, ctxTok: 1 });
       assert("MoE active-param read makes decode fast", moe.perStreamTps > 0 && moe.wBytesStep < totalWeightBytes(MODELS["nemotron-3-super-120b"], "bf16"));
+
+      // hybrid Mamba models size the KV cache by attention layers (Super: 8 of 88), not total layers
+      assert("hybrid Mamba KV uses attention-layer count", near(moe.kvPerTok, 2 * 8 * 2 * 128 * 2, 1));
+      assert("hybrid KV is far smaller than the all-layers count", moe.kvPerTok < 2 * 88 * 2 * 128 * 2);
 
       const pass = results.filter(r => r[1]).length;
       const fail = results.length - pass;
