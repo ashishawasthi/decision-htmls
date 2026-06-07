@@ -503,8 +503,10 @@
               the total. Sliding-window or chunked-local attention (Gemma, Llama 4, gpt-oss) is treated as
               full-context, so KV is an upper bound at long context. MoE models with Multi-head Latent Attention
               (DeepSeek, Kimi) are excluded because this per-head GQA formula does not represent their cache.</li>
-            <li>Accelerator FLOPs are dense BF16. NVIDIA's headline 1979 TFLOPS for H100 / H200 is the with-sparsity
-              number; dense is about 990. Confirm against
+            <li>Accelerator FLOPs are dense (no 2:4 sparsity). NVIDIA's headline numbers are with-sparsity (2x
+              dense): H100 / H200 dense BF16 ~990 / FP8 1979, B200 / B300 dense BF16 2250 / FP8 4500-5000. FP4
+              (Blackwell, Ironwood; ~9000-15000 dense) is not a precision option in this tool. TPU figures,
+              including Ironwood's native FP8 4614, are already dense. Confirm against
               <a href="https://www.nvidia.com/en-us/data-center/h200/">NVIDIA</a> and
               <a href="https://docs.cloud.google.com/tpu/docs/v6e">Google Cloud TPU</a> docs.</li>
             <li>TPU FLOPs and bandwidth are per chip and approximate; treat them as order-of-magnitude for an interview,
@@ -521,13 +523,17 @@
             <li>NVIDIA:
               <a href="https://www.nvidia.com/en-us/data-center/tesla-t4/">T4</a>,
               <a href="https://www.nvidia.com/en-us/data-center/l4/">L4</a>,
+              <a href="https://www.nvidia.com/en-us/data-center/l40s/">L40S</a>,
               <a href="https://www.nvidia.com/en-us/data-center/a100/">A100</a>,
               <a href="https://www.nvidia.com/en-us/data-center/h100/">H100</a>,
-              <a href="https://www.nvidia.com/en-us/data-center/h200/">H200</a></li>
+              <a href="https://www.nvidia.com/en-us/data-center/h200/">H200</a>,
+              <a href="https://www.nvidia.com/en-us/data-center/dgx-b200/">B200</a>,
+              <a href="https://www.nvidia.com/en-us/data-center/gb300-nvl72/">B300 (Blackwell Ultra)</a></li>
             <li>Google Cloud:
               <a href="https://docs.cloud.google.com/tpu/docs/v5e">TPU v5e</a>,
               <a href="https://docs.cloud.google.com/tpu/docs/v5p">TPU v5p</a>,
-              <a href="https://docs.cloud.google.com/tpu/docs/v6e">TPU v6e (Trillium)</a></li>
+              <a href="https://docs.cloud.google.com/tpu/docs/v6e">TPU v6e (Trillium)</a>,
+              <a href="https://docs.cloud.google.com/tpu/docs/v7">TPU v7 (Ironwood)</a></li>
           </ul>
           <p style="margin:8px 0 4px; font-weight:600; color:var(--text);">Model architecture (parameters, layers, KV heads, head dim)</p>
           <ul>
@@ -582,13 +588,17 @@
     const ACCEL = {
       "t4":      { name: "NVIDIA T4 (16 GB)",            type: "gpu", hbmGB: 16,  bwTBs: 0.32,  bf16TF: 65,   fp8TF: 0,    note: "Turing, GDDR6, FP16 only (no BF16/FP8)" },
       "l4":      { name: "NVIDIA L4 (24 GB)",            type: "gpu", hbmGB: 24,  bwTBs: 0.30,  bf16TF: 121,  fp8TF: 242,  note: "Ada, GDDR6" },
+      "l40s":    { name: "NVIDIA L40S (48 GB)",          type: "gpu", hbmGB: 48,  bwTBs: 0.864, bf16TF: 362,  fp8TF: 733,  note: "Ada, GDDR6 (not HBM); dense; low bandwidth, decode-bound" },
       "a100-40": { name: "NVIDIA A100 (40 GB)",          type: "gpu", hbmGB: 40,  bwTBs: 1.555, bf16TF: 312,  fp8TF: 0,    note: "Ampere, HBM2, no FP8" },
       "a100-80": { name: "NVIDIA A100 (80 GB)",          type: "gpu", hbmGB: 80,  bwTBs: 2.039, bf16TF: 312,  fp8TF: 0,    note: "Ampere, HBM2e, no FP8" },
       "h100":    { name: "NVIDIA H100 SXM (80 GB)",      type: "gpu", hbmGB: 80,  bwTBs: 3.35,  bf16TF: 990,  fp8TF: 1979, note: "Hopper, HBM3; dense BF16 about 990 TFLOPS" },
       "h200":    { name: "NVIDIA H200 SXM (141 GB)",     type: "gpu", hbmGB: 141, bwTBs: 4.8,   bf16TF: 990,  fp8TF: 1979, note: "Hopper, HBM3e" },
+      "b200":    { name: "NVIDIA B200 (192 GB)",         type: "gpu", hbmGB: 192, bwTBs: 8,     bf16TF: 2250, fp8TF: 4500, note: "Blackwell, HBM3e; dense FP8 4500 (FP4 9000, not modeled). Per-GPU; GB200 = 2x B200 + Grace" },
+      "b300":    { name: "NVIDIA B300 Blackwell Ultra (288 GB)", type: "gpu", hbmGB: 288, bwTBs: 8, bf16TF: 2250, fp8TF: 5000, note: "Blackwell Ultra, HBM3e; dense FP8 5000 (FP4 15000); BF16 inferred. Per-GPU; GB300 = 2x B300 + Grace" },
       "tpu-v5e": { name: "Cloud TPU v5e (16 GB/chip)",   type: "tpu", hbmGB: 16,  bwTBs: 0.82,  bf16TF: 197,  fp8TF: 0,    note: "per chip, approximate" },
       "tpu-v5p": { name: "Cloud TPU v5p (95 GB/chip)",   type: "tpu", hbmGB: 95,  bwTBs: 2.76,  bf16TF: 459,  fp8TF: 0,    note: "per chip, approximate" },
       "tpu-v6e": { name: "Cloud TPU v6e Trillium (32 GB/chip)", type: "tpu", hbmGB: 32, bwTBs: 1.6, bf16TF: 918, fp8TF: 0, note: "per chip, approximate" },
+      "tpu-v7":  { name: "Cloud TPU v7 Ironwood (192 GB/chip)", type: "tpu", hbmGB: 192, bwTBs: 7.37, bf16TF: 2307, fp8TF: 4614, note: "per chip; native FP8 (4614 dense), inference flagship" },
     };
 
     const PREC_BYTES = { bf16: 2, fp8: 1, int4: 0.5 };
@@ -880,6 +890,12 @@
       const h200 = compute({ ...state, model: "llama-33-70b", accel: "h200", prec: "bf16", tp: 1, batch: 1, ctxTok: 1 });
       assert("70B BF16 batch-1 ~34 tok/s on 1x H200", near(h200.perStreamTps, 34, 3));
       assert("H200 faster than H100 at batch 1", h200.perStreamTps > h100.perStreamTps);
+
+      // Blackwell B200 has 8 TB/s HBM (vs H200's 4.8), so memory-bound decode is faster at batch 1
+      const b200 = compute({ ...state, model: "llama-33-70b", accel: "b200", prec: "bf16", tp: 1, batch: 1, ctxTok: 1 });
+      assert("B200 decodes 70B faster than H200 at batch 1", b200.perStreamTps > h200.perStreamTps);
+      // TPU v7 Ironwood has native FP8; older TPUs (v6e) correctly fall back to BF16
+      assert("Ironwood TPU exposes native FP8, v6e does not", ACCEL["tpu-v7"].fp8TF > 0 && ACCEL["tpu-v6e"].fp8TF === 0);
 
       // INT4 weight memory is 0.25x BF16 (per-param bytes 0.5 vs 2.0)
       const bf = compute({ ...state, model: "llama-33-70b", prec: "bf16" });
