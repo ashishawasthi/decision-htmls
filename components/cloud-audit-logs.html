@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloud Audit Logs (Data Access) in agentic systems</title>
+  <script>
+    /* Resolve the theme before first paint to avoid a flash. 'theme' is shared across all
+       pages; it is set only when the user has explicitly chosen, absent means follow the OS. */
+    (function () {
+      var saved = localStorage.getItem('theme');
+      var t = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <style>
+    :root { --bg:#0f1419; --panel:#161b22; --panel2:#1c2430; --border:#2a3441; --muted:#8b98a8; --text:#e6edf3; --accent:#4c9aff; --ok:#3fb950; --warn:#d29922; --err:#f85149; --data:#e6c84c; }
+
+    /* Light theme. Dark above stays the default, so pages are unchanged in dark mode. */
+    :root { --accent-tint: rgba(76, 154, 255, .08); }
+    :root[data-theme="light"] {
+      --bg: #ffffff;
+      --panel: #f6f8fa;
+      --panel2: #eaeef2;
+      --border: #d0d7de;
+      --muted: #57606a;
+      --text: #1f2328;
+      --accent: #0969da;
+      --ok: #1a7f37;
+      --warn: #9a6700;
+      --err: #cf222e;
+      --data: #9a7d0a;
+      --accent-tint: rgba(9, 105, 218, .08);
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; line-height:1.6; }
+    main { max-width:880px; margin:0 auto; padding:40px 24px 80px; }
+    .crumb { font-size:12px; color:var(--muted); margin-bottom:18px; }
+    .crumb a { color:var(--accent); text-decoration:none; }
+    .crumb a:hover { text-decoration:underline; }
+    .tag { display:inline-block; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--data); border:1px solid var(--border); border-radius:4px; padding:2px 8px; margin-bottom:12px; }
+    h1 { font-size:28px; margin:0 0 8px; }
+    h2 { font-size:18px; margin:34px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+    h3 { font-size:14px; margin:18px 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    p, li { font-size:14.5px; }
+    .lead { font-size:16px; }
+    .lead b { color:var(--text); }
+    code { background:var(--panel2); border:1px solid var(--border); border-radius:4px; padding:1px 5px; font-size:12.5px; font-family:ui-monospace,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+    thead th { color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; }
+    td.fit-strong { color:var(--ok); font-weight:600; }
+    td.fit-cond { color:var(--warn); font-weight:600; }
+    .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media (max-width:680px) { .cols { grid-template-columns:1fr; } }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px 16px; }
+    .card.use { border-left:3px solid var(--ok); }
+    .card.avoid { border-left:3px solid var(--err); }
+    .card h3 { margin-top:0; }
+    ul { margin:6px 0; padding-left:20px; }
+    li { margin:3px 0; }
+    .note { background:var(--accent-tint); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:6px; padding:10px 14px; font-size:13.5px; color:var(--muted); margin:14px 0; }
+    .note b { color:var(--text); }
+    a.src { color:var(--accent); text-decoration:none; }
+    a.src:hover { text-decoration:underline; }
+    .sources { font-size:12.5px; color:var(--muted); }
+    footer { margin-top:40px; padding-top:16px; border-top:1px solid var(--border); font-size:12px; color:var(--muted); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Cloud Audit Logs (Data Access)</div>
+    <span class="tag">Governance &amp; audit</span>
+    <h1>Cloud Audit Logs (Data Access) in agentic systems</h1>
+    <p class="lead">Cloud Audit Logs is the platform-level record of <b>who did what, where, and when</b> across Google
+      Cloud. Three of its four streams are always on and free; the <b>Data Access</b> stream, which records reads and
+      writes of your data in managed services, is the one you opt into and pay for. The design rule that follows: turn
+      Data Access logging on for the managed stores that hold sensitive data once the audience is regulated or external,
+      and keep it separate from the application audit log, which records what the agent itself did.</p>
+
+    <div class="note"><b>Not the same as the immutable application log.</b> The <a class="src" href="cloud-logging.html">Cloud
+      Logging (WORM)</a> control records the agent's own prompts, tool invocations, and decisions, written by your
+      application. Cloud Audit Logs records who touched the infrastructure and the managed data stores: IAM changes, and
+      reads and writes against AlloyDB, Spanner, BigQuery, Cloud Storage, Secret Manager, and Cloud KMS keys. The two are
+      complementary, not substitutes. Reflects Google Cloud guidance as of June 2026; verify against current docs.</div>
+
+    <h2>The four streams</h2>
+    <table>
+      <thead>
+        <tr><th>Stream</th><th>Default</th><th>Captures</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Admin Activity</td><td class="fit-strong">Always on, free, cannot disable</td><td>Control-plane changes: IAM grants, resource and config changes.</td></tr>
+        <tr><td>System Event</td><td class="fit-strong">Always on, free</td><td>Google-initiated changes (for example autoscaling).</td></tr>
+        <tr><td>Policy Denied</td><td class="fit-strong">On by default, free</td><td>Accesses blocked by org policy, VPC Service Controls, or context-aware access.</td></tr>
+        <tr><td>Data Access</td><td class="fit-cond">Off by default (except BigQuery), billed, opt-in</td><td>Reads and writes of data in managed services, plus KMS key use and Secret Manager access.</td></tr>
+      </tbody>
+    </table>
+    <p>Because the first three streams cost nothing and need no setup, the only real design decision is the
+      <b>Data Access</b> stream: which services to enable it on, and how to keep its volume in check.</p>
+
+    <h2>Role by purpose</h2>
+    <table>
+      <thead>
+        <tr><th>Purpose</th><th>Recommended role</th><th>Fit</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Interactive assistant</td><td>Record reads of the managed stores the assistant grounds on, so access to sensitive data is provable. Enable on the state store, the corpus stores, and KMS.</td><td class="fit-cond">Conditional on tier</td></tr>
+        <tr><td>Task automation</td><td>A privileged run touches and changes managed data, so a who-touched-which-record trail per service account is part of the control set, alongside human approval and the rules engine.</td><td class="fit-strong">Strong</td></tr>
+      </tbody>
+    </table>
+
+    <h2>When to use, when not</h2>
+    <div class="cols">
+      <div class="card use"><h3>Good fit</h3>
+        <ul>
+          <li>Regulated or external audiences where you must prove who read or changed sensitive data in managed stores.</li>
+          <li>Compliance regimes (SOC 2, HIPAA, PCI, public sector) that require data-access accountability, not just control-plane change history.</li>
+          <li>Forensics: reconstructing exactly which records a run or service account accessed, and when.</li>
+          <li>Detecting misuse of a runtime service account, such as unexpected reads of a store it should not touch.</li>
+        </ul>
+      </div>
+      <div class="card avoid"><h3>Avoid or take care</h3>
+        <ul>
+          <li>As a replacement for the application audit log: it records platform access, not the agent's prompts, tools, or decisions. Keep both.</li>
+          <li>Enabling Data Access logs project-wide at full verbosity in a high-volume design: the billed volume can balloon. Scope to the stores that hold sensitive data.</li>
+          <li>As a low-latency alerting feed: it is an audit trail, not a metrics pipeline. Use Cloud Monitoring for that.</li>
+          <li>Budgeting for Admin Activity coverage: it is already on and free, so it is not a provisioned line.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Choosing Cloud Audit Logs vs. alternatives</h2>
+    <table>
+      <thead><tr><th>What you need</th><th>Use instead</th></tr></thead>
+      <tbody>
+        <tr><td>Who read or wrote managed data (control plane plus data plane)</td><td>Cloud Audit Logs with Data Access enabled on those services</td></tr>
+        <tr><td>The agent's own prompts, tool calls, and decisions, kept tamper-evident</td><td><a class="src" href="cloud-logging.html">Cloud Logging</a> with a locked WORM bucket</td></tr>
+        <tr><td>Latency, spans, and errors across the request path</td><td><a class="src" href="cloud-trace.html">Cloud Trace</a> with Cloud Monitoring</td></tr>
+        <tr><td>Cross-source threat correlation and detections</td><td>Export to Chronicle or a third-party SIEM</td></tr>
+        <tr><td>IAM changes and resource config history only</td><td>Admin Activity logs (already on, free)</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Integration patterns and tuning</h2>
+    <ul>
+      <li>Enable Data Access logs only on the services that hold sensitive data (the managed state store, BigQuery, Cloud Storage, Secret Manager, KMS), not project-wide, to keep the billed volume legible.</li>
+      <li>Pair it with the other tier-gated controls: <a class="src" href="vpc-service-controls.html">VPC Service Controls</a> draws the perimeter, CMEK encrypts the managed stores, and Data Access logs record who reached them. Perimeter, encryption, and access accountability are the three legs of the managed-store story.</li>
+      <li>Route audit logs to a dedicated, access-restricted bucket or sink, and turn on Data Access logging for that bucket too, so reads of the audit trail are themselves recorded.</li>
+      <li>Redact before ingest where log bodies can carry PII (resource names, query parameters) with <a class="src" href="cloud-dlp.html">Cloud DLP</a>, since a locked audit sink cannot delete a leaked value.</li>
+      <li>Trim high-noise, low-value entries with exclusion filters, and sink long-term retention to lower-cost storage for the required number of years.</li>
+      <li>Keep the runtime service account least-privileged so the trail stays readable: fewer principals make the reads easier to attribute.</li>
+    </ul>
+
+    <h2>How it maps to this tool</h2>
+    <p>The designer turns Data Access audit logging on automatically when the audience and sensitivity tier is regulated
+      or higher, or when the system is external-facing, the same trigger that drives the immutable application audit log
+      it complements. It then adds a <code>Cloud Audit Logs (Data Access)</code> line to the bill of materials and draws a
+      data-access edge from each managed store to a Cloud Audit Logs node in the architecture diagram, alongside the CMEK
+      encryption edges on the same stores. Below the regulated tier (internal, low-stakes) it stays off, since the
+      always-on Admin Activity, System Event, and Policy Denied streams already cover control-plane history at no cost.
+      Only the billed Data Access stream is modeled in the cost estimate.</p>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a class="src" href="https://docs.cloud.google.com/logging/docs/audit" target="_blank" rel="noopener">Cloud Audit Logs overview</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/logging/docs/audit/configure-data-access" target="_blank" rel="noopener">Configure Data Access audit logs</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/stackdriver/pricing" target="_blank" rel="noopener">Cloud Logging pricing (Data Access ingestion)</a></li>
+    </ul>
+
+    <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of June 2026;
+      verify against current Google Cloud docs for production decisions.
+      <br>A personal project, provided as is and not affiliated with or endorsed by any vendor. See the <a href="../DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</footer>
+  </main>
+</body>
+
+</html>

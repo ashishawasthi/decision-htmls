@@ -1789,7 +1789,7 @@
     // on state.overrides so the diagram, latency, BOM, and cost read them unchanged; the panel
     // renders from state.governance. Lowering the trust tier turns a control back off, so the
     // posture always matches the inputs (no stuck-on controls, nothing for a preset to seed).
-    const GOV_KEYS = new Set(['gateway', 'auditLog', 'toolAuthz', 'residencyPin', 'sandbox', 'guardrails', 'rulesEngine', 'costKillSwitch', 'hitlApproval', 'modelRiskGov', 'safeRollout', 'feedbackLoop']);
+    const GOV_KEYS = new Set(['gateway', 'auditLog', 'toolAuthz', 'residencyPin', 'sandbox', 'dataAccessAudit', 'guardrails', 'rulesEngine', 'costKillSwitch', 'hitlApproval', 'modelRiskGov', 'safeRollout', 'feedbackLoop']);
     function deriveGovernance() {
       const o = state.overrides, i = state.inputs;
       const { aud, lvl } = sens(i.audienceSensitivity);
@@ -1812,6 +1812,12 @@
         lvl >= 3 ? 'strict-PII' : lvl >= 2 ? 'regulated+' : 'not required', 'data');
       set('sandbox', 'Transient sandbox', lvl >= 3 || (auto && ext),
         lvl >= 3 ? 'strict-PII' : (auto && ext) ? 'external automation' : 'not required', 'data');
+      // Data Access audit logs on the managed stores: the platform-level "who read/wrote which managed data"
+      // trail (Cloud Audit Logs Data Access), distinct from the app-level WORM event log above. Admin Activity /
+      // System Event / Policy Denied are always-on and free; the Data Access stream is the billed, opt-in part,
+      // so it follows the same regulated-or-external trigger as the immutable audit log it complements.
+      set('dataAccessAudit', 'Data Access audit logs (managed stores)', lvl >= 2 || ext,
+        lvl >= 2 ? 'regulated+' : ext ? 'external' : 'not required', 'data');
       // Safety
       set('guardrails', 'Safety guardrails (injection / output)', ext || hasWeb || lvl >= 3,
         lvl >= 3 ? 'strict-PII' : ext ? (aud === 'public' ? 'public' : 'external') : hasWeb ? 'web-sourced content' : 'internal trusted', 'safety');
@@ -2122,6 +2128,7 @@
       'LangGraph Platform Enterprise (self-host license)': 'components/langgraph.html',
       // observability and governance
       'Cloud Logging (WORM)': 'components/cloud-logging.html',
+      'Cloud Audit Logs (Data Access)': 'components/cloud-audit-logs.html',
       'Cloud Trace': 'components/cloud-trace.html',
       'Agent Platform Evals': 'components/vertex-ai-eval.html',
       'Model Registry': 'components/vertex-model-registry.html',
@@ -2247,6 +2254,21 @@
         if (!targets.length) return;
         L.push(node('KMS', 'Cloud KMS (CMEK)', 'gov'));
         targets.forEach(t => L.push(`KMS -. encrypts .-> ${t}`));
+      };
+      // Cloud Audit Logs (Data Access) - the access-accountability sibling of CMEK: it records every read/write
+      // against the same managed stores. Drawn only when the control is on, over the exact managed-store set KMS
+      // uses (self-hosted Redis-on-GKE is in-VPC, not a managed service, so it is excluded from both).
+      const auditNode = () => {
+        if (!o.dataAccessAudit) return;
+        const cacheOn = responseCacheOn(o);
+        const targets = [];
+        if (gcsDrawn) targets.push('GCS');
+        if (stateManaged) targets.push('State');
+        if (durTier) targets.push('StateDur');
+        if (cacheOn && !gke) targets.push('Cache');
+        if (!targets.length) return;
+        L.push(node('Audit', 'Cloud Audit Logs', 'gov'));
+        targets.forEach(t => L.push(`${t} -. data access .-> Audit`));
       };
       // VPC-SC perimeter wraps the Google services when enforcement is on. Ingress and human review
       // sit outside it; cross-boundary edges are emitted after the perimeter closes.
@@ -2389,6 +2411,7 @@
         // durable tier (AlloyDB or Spanner, both via a PSC endpoint) - a managed service, drawn outside the VPC
         if (durTier) { L.push(node('StateDur', durTier.label, 'data', 'cyl')); L.push(`State -. durable · ${durTier.conn} .-> StateDur`); }
         kmsNode();   // CMEK edges, emitted once every managed data store above is declared
+        auditNode(); // Data Access audit edges, over the same managed stores, when the control is on
         L.push(node('Obs', 'Observability', 'obs')); L.push('AE -. traces .-> Obs');
         closePerim();
         // cross-boundary entry edge (ingress into the perimeter) and human review (outside). Suppressed in
@@ -2434,6 +2457,7 @@
         // durable tier (AlloyDB or Spanner, both via a PSC endpoint) - a managed service, drawn outside the VPC
         if (durTier) { L.push(node('StateDur', durTier.label, 'data', 'cyl')); L.push(`State -. durable · ${durTier.conn} .-> StateDur`); }
         kmsNode();   // CMEK edges, emitted once every managed data store above is declared
+        auditNode(); // Data Access audit edges, over the same managed stores, when the control is on
         L.push(node('Obs', 'Observability', 'obs')); L.push('AE -. traces .-> Obs');
         closePerim();
         if (!privateOnly) L.push(cacheOn ? `Cache -- miss --> ${agentEntry}` : `${head} --> ${agentEntry}`);
@@ -2721,6 +2745,9 @@
       b.add('Cloud Trace'); b.add('Agent Platform Evals');
       if (o.guardrails) b.add('Model Armor'); if (o.toolAuthz) b.add('Workload Identity'); if (o.modelRiskGov) b.add('Model Registry');
       if (o.enforceVpcSc) b.add('VPC Service Controls'); b.add('Cloud DLP'); b.add('IAM');
+      // Data Access audit logs on the managed stores (billed stream of Cloud Audit Logs). Admin Activity / System
+      // Event / Policy Denied are always-on and free, so they are not a provisioned line; only the opt-in Data Access stream is.
+      if (o.dataAccessAudit) b.add('Cloud Audit Logs (Data Access)');
       // Cloud Storage is always provisioned. Secret Manager only when a self-hosted Redis-on-GKE tier (hot state
       // and/or response cache) needs an AUTH credential - every other service authenticates via the agent service
       // account (IAM / Workload Identity Federation). KMS only with CMEK; Pub/Sub triggers automation runs.
@@ -2741,6 +2768,10 @@
       'BigQuery': {
         note: `~${K.bqScanMB} MB scanned/req`,
         why: `On-demand BigQuery at $${K.bqOnDemandPerTiB}/TiB scanned, assuming ~${K.bqScanMB} MB per request (the model already adds one BigQuery scan per request on the query path) after the 1 TiB/mo free tier, plus ~${K.bqStorageGB} GB stored at $${K.storageBQ}/GB-mo. Partitioning and clustering can push the scan well below this illustrative figure.`,
+      },
+      'Cloud Audit Logs (Data Access)': {
+        note: 'Data Access stream only',
+        why: 'Only the Data Access audit stream is billed - as standard Cloud Logging ingestion at $0.50/GiB past the 50 GiB/project/month free tier. Admin Activity, System Event, and Policy Denied logs are always-on and free, so they are not modeled here. The estimate assumes a handful of data-access entries per request (managed-store reads/writes, KMS key-use) and scales with request volume; routing logs through an exclusion or sampling filter, or sinking to lower-cost storage, can push it well below this illustrative figure. BigQuery Data Access logs are on by default and not separately charged here.',
       },
       // Platform lines: make the build-vs-run cost difference legible. The managed runtimes bundle the
       // infrastructure and operations; LangGraph is the free framework with that cost broken out separately.
@@ -2793,6 +2824,10 @@
         'Cloud IAP': 0,                                          // no per-request charge at this sizing (bundled with the edge LB)
         'Cloud API Gateway': 3 + R * 0.000003,                   // ~$3 per million API calls
         'Cloud Logging (WORM)': 5 + (Tk / 1e6) * 0.05,
+        // Data Access audit logs are billed as standard Cloud Logging ingestion ($0.50/GiB past the 50 GiB/project
+        // free tier). Volume scales with operation count (state read/write, KMS key-use, store reads per request),
+        // not token count, so it is keyed on requests. Admin Activity / System Event / Policy Denied stay free.
+        'Cloud Audit Logs (Data Access)': 5 + (R / 1e6) * 10,
         'Vector Search': idxNodes * 438,
         'Agent Search': R * K.vais.perQuery + (m.indexGB || 0) * K.vais.storageGiB + (i.dataSources.includes('website') ? K.vais.websiteBase : 0),
         'AlloyDB': 300 + m.indexGB * 0.3,
@@ -3313,12 +3348,12 @@
       assert('low-stakes automation: light governance', low.gateway === false && low.guardrails === false && low.sandbox === false && low.auditLog === false);
       assert('low-stakes automation: action controls on', low.rulesEngine === true && low.toolAuthz === true && low.costKillSwitch === true && low.hitlApproval === 'maker_checker');
       assert('strict-PII automation mandates sandbox + gateway + residency', sp.sandbox === true && sp.gateway === true && sp.residencyPin === true && sp.hitlApproval === 'dual');
-      assert('governance is derived, never a lock', GOV_KEYS.size === 12 && [...GOV_KEYS].every(k => !state.locks[k]));
+      assert('governance is derived, never a lock', GOV_KEYS.size === 13 && [...GOV_KEYS].every(k => !state.locks[k]));
       // the six formerly-undriven controls now derive from inputs
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
       assert('regulated assistant derives model-risk gov + safe rollout + feedback', state.overrides.modelRiskGov === true && state.overrides.safeRollout === true && state.overrides.feedbackLoop === true);
       assert('internal assistant has no rules engine', state.overrides.rulesEngine === false);
-      assert('governance descriptor populated with reasons', Array.isArray(state.governance) && state.governance.length === 12 && state.governance.every(g => g.why));
+      assert('governance descriptor populated with reasons', Array.isArray(state.governance) && state.governance.length === 13 && state.governance.every(g => g.why));
       // editing diverges from the preset → Custom; applying a preset clears it
       state.custom = true; applyPreset('assistant', 'expert_copilot'); assert('applying a preset clears Custom', state.custom === false);
       assert('every preset has an intent tooltip', ['assistant', 'automation'].every(p => Object.values(PRESETS[p]).every(v => typeof v.desc === 'string' && v.desc.length > 0)));
@@ -3685,6 +3720,12 @@
       // internal-low (the only tier below regulated) clears them - regardless of which chip set the tier.
       applyPreset('assistant', 'expert_copilot'); assert('Expert copilot (regulated tier) ships CMEK + VPC-SC from the tier', state.overrides.cmek === true && state.overrides.enforceVpcSc === true);
       applyPreset('automation', 'internal_lowstakes'); assert('Internal low-stakes (below regulated) leaves CMEK + VPC-SC off', state.overrides.cmek === false && state.overrides.enforceVpcSc === false);
+      // Data Access audit logs follow the same regulated-or-external trigger as the WORM audit log: on for a
+      // regulated tier (with a BOM line and managed-store edges in the diagram), off for internal low-stakes.
+      deriveOverrides();
+      assert('internal low-stakes leaves Data Access audit logs off, no BOM line', state.overrides.dataAccessAudit === false && !bomHtml().includes('Cloud Audit Logs (Data Access)'));
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides();
+      assert('regulated tier enables Data Access audit logs + lists Cloud Audit Logs in the BOM + annotates the diagram', state.overrides.dataAccessAudit === true && bomHtml().includes('Cloud Audit Logs (Data Access)') && buildMainDiagram().includes('Audit["Cloud Audit Logs"]'));
       // a change to the tier re-derives the perimeter + CMEK, and a manual override then sticks until the
       // tier moves again - the editable, input-driven contract (internal-low off, every other tier on).
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
