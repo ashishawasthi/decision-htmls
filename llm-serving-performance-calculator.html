@@ -295,6 +295,15 @@
     .note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
     .warnbox { background: var(--warn-tint); border: 1px solid var(--warn); border-radius: 6px; padding: 8px 10px; font-size: 11.5px; margin-top: 10px; }
 
+    .fitbox { border-radius: 8px; border: 1px solid; padding: 10px 14px; font-size: 12.5px; margin: 0 0 16px; }
+    .fitbox.fail { background: var(--bad-tint); border-color: var(--bad); }
+    .fitbox.over { background: var(--warn-tint); border-color: var(--warn); }
+    .fitbox b { color: var(--text); }
+    .fitbox .fix { display: block; margin-top: 4px; color: var(--muted); }
+    .hbm-bar .seg-over { background: repeating-linear-gradient(45deg, var(--bad), var(--bad) 5px, rgba(0,0,0,.22) 5px, rgba(0,0,0,.22) 10px); }
+    .hbm-bar.over { border-color: var(--bad); }
+    .lg-over::before { background: var(--bad); }
+
     .foot { padding: 18px 32px 28px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--border); max-width: 1500px; margin: 0 auto; }
     .foot a { color: inherit; text-decoration: underline; }
   </style>
@@ -439,16 +448,19 @@
 
       <!-- RIGHT: outputs -->
       <section>
+        <div id="fitBanner" class="fitbox" style="display:none;"></div>
         <div class="panel">
           <h3>Single-request latency</h3>
           <div class="stat-grid" id="latStats"></div>
           <div class="formula" id="latFormula"></div>
+          <div class="note" id="latFitNote" style="display:none;color:var(--warn);"></div>
         </div>
 
         <div class="panel">
           <h3>Throughput &amp; roofline</h3>
           <div class="stat-grid" id="tputStats"></div>
           <div class="formula" id="rooflineFormula"></div>
+          <div class="note" id="tputFitNote" style="display:none;color:var(--warn);"></div>
         </div>
 
         <div class="panel">
@@ -458,7 +470,9 @@
             <span class="lg-w">Weights</span>
             <span class="lg-kv">KV at current batch</span>
             <span class="lg-free">Free for more KV</span>
+            <span class="lg-over" id="lgOver" style="display:none;">Over usable HBM</span>
           </div>
+          <div class="note" id="hbmOver" style="display:none;color:var(--bad);"></div>
           <div class="stat-grid" id="concStats" style="margin-top:12px;"></div>
           <div class="formula" id="kvFormula"></div>
         </div>
@@ -738,6 +752,29 @@
     function render() {
       const r = compute(state);
 
+      // memory-fit banner: weights alone over usable HBM (red), or weights + KV at this batch over budget (amber)
+      const usableBytes = r.hbmTotal * HBM_USABLE;
+      const demandBytes = r.wBytesFull + r.kvAtBatch;
+      const overBytes = demandBytes - usableBytes;
+      const overBudget = overBytes > 0;
+      const banner = $("#fitBanner");
+      if (!r.fits) {
+        banner.className = "fitbox fail"; banner.style.display = "";
+        banner.innerHTML = `<b>Does not fit on this accelerator.</b> Weights ${fmtGB(r.wBytesFull)} exceed ${(usableBytes / GB).toFixed(0)} GB usable HBM (${(r.hbmTotal / GB).toFixed(0)} GB x ${HBM_USABLE} across ${r.tp}x ${r.a.type.toUpperCase()}).` +
+          `<span class="fix">Add tensor-parallel devices, drop to INT4, or pick a larger accelerator. The latency and throughput below assume it fits.</span>`;
+      } else if (overBudget) {
+        banner.className = "fitbox over"; banner.style.display = "";
+        const head = r.maxConc > 0
+          ? `Weights + KV (${fmtGB(demandBytes)}) exceed ${(usableBytes / GB).toFixed(0)} GB usable HBM by ${fmtGB(overBytes)}; only ${fmtInt(r.maxConc)} request${r.maxConc === 1 ? " fits" : "s fit"} at this context.`
+          : `Weights + KV (${fmtGB(demandBytes)}) exceed ${(usableBytes / GB).toFixed(0)} GB usable HBM by ${fmtGB(overBytes)}; not even one request's KV fits at this context.`;
+        const fix = r.maxConc > 0
+          ? `Lower the batch to ${fmtInt(r.maxConc)} or below, shrink the context, quantize the KV cache, or add devices.`
+          : `Shrink the context, quantize the KV cache, or add tensor-parallel devices.`;
+        banner.innerHTML = `<b>Over the KV budget at batch ${state.batch}.</b> ${head}<span class="fix">${fix}</span>`;
+      } else {
+        banner.style.display = "none"; banner.innerHTML = "";
+      }
+
       // latency
       $("#latStats").innerHTML =
         statHtml("TTFT", fmtMs(r.ttftMs), `prefill, ${r.ttftBound}-bound · ${r.ttftOverSlo ? "over SLO by " + fmtMs(r.ttftMs - state.sloTtft) : "within " + fmtInt(state.sloTtft) + " ms SLO"}`, r.ttftOverSlo ? "bad" : "accent") +
@@ -761,12 +798,40 @@
         `Decode reads weights from HBM every token, so at small batch it is <span class="bound mem">memory-bound</span>: throughput scales with batch almost for free.\n` +
         `It turns <span class="bound comp">compute-bound</span> near batch ${fmtInt(r.batchToSaturate)} (arithmetic intensity = ridge point ${Math.round(r.ridge)} FLOP/byte). Past that, more batch stops helping latency.`;
 
-      // concurrency
-      const wPct = Math.min(100, r.wBytesFull / r.hbmTotal * 100);
-      const kvPct = Math.min(100 - wPct, r.kvAtBatch / r.hbmTotal * 100);
-      const freePct = Math.max(0, 100 - wPct - kvPct);
+      // qualifier on latency/throughput when this config can't actually run as configured (numbers kept, not muted)
+      const fitNote = !r.fits
+        ? "Assumes the model fits; it does not on this accelerator, so these figures are hypothetical."
+        : overBudget
+          ? (r.maxConc > 0
+            ? `Shown at batch ${state.batch}, which is over the KV budget (max ${fmtInt(r.maxConc)}); reachable only at batch ${fmtInt(r.maxConc)} or below.`
+            : `Shown at batch ${state.batch}, but not even one request's KV fits at this context.`)
+          : "";
+      [["#latFitNote", fitNote], ["#tputFitNote", fitNote]].forEach(([sel, txt]) => {
+        const el = $(sel); el.textContent = txt; el.style.display = txt ? "" : "none";
+      });
+
+      // concurrency bar — relative to USABLE HBM; when demand exceeds it, show a red 'over' segment
+      const cap = usableBytes;
+      const segW = Math.min(r.wBytesFull, cap);
+      const segKv = Math.max(0, Math.min(r.kvAtBatch, cap - r.wBytesFull));
+      const segOver = overBudget ? demandBytes - cap : 0;
+      const segFree = overBudget ? 0 : cap - demandBytes;
+      const denom = overBudget ? demandBytes : cap;
+      const barPct = b => (denom > 0 ? b / denom * 100 : 0);
+      $("#hbmBar").className = "hbm-bar" + (overBudget ? " over" : "");
       $("#hbmBar").innerHTML =
-        `<div class="seg-w" style="width:${wPct}%"></div><div class="seg-kv" style="width:${kvPct}%"></div><div class="seg-free" style="width:${freePct}%"></div>`;
+        `<div class="seg-w" style="width:${barPct(segW)}%"></div>` +
+        `<div class="seg-kv" style="width:${barPct(segKv)}%"></div>` +
+        `<div class="seg-over" style="width:${barPct(segOver)}%"></div>` +
+        `<div class="seg-free" style="width:${barPct(segFree)}%"></div>`;
+      $("#lgOver").style.display = overBudget ? "" : "none";
+      const hbmOver = $("#hbmOver");
+      if (overBudget) {
+        hbmOver.style.display = "";
+        hbmOver.textContent = `Over usable HBM by ${fmtGB(overBytes)} - need ${fmtGB(demandBytes)}, have ${(usableBytes / GB).toFixed(0)} GB usable.`;
+      } else {
+        hbmOver.style.display = "none";
+      }
       $("#concStats").innerHTML =
         statHtml("KV per token", fmtMB(r.kvPerTok * 1000) + "<small>/1k</small>", `${(r.kvPerTok).toFixed(0)} B/token`) +
         statHtml("KV per request", fmtGB(r.kvPerReq), `at ${fmtInt(state.ctxTok)} ctx`) +
@@ -896,6 +961,10 @@
       assert("B200 decodes 70B faster than H200 at batch 1", b200.perStreamTps > h200.perStreamTps);
       // TPU v7 Ironwood has native FP8; older TPUs (v6e) correctly fall back to BF16
       assert("Ironwood TPU exposes native FP8, v6e does not", ACCEL["tpu-v7"].fp8TF > 0 && ACCEL["tpu-v6e"].fp8TF === 0);
+
+      // an oversized model on a tiny accelerator must report does-not-fit, not a fictional fit
+      const oom = compute({ ...state, model: "nemotron-3-ultra-550b", accel: "t4", tp: 1 });
+      assert("oversized model reports does-not-fit", oom.fits === false && oom.maxConc === 0);
 
       // INT4 weight memory is 0.25x BF16 (per-param bytes 0.5 vs 2.0)
       const bf = compute({ ...state, model: "llama-33-70b", prec: "bf16" });
