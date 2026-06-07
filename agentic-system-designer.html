@@ -2017,7 +2017,7 @@
       // Single-agent variant: no separate Orchestrator or Validator, so the one agent plans, generates, and self-checks in a single pass.
       GeneratorSingle: 'Inside Agent compute: the single agent. It plans the request, calls the models through Model Armor, reads retrieval, and produces the final answer in one pass - there is no separate orchestrator or validator critique loop.',
       Validator: 'Inside Agent compute: the automated quality gate. It evaluates the draft against the acceptance criteria and, on a fail, returns a critique to the Generator to revise; on a pass the answer is returned or sent for human review.',
-      SecretMgr: 'Secret Manager holds the tool and database credentials the agent needs. The agent service account reads only the secrets it is granted, scoped per tool, so a leak of one credential does not expose the rest.',
+      SecretMgr: 'Secret Manager holds the AUTH credential for the self-hosted Redis-on-GKE tier (the hot state tier and/or the response cache). Every other dependency - managed stores, models, and tools - authenticates through the agent service account via IAM / Workload Identity Federation, so no other secret is stored. It is provisioned only when Redis on GKE is in the design.',
       KMS: 'Cloud KMS holds the customer-managed encryption key (CMEK). It encrypts the managed data-at-rest stores - Cloud Storage, the managed state store (AlloyDB / Spanner / Cloud SQL / Memorystore), the Spanner durable tier, the managed Memorystore cache, and the BigQuery feedback dataset - so data at rest is under a key you own and can rotate or revoke. Self-hosted stores (a self-built vector store or Redis on GKE) use disk and application encryption instead.',
       Cache: 'A response cache on the request path: on a hit it returns a stored answer and skips the agent and model entirely, cutting cost and latency on the repeat-heavy head of traffic. Exact-match keys on the normalized query; semantic match keys on the query embedding within a similarity threshold. Sized by the effective hit rate. Invalidation is TTL plus version busting: each entry expires on a TTL set from the data freshness (real-time off, minutes, end-of-day about 24h, static long), and the cache key is namespaced by model, prompt, and index version so shipping a new model or prompt drops stale answers automatically.',
       Orch: 'Plans each request, calls tools and retrieval, and composes the final answer. Single agent or a multi-agent team depending on the pattern.',
@@ -2208,14 +2208,16 @@
         if (armorOn) { L.push(node('Armor', 'Model Armor<br/>injection, redaction', 'gateway')); L.push(`${from} --> Armor`); L.push('Armor --> LLM'); }
         else { L.push(`${from} --> LLM`); }
       };
-      // Two distinct governance facilities, each showing its real relationship. Secret Manager is read
-      // by the agent service account (the runtime, not one component - roles/secretmanager.secretAccessor
-      // sits on the single agent SA), so the edge is drawn from the Agent Runtime when tool authz is on.
+      // Two distinct governance facilities, each showing its real relationship. Secret Manager holds exactly one
+      // credential: the AUTH string for a self-hosted Redis-on-GKE tier (the hot state tier and/or the response
+      // cache). Every other dependency - managed stores, models, and tools - authenticates through the agent
+      // service account via IAM / Workload Identity Federation, so nothing else needs a stored secret. The node is
+      // drawn only when Redis on GKE is present (redisOnGke), with the edge from the Agent Runtime that reads it.
       // Cloud KMS encrypts data at rest (when CMEK is on): it points at every managed store the Terraform
       // wires the key to - Cloud Storage, the managed state store (AlloyDB / Spanner / Cloud SQL /
       // Memorystore), the Spanner durable tier, and the managed Memorystore cache. Self-hosted stores
       // (self-built vector store, Redis on GKE) take disk/app encryption, not a managed key, so no edge.
-      const secretMgrNode = (from) => { if (o.toolAuthz) { L.push(node('SecretMgr', 'Secret Manager', 'gov')); L.push(`${from} -. secrets .-> SecretMgr`); } };
+      const secretMgrNode = (from) => { if (redisOnGke) { L.push(node('SecretMgr', 'Secret Manager', 'gov')); L.push(`${from} -. Redis AUTH .-> SecretMgr`); } };
       const kmsNode = () => {
         if (!o.cmek) return;
         const cacheOn = responseCacheOn(o);
@@ -2262,6 +2264,10 @@
       const redisName = gke ? 'Redis on GKE' : 'Memorystore Cluster';
       const redisSelf = redisTier && gke;                    // self-hosted Redis on GKE -> the only state node inside the VPC
       const stateInVpc = redisSelf;
+      // Any self-hosted Redis on GKE - the hot state tier (redisSelf) and/or the response cache (Redis on GKE
+      // when gke) - needs an AUTH credential in Secret Manager. Managed Memorystore and every other service
+      // authenticate via the agent service account (IAM / Workload Identity Federation), so they store no secret.
+      const redisOnGke = gke && (redisTier || responseCacheOn(o));
       // The durable tier paired with a Redis hot tier (always a managed service, always outside the VPC). Both
       // are reached over a PSC endpoint: AlloyDB via a PSC-enabled cluster, Spanner via PSC for its global API.
       const durTier = o.stateStore === 'redis_alloydb' ? { label: 'AlloyDB<br/>durable', conn: 'PSC' }
@@ -2697,8 +2703,11 @@
       b.add('Cloud Trace'); b.add('Agent Platform Evals');
       if (o.guardrails) b.add('Model Armor'); if (o.toolAuthz) b.add('Workload Identity'); if (o.modelRiskGov) b.add('Model Registry');
       if (o.enforceVpcSc) b.add('VPC Service Controls'); b.add('Cloud DLP'); b.add('IAM');
-      // Storage and secrets are always provisioned; KMS only with CMEK; Pub/Sub triggers automation runs
-      b.add('Cloud Storage'); b.add('Secret Manager');
+      // Cloud Storage is always provisioned. Secret Manager only when a self-hosted Redis-on-GKE tier (hot state
+      // and/or response cache) needs an AUTH credential - every other service authenticates via the agent service
+      // account (IAM / Workload Identity Federation). KMS only with CMEK; Pub/Sub triggers automation runs.
+      b.add('Cloud Storage');
+      if (o.agentRuntime === 'gke' && (o.stateStore.includes('redis') || responseCacheOn(o))) b.add('Secret Manager');
       if (o.cmek) b.add('Cloud KMS');
       if (state.purpose === 'automation') b.add('Pub/Sub');
       if (selfHostOn(o)) b.add('vLLM on GKE');
@@ -3622,17 +3631,20 @@
         // they take no key edge.
         assert('CMEK encrypts Cloud Storage and the managed durable state tier', /KMS\["Cloud KMS \(CMEK\)"\]/.test(dvpc) && /KMS -\. encrypts \.-> GCS/.test(dvpc) && /KMS -\. encrypts \.-> StateDur/.test(dvpc));
         assert('CMEK draws no edge to the self-hosted Redis-on-GKE hot tier or cache', !/KMS -\. encrypts \.-> State(?!Dur)/.test(dvpc) && !/KMS -\. encrypts \.-> Cache/.test(dvpc));
-        assert('CMEK on with no privileged tools draws no Secret Manager node and no combined box', !/SecretMgr\[/.test(dvpc) && !/Secret Manager & CMEK/.test(dvpc));
+        // Self-Managed runs Redis on GKE (hot tier + response cache), so Secret Manager is provisioned for the
+        // Redis AUTH credential - drawn as its own box, separate from the CMEK node, never a combined one.
+        assert('Redis on GKE draws a Secret Manager node for the Redis AUTH, separate from the CMEK box', /SecretMgr\["Secret Manager"\]/.test(dvpc) && /AE -\. Redis AUTH \.-> SecretMgr/.test(dvpc) && !/Secret Manager & CMEK/.test(dvpc));
+        assert('Self-Managed (Redis on GKE) lists Secret Manager in the BOM', bomHtml().includes('Secret Manager'));
       }
       state.overrides.dedicatedVpc = false;
       assert('toggling Dedicated VPC off removes the network boundary', !/subgraph VPC\[/.test(buildMainDiagram()));
       applyPreset('automation', 'self_managed'); deriveOverrides();
       assert('Self-Managed automation also wraps its self-hosted resources in a dedicated VPC', /subgraph VPC\["Dedicated VPC network"\]/.test(buildMainDiagram()));
       {
-        // automation has privileged tools (toolAuthz on) and CMEK on, so both governance nodes are
-        // drawn as separate boxes: the agent reads credentials from Secret Manager, Cloud KMS encrypts.
+        // Self-Managed automation runs Redis on GKE (its response cache) and CMEK is on, so both governance
+        // nodes are drawn as separate boxes: the agent reads the Redis AUTH from Secret Manager, Cloud KMS encrypts.
         const dsm = buildMainDiagram();
-        assert('tool authz draws a Secret Manager node the Agent Runtime reads from', /SecretMgr\["Secret Manager"\]/.test(dsm) && /AE -\. secrets \.-> SecretMgr/.test(dsm));
+        assert('Redis on GKE draws a Secret Manager node the Agent Runtime reads the Redis AUTH from', /SecretMgr\["Secret Manager"\]/.test(dsm) && /AE -\. Redis AUTH \.-> SecretMgr/.test(dsm));
         assert('Secret Manager and Cloud KMS are separate boxes, not one combined node', /KMS\["Cloud KMS \(CMEK\)"\]/.test(dsm) && !/Secret Manager & CMEK/.test(dsm));
       }
       // managed assistant (Agent Runtime + Agent Search, managed stores): under Convention B nothing is
@@ -3643,6 +3655,8 @@
         const dmgd = buildMainDiagram();
         assert('a managed assistant draws its session state store', /State\[/.test(dmgd));
         assert('a fully managed assistant draws no VPC box; the managed Memorystore hot tier is reached over PSC', !/subgraph VPC\[/.test(dmgd) && /AE -\. state · PSC \.-> State/.test(dmgd));
+        // No self-hosted Redis on GKE here (managed Memorystore + IAM), so nothing stores a secret.
+        assert('a fully managed assistant stores no secret - no Redis on GKE, so no Secret Manager node or BOM line', !/SecretMgr\[/.test(dmgd) && !bomHtml().includes('Secret Manager'));
       }
       state.overrides.stateStore = 'spanner';
       assert('a managed assistant on Spanner-only state draws no VPC boundary and reaches it over PSC', !/subgraph VPC\[/.test(buildMainDiagram()) && /AE -\. state · PSC \.-> State/.test(buildMainDiagram()));
