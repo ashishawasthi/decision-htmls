@@ -1638,7 +1638,7 @@
     /* ===================== State ===================== */
     const state = {
       purpose: 'assistant', preset: 'expert_copilot', custom: false,
-      inputs: {}, overrides: {}, locks: {}, governance: [], baseline: null,
+      inputs: {}, overrides: {}, locks: {}, governance: [], baseline: null, _prevAudience: null,
       componentInputs: { edge: { aggregateQPS: null, tenantApps: 1 }, model: { callsPerReq: null }, ingestion: { docsPerDay: null, docPages: 40, reindexSLOmin: 5 } },
       ui: { openModal: null },
     };
@@ -1702,6 +1702,19 @@
       return Math.max(1, Math.round(agents * (1 + (iters - 1) * 0.5)));
     }
 
+    /* ===================== Security posture: VPC-SC perimeter + CMEK ===================== */
+    // The VPC-SC perimeter and CMEK are NOT preset choices - they follow the audience/sensitivity tier (the
+    // same input that drives the rest of the governance posture). Every tier above internal-low ships both;
+    // internal-low clears them. Applied on a preset and on any audience change (see deriveOverrides), and
+    // editable in between: a manual toggle on either checkbox survives until the tier moves again, tracked
+    // via state._prevAudience so the re-derivation fires only on an actual tier change, not every render.
+    function applySecurityPosture() {
+      const secure = sens(state.inputs.audienceSensitivity).lvl >= 1;   // every tier except internal-low
+      state.overrides.enforceVpcSc = secure;
+      state.overrides.cmek = secure;
+      state._prevAudience = state.inputs.audienceSensitivity;
+    }
+
     /* ===================== Preset application ===================== */
     function applyPreset(purpose, preset) {
       state.purpose = purpose; state.preset = preset; state.custom = false;
@@ -1720,9 +1733,10 @@
       // High-repeat, freshness-tolerant Q&A presets ship with response caching on (exact + semantic):
       // the cache box and its cost / latency win are intrinsic to those designs. Stays user-editable.
       if (purpose === 'assistant' && (preset === 'highvol_qa' || preset === 'customer_support')) { state.overrides.exactCache = true; state.overrides.semanticCache = true; }
-      // Strict-PII verification (assistant) and the two regulated automation presets ship the
-      // production security posture: customer-managed keys (CMEK) and a VPC-SC perimeter. Editable.
-      if (['self_managed', 'strictpii', 'strictpii_verify'].includes(preset)) { state.overrides.cmek = true; state.overrides.enforceVpcSc = true; }
+      // CMEK + the VPC-SC perimeter are not seeded per preset - they derive from the audience/sensitivity
+      // tier (applySecurityPosture: on for every tier above internal-low), so two presets that share a tier
+      // always land on the same security posture instead of differing by which chip was clicked. Editable.
+      applySecurityPosture();
       // Self-Managed (either purpose) self-hosts on GKE: agent runtime on GKE Autopilot, self-built RAG
       // on a self-hosted vector DB (Elasticsearch), and response caching (Redis on GKE). Editable.
       if (preset === 'self_managed') { state.overrides.agentRuntime = 'gke'; state.overrides.ragEngine = 'selfbuilt'; state.overrides.vectorDB = 'elastic'; state.overrides.retrieval = 'rerank'; state.overrides.exactCache = true; state.overrides.semanticCache = true; }
@@ -1759,6 +1773,10 @@
       // Spanner/Cloud SQL/other pick stays put; the linter separately recommends Spanner for very high writes.
       if (o.multiRegion && !locks.stateStore) { if (o.stateStore === 'alloydb') o.stateStore = 'spanner'; else if (o.stateStore === 'redis_alloydb') o.stateStore = 'redis_spanner'; }
       state.locks = locks;
+      // VPC-SC perimeter + CMEK follow the audience/sensitivity tier, re-derived only when that input
+      // CHANGES (the select here, or a preset - applyPreset re-applies it directly). Gating on an actual
+      // tier change lets a manual checkbox override survive an unrelated re-render.
+      if (i.audienceSensitivity !== state._prevAudience) applySecurityPosture();
       // Governance is a pure, read-only function of the first-level inputs. Computed last so it
       // sees the resolved topology, then rendered in the Governance & controls output panel.
       deriveGovernance();
@@ -3053,7 +3071,7 @@
     let plTimer = null;
     function schedulePermalink() { clearTimeout(plTimer); plTimer = setTimeout(() => { try { location.replace('#' + encodeState()); } catch (e) { } }, 120); }
     function encodeState() { return btoa(unescape(encodeURIComponent(JSON.stringify({ p: state.purpose, pr: state.preset, c: state.custom, i: state.inputs, o: state.overrides })))); }
-    function decodeState(h) { try { const d = JSON.parse(decodeURIComponent(escape(atob(h)))); if (d.p) { state.purpose = d.p; state.preset = d.pr; state.custom = !!d.c; state.inputs = d.i; state.overrides = d.o; return true; } } catch (e) { } return false; }
+    function decodeState(h) { try { const d = JSON.parse(decodeURIComponent(escape(atob(h)))); if (d.p) { state.purpose = d.p; state.preset = d.pr; state.custom = !!d.c; state.inputs = d.i; state.overrides = d.o; state._prevAudience = state.inputs.audienceSensitivity; return true; } } catch (e) { } return false; }
     // Build the link from live state at click time and flush the pending debounce, so the copied URL is never stale.
     function currentPermalink() { clearTimeout(plTimer); const base = location.href.split('#')[0]; const h = '#' + encodeState(); try { location.replace(h); } catch (e) { } return base + h; }
 
@@ -3438,11 +3456,12 @@
         const d = buildMainDiagram();
         assert('a self-hosted Redis-on-GKE cache sits inside the VPC', /Cache\[\(/.test(vpcBlock(d)));
       }
-      // Rule 3: VPC-SC is claimed in the BOM only when the perimeter is actually enforced, not merely regulated
+      // Rule 3: the VPC-SC perimeter follows the audience/sensitivity tier (on for every tier above
+      // internal-low), and the BOM lists VPC Service Controls exactly when the perimeter flag is on.
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
-      assert('regulated default does not list VPC-SC in the BOM while the perimeter is off', state.overrides.residencyPin === true && state.overrides.enforceVpcSc === false && !bomHtml().includes('VPC Service Controls'));
-      state.overrides.enforceVpcSc = true;
-      assert('enabling the perimeter lists VPC-SC in the BOM', bomHtml().includes('VPC Service Controls'));
+      assert('a regulated tier derives the VPC-SC perimeter on, and the BOM lists it', state.overrides.enforceVpcSc === true && bomHtml().includes('VPC Service Controls'));
+      state.overrides.enforceVpcSc = false;
+      assert('clearing the perimeter drops VPC Service Controls from the BOM', !bomHtml().includes('VPC Service Controls'));
       // RAG defaults to managed Agent Search; the engine drives the diagram, BOM, and knobs
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
       assert('RAG engine defaults to managed Agent Search', state.overrides.ragEngine === 'vais' && bomHtml().includes('Agent Search'));
@@ -3604,8 +3623,8 @@
       applyPreset('assistant', 'expert_copilot'); assert('Expert copilot preset leaves caching off by default', !responseCacheOn(state.overrides));
       applyPreset('assistant', 'strictpii_verify'); assert('Strict-PII preset leaves caching off (conflicts with realtime + PII)', !responseCacheOn(state.overrides));
       applyPreset('automation', 'internal_lowstakes'); assert('automation preset leaves caching off by default', !responseCacheOn(state.overrides));
-      // Self-Managed preset: GKE runtime, self-built vector DB, CMEK + VPC-SC, and the production
-      // security posture also lands on the strict-PII presets.
+      // Self-Managed preset: GKE runtime + self-built vector DB (preset-specific), and CMEK + VPC-SC from
+      // its regulated audience tier (applySecurityPosture), the same posture every non-low tier ships.
       applyPreset('automation', 'self_managed');
       assert('Self-Managed preset runs on GKE with a self-built vector DB', state.overrides.agentRuntime === 'gke' && state.overrides.ragEngine === 'selfbuilt' && state.overrides.vectorDB === 'elastic');
       assert('Self-Managed preset ships CMEK + VPC-SC and response caching', state.overrides.cmek === true && state.overrides.enforceVpcSc === true && responseCacheOn(state.overrides));
@@ -3662,7 +3681,22 @@
       assert('a managed assistant on Spanner-only state draws no VPC boundary and reaches it over PSC', !/subgraph VPC\[/.test(buildMainDiagram()) && /AE -\. state · PSC \.-> State/.test(buildMainDiagram()));
       applyPreset('assistant', 'strictpii_verify'); assert('Strict-PII verification ships CMEK + VPC-SC', state.overrides.cmek === true && state.overrides.enforceVpcSc === true);
       applyPreset('automation', 'strictpii'); assert('Strict-PII automation ships CMEK + VPC-SC', state.overrides.cmek === true && state.overrides.enforceVpcSc === true);
-      applyPreset('assistant', 'expert_copilot'); assert('Expert copilot leaves CMEK + VPC-SC off', state.overrides.cmek === false && state.overrides.enforceVpcSc === false);
+      // CMEK + VPC-SC follow the audience/sensitivity tier, not the preset: a regulated tier ships them,
+      // internal-low (the only tier below regulated) clears them - regardless of which chip set the tier.
+      applyPreset('assistant', 'expert_copilot'); assert('Expert copilot (regulated tier) ships CMEK + VPC-SC from the tier', state.overrides.cmek === true && state.overrides.enforceVpcSc === true);
+      applyPreset('automation', 'internal_lowstakes'); assert('Internal low-stakes (below regulated) leaves CMEK + VPC-SC off', state.overrides.cmek === false && state.overrides.enforceVpcSc === false);
+      // a change to the tier re-derives the perimeter + CMEK, and a manual override then sticks until the
+      // tier moves again - the editable, input-driven contract (internal-low off, every other tier on).
+      applyPreset('assistant', 'expert_copilot'); deriveOverrides();
+      assert('regulated tier sets the perimeter + CMEK', state.overrides.enforceVpcSc === true && state.overrides.cmek === true);
+      state.inputs.audienceSensitivity = 'internal_low'; deriveOverrides();
+      assert('lowering the tier to internal-low clears the perimeter + CMEK', state.overrides.enforceVpcSc === false && state.overrides.cmek === false);
+      state.inputs.audienceSensitivity = 'external_enterprise'; deriveOverrides();
+      assert('any tier above internal-low (even external-enterprise) sets them back on', state.overrides.enforceVpcSc === true && state.overrides.cmek === true);
+      state.overrides.enforceVpcSc = false; deriveOverrides();
+      assert('a manual perimeter override survives a re-render with no tier change', state.overrides.enforceVpcSc === false);
+      state.inputs.audienceSensitivity = 'internal_strictpii'; deriveOverrides();
+      assert('a later tier change re-derives over the manual override', state.overrides.enforceVpcSc === true);
       // invalidation strategy stated in the tooltip and the drill-in (TTL keyed to freshness + version busting)
       assert('cache tooltip states TTL + version-busting invalidation', /TTL/.test(NODE_PURPOSE.Cache) && /version/i.test(NODE_PURPOSE.Cache));
       assert('cache drill-in shows version namespacing and a freshness TTL', /version-namespace/.test(buildComponentDiagram('cache')) && /TTL by freshness/.test(buildComponentDiagram('cache')));
@@ -3750,8 +3784,8 @@
       'inputs.freshness': 'How current the grounding data must be.',
       'overrides.deployment': 'Connectivity, not where inference runs. GCP: the managed system, reached publicly. Hybrid: the same managed GCP system plus a private link to your on-premise network over an existing Cloud Interconnect, so on-prem users can reach it and it can reach on-prem systems - set the interconnect tfvars before apply. Hybrid forces a Dedicated VPC on, because the Cloud Router and VLAN attachment live in it. (Self-hosting models is a separate choice in the model pickers.)',
       'overrides.multiRegion': 'Run active in multiple regions for failover and locality.',
-      'overrides.cmek': 'Encrypt data with customer-managed keys in Cloud KMS. Off uses Google-managed keys, which deploys in one shot with no key setup.',
-      'overrides.enforceVpcSc': 'Wrap the Google services in a VPC Service Controls perimeter - a data-egress boundary around managed APIs, distinct from the Dedicated VPC network. Needs an org or folder access policy, so leave off for a sandbox apply and on for production.',
+      'overrides.cmek': 'Encrypt data with customer-managed keys in Cloud KMS. Off uses Google-managed keys, which deploys in one shot with no key setup. Defaults from the Audience & sensitivity tier (on for every tier above internal-low); editable.',
+      'overrides.enforceVpcSc': 'Wrap the Google services in a VPC Service Controls perimeter - a data-egress boundary around managed APIs, distinct from the Dedicated VPC network. Needs an org or folder access policy, so leave off for a sandbox apply and on for production. Defaults from the Audience & sensitivity tier (on for every tier above internal-low); editable.',
       'overrides.agentRuntime': 'Where the agent runs. The managed option is Agent Runtime, with built-in sessions, memory, and observability; GKE Autopilot self-manages the runtime and needs a two-phase apply.',
       'overrides.dedicatedVpc': 'A private network (layer 3/4 isolation) for the self-hosted parts of the system - distinct from the VPC-SC service perimeter, which is a data-egress boundary around Google APIs. On: the diagram wraps the self-hosted resources (GKE runtime, self-built search, a self-hosted Redis-on-GKE tier) in a Dedicated VPC network boundary, and the export creates that VPC and attaches the GKE runtime to it; the managed stores (AlloyDB, Memorystore for Redis Cluster) are reached from the VPC over Private Service Connect endpoints. Off: it uses the project default network instead. Hybrid deployment forces this on, since the Cloud Router that terminates the interconnect attaches to the VPC.',
       'overrides.pattern': 'One agent, or a coordinated team of specialist agents.',
