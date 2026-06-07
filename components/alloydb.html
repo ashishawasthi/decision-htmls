@@ -191,8 +191,7 @@
         <h3>Avoid</h3>
         <ul>
           <li>Global horizontal scale or multi-region active-active relational. Use <a class="src" href="spanner.html">Spanner</a>.</li>
-          <li>Lowest retrieval latency over very large corpora (millions to billions of vectors). Use <a class="src" href="vertex-vector-search.html">Vertex AI Vector
-            Search</a>.</li>
+          <li>Lowest retrieval latency over very large corpora (millions to billions of vectors). Use <a class="src" href="vertex-vector-search.html">Vector Search</a>.</li>
           <li>Plain Postgres with no HTAP or vector needs, where the simplest option is cheapest. Use Cloud SQL.</li>
           <li>True OLAP over very large datasets with heavy scans. Use <a class="src" href="bigquery.html">BigQuery</a> as the warehouse.</li>
         </ul>
@@ -214,7 +213,7 @@
         </tr>
         <tr>
           <td>Dedicated ANN at large scale, lowest retrieval latency</td>
-          <td><a class="src" href="vertex-vector-search.html">Vertex AI Vector Search</a></td>
+          <td><a class="src" href="vertex-vector-search.html">Vector Search</a></td>
         </tr>
         <tr>
           <td>Vanilla Postgres, no HTAP or vector</td>
@@ -249,7 +248,7 @@
       together rather than across two systems.</p>
     <div class="note"><b>One engine versus a dedicated index.</b> AlloyDB (pgvector) trades the very lowest retrieval
       latency for the convenience of co-locating vectors with relational data and SQL filters. When the corpus grows
-      large enough that retrieval latency dominates, the tool points you to <a class="src" href="vertex-vector-search.html">Vertex AI Vector Search</a> instead.</div>
+      large enough that retrieval latency dominates, the tool points you to <a class="src" href="vertex-vector-search.html">Vector Search</a> instead.</div>
 
     <h2>Sources</h2>
     <ul class="sources">

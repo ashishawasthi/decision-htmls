@@ -74,20 +74,20 @@
 <body>
   <main>
     <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Platforms / Agent Studio</div>
-    <span class="tag">Google · Vertex AI Agent Builder · low-code</span>
+    <span class="tag">Google · Agent Platform · low-code</span>
     <h1>Agent Studio in agentic systems</h1>
-    <p class="lead">A <b>low-code visual builder</b> inside Vertex AI Agent Builder: you assemble an agent, its tools, and
+    <p class="lead">A <b>low-code visual builder</b> inside Agent Platform: you assemble an agent, its tools, and
       its flow through a UI instead of writing framework code. It is the <b>fastest path to a working agent</b>. The
       design rule that follows: prototype here, then graduate to ADK when you need code-level control for production.</p>
 
     <h2>Spec at a glance</h2>
     <table class="spec">
       <tbody>
-        <tr><td>Provider</td><td>Google (Vertex AI Agent Builder)</td></tr>
+        <tr><td>Provider</td><td>Google (Agent Platform)</td></tr>
         <tr><td>Build model</td><td>Low-code visual builder (UI driven)</td></tr>
         <tr><td>Control level</td><td>Guided; less fine-grained than code-first ADK</td></tr>
-        <tr><td>Runtime</td><td>Managed on Vertex AI (sessions, scaling, tracing handled for you)</td></tr>
-        <tr><td>Portability</td><td>Google Cloud; tied to Vertex AI</td></tr>
+        <tr><td>Runtime</td><td>Managed on Agent Platform (sessions, scaling, tracing handled for you)</td></tr>
+        <tr><td>Portability</td><td>Google Cloud; tied to Agent Platform</td></tr>
         <tr><td>Best users</td><td>Product managers, business users, fast prototyping</td></tr>
         <tr><td>Best role in this tool</td><td>Platform = Agent Studio</td></tr>
       </tbody>
@@ -107,7 +107,7 @@
         <h3>Avoid</h3>
         <ul>
           <li>Production systems needing precise, code-level control of orchestration and tools.</li>
-          <li>Multi-cloud or on-prem mandates: it is tied to Vertex AI.</li>
+          <li>Multi-cloud or on-prem mandates: it is tied to Agent Platform.</li>
           <li>Complex multi-agent handoffs better expressed explicitly in code.</li>
         </ul>
       </div>
@@ -120,7 +120,7 @@
       </thead>
       <tbody>
         <tr><td>Fastest low-code start on Google Cloud</td><td>Agent Studio</td><td class="fit-strong">Quick to a working agent, less fine-grained control</td></tr>
-        <tr><td>Code-level control with a managed runtime</td><td><a class="src" href="agent-engine.html">ADK + Agent Engine</a></td><td class="fit-cond">More control, more code, still managed on Vertex AI</td></tr>
+        <tr><td>Code-level control with a managed runtime</td><td><a class="src" href="agent-engine.html">ADK + Agent Runtime</a></td><td class="fit-cond">More control, more code, still managed on Agent Platform</td></tr>
         <tr><td>Portability and no lock-in</td><td><a class="src" href="langgraph.html">LangGraph</a></td><td class="fit-cond">Runs anywhere, but you operate the runtime</td></tr>
       </tbody>
     </table>
@@ -128,16 +128,16 @@
     <h2>How it maps to this tool</h2>
     <ul>
       <li><b>It is the Platform input.</b> Picking Agent Studio sets the build-and-run layer to the low-code builder on a
-        managed Vertex AI runtime.</li>
-      <li><b>Graduation path.</b> The tool frames it as the fastest start; move to <a class="src" href="agent-engine.html">ADK + Agent Engine</a> when you need
+        managed Agent Platform runtime.</li>
+      <li><b>Graduation path.</b> The tool frames it as the fastest start; move to <a class="src" href="agent-engine.html">ADK + Agent Runtime</a> when you need
         code-level control, or <a class="src" href="langgraph.html">LangGraph</a> when portability is the priority.</li>
     </ul>
 
     <h2>Sources</h2>
     <ul class="sources">
-      <li><a class="src" href="https://cloud.google.com/products/agent-builder">Vertex AI Agent Builder (Google Cloud)</a></li>
-      <li><a class="src" href="https://docs.cloud.google.com/dialogflow/vertex/docs/concept/agent-builder">Build agents with Vertex AI Agent Builder and Agent Studio (Google Cloud Docs)</a></li>
-      <li><a class="src" href="https://uibakery.io/blog/vertex-ai-agent-builder">Vertex AI Agent Builder: 2026 guide to Google's enterprise AI agent platform (UI Bakery)</a></li>
+      <li><a class="src" href="https://cloud.google.com/products/agent-builder">Agent Platform (Google Cloud)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/dialogflow/vertex/docs/concept/agent-builder">Build agents with Agent Platform and Agent Studio (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://uibakery.io/blog/vertex-ai-agent-builder">Agent Platform: 2026 guide to Google's enterprise AI agent platform (UI Bakery)</a></li>
     </ul>
 
     <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify

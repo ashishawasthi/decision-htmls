@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vertex AI Vector Search in agentic systems</title>
+  <title>Vector Search in agentic systems</title>
     <script>
     /* Resolve the theme before first paint to avoid a flash. 'theme' is shared across all
        pages; it is set only when the user has explicitly chosen, absent means follow the OS. */
@@ -155,10 +155,10 @@
 
 <body>
   <main>
-    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Vertex AI Vector Search</div>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Vector Search</div>
     <span class="tag">Managed vector index (ANN retrieval)</span>
-    <h1>Vertex AI Vector Search in agentic systems</h1>
-    <p class="lead">Vertex AI Vector Search is a managed <b>approximate-nearest-neighbor (ANN)</b> index for semantic
+    <h1>Vector Search in agentic systems</h1>
+    <p class="lead">Vector Search is a managed <b>approximate-nearest-neighbor (ANN)</b> index for semantic
       retrieval, the backbone of RAG grounding. It returns the nearest vectors with <b>very low latency</b> even at
       billions of vectors. The design rule that follows: make it
       the default grounding store on the synchronous RAG hot path, and reach for an alternative only when you need SQL
@@ -167,7 +167,7 @@
 
     <h2>Role</h2>
     <p>The role does not change with the top-level purpose you pick in the tool: in both the interactive assistant and
-      task automation paths, Vertex AI Vector Search is the <b>semantic retrieval layer</b> that turns a query embedding
+      task automation paths, Vector Search is the <b>semantic retrieval layer</b> that turns a query embedding
       into the top-k candidate chunks the model grounds on. What changes is only how tight the surrounding latency budget
       is.</p>
 
@@ -199,7 +199,7 @@
       </div>
     </div>
 
-    <h2>Choosing Vertex AI Vector Search vs. alternatives</h2>
+    <h2>Choosing Vector Search vs. alternatives</h2>
     <table>
       <thead>
         <tr>
@@ -222,14 +222,14 @@
         </tr>
         <tr>
           <td>Default interactive semantic retrieval at large scale</td>
-          <td>Vertex AI Vector Search</td>
+          <td>Vector Search</td>
         </tr>
       </tbody>
     </table>
 
     <h2>Integration patterns and tuning</h2>
     <ul>
-      <li><b>Embed, then retrieve:</b> embed the query (for example with a Vertex AI text-embeddings model), query the
+      <li><b>Embed, then retrieve:</b> embed the query (for example with a Agent Platform text-embeddings model), query the
         index for top-k, then pass the retrieved chunks to the model as grounding. Keep k small enough to fit the
         context budget and the reranking step.</li>
       <li><b>Recall versus latency:</b> the index is approximate. Tune the tree-AH or ScaNN build parameters and the
@@ -243,7 +243,7 @@
 
     <h2>How it maps to this tool</h2>
     <p>In the designer this is the <b>Vector DB</b> retrieval input and the component behind the <b>Retrieval funnel</b>.
-      Selecting Vertex AI Vector Search models the default low-latency grounding store on the synchronous RAG path, and
+      Selecting Vector Search models the default low-latency grounding store on the synchronous RAG path, and
       the funnel sizing scales with the corpus chunk count you enter.</p>
     <div class="note"><b>Index sizing tracks the corpus.</b> The number of chunks you feed the retrieval funnel drives
       index size, which in turn drives the deployed capacity you provision. Growing the corpus raises the resources the
@@ -251,8 +251,7 @@
 
     <h2>Sources</h2>
     <ul class="sources">
-      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/overview">Vertex AI Vector
-          Search overview (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/overview">Vector Search overview (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/configuring-indexes">Configure
           index parameters for Vector Search (Google Cloud Docs)</a></li>
       <li><a class="src"
@@ -260,7 +259,7 @@
           anything blazingly fast with Google's vector search technology (Google Cloud Blog)</a></li>
       <li><a class="src"
           href="https://medium.com/google-cloud/the-gcp-rag-spectrum-vertex-ai-search-rag-engine-and-vector-search-which-one-should-you-use-f56d50720d5a">The
-          GCP RAG Spectrum: Vertex AI Search, RAG Engine, and Vector Search (Medium)</a></li>
+          GCP RAG Spectrum: Agent Search, RAG Engine, and Vector Search (Medium)</a></li>
     </ul>
 
     <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify

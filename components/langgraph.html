@@ -121,8 +121,8 @@
       </thead>
       <tbody>
         <tr><td>Portability and control, no lock-in</td><td>LangGraph</td><td class="fit-strong">Runs anywhere, but you operate the runtime</td></tr>
-        <tr><td>Least operations with production governance</td><td><a class="src" href="agent-engine.html">ADK + Agent Engine</a></td><td class="fit-cond">Managed runtime on Vertex AI, less portable</td></tr>
-        <tr><td>Fastest low-code start</td><td><a class="src" href="agent-studio.html">Agent Studio</a></td><td class="fit-cond">Builder UI, tied to Vertex AI</td></tr>
+        <tr><td>Least operations with production governance</td><td><a class="src" href="agent-engine.html">ADK + Agent Runtime</a></td><td class="fit-cond">Managed runtime on Agent Platform, less portable</td></tr>
+        <tr><td>Fastest low-code start</td><td><a class="src" href="agent-studio.html">Agent Studio</a></td><td class="fit-cond">Builder UI, tied to Agent Platform</td></tr>
       </tbody>
     </table>
 
@@ -134,7 +134,7 @@
         the comparison honest by surfacing the self-managed pieces of the supported self-hosted path: a
         <b>Self-managed infra + ops</b> line for what you run yourself (a Kubernetes cluster, a PostgreSQL checkpoint
         store, Redis for streaming, and self-hosted monitoring), and a <b>LangGraph Platform Enterprise</b> line, since
-        self-hosting is an Enterprise-tier add-on. <a class="src" href="agent-engine.html">ADK + Agent Engine</a>
+        self-hosting is an Enterprise-tier add-on. <a class="src" href="agent-engine.html">ADK + Agent Runtime</a>
         and <a class="src" href="agent-studio.html">Agent Studio</a> fold the runtime and infra into their per-request
         price, which is why they look pricier per call. Once all of it is counted, the managed runtimes are usually
         cheaper until very high volume; a managed SaaS LangGraph deployment that skips the Enterprise add-on is a

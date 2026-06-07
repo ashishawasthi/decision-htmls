@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vertex Model Registry in agentic systems</title>
+  <title>Model Registry in agentic systems</title>
     <script>
     /* Resolve the theme before first paint to avoid a flash. 'theme' is shared across all
        pages; it is set only when the user has explicitly chosen, absent means follow the OS. */
@@ -155,10 +155,10 @@
 
 <body>
   <main>
-    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Vertex Model Registry</div>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Model Registry</div>
     <span class="tag">Model and version governance</span>
-    <h1>Vertex Model Registry in agentic systems</h1>
-    <p class="lead">Vertex Model Registry is the <b>system of record for what is in production</b>: it registers,
+    <h1>Model Registry in agentic systems</h1>
+    <p class="lead">Model Registry is the <b>system of record for what is in production</b>: it registers,
       versions, and stages models (and, alongside it, prompt versions) with lineage, approvals, and rollback. Under a
       model-risk regime the question "exactly which model and prompt served this decision, and who approved it" must
       have a precise, auditable answer, and an ungoverned config string cannot give one. The design rule that follows:
@@ -168,7 +168,7 @@
 
     <h2>Role</h2>
     <p>The role does not change with the top-level purpose. For both an interactive assistant and a task automation
-      system, Vertex Model Registry is the <b>governed catalog and promotion control point</b> for models and versions.
+      system, Model Registry is the <b>governed catalog and promotion control point</b> for models and versions.
       Purpose may change how often you ship a new version, but not the need to register, approve, and be able to roll it
       back.</p>
 
@@ -190,16 +190,15 @@
         <h3>Avoid</h3>
         <ul>
           <li>Throwaway prototypes and demos where formal versioning and approvals add overhead without payoff.</li>
-          <li>As a serving or inference engine: the registry governs versions; Vertex AI endpoints serve them.</li>
-          <li>As your evaluation system: it stores results and approvals but does not compute quality. Use <a class="src" href="vertex-ai-eval.html">Vertex AI
-            Eval</a>.</li>
+          <li>As a serving or inference engine: the registry governs versions; Agent Platform endpoints serve them.</li>
+          <li>As your evaluation system: it stores results and approvals but does not compute quality. Use <a class="src" href="vertex-ai-eval.html">Agent Platform Evals</a>.</li>
           <li>As the audit log of runtime events: that is <a class="src" href="cloud-logging.html">Cloud Logging</a>. The registry governs artifacts, not request
             traffic.</li>
         </ul>
       </div>
     </div>
 
-    <h2>Choosing Vertex Model Registry vs. alternatives</h2>
+    <h2>Choosing Model Registry vs. alternatives</h2>
     <table>
       <thead>
         <tr>
@@ -210,7 +209,7 @@
       <tbody>
         <tr>
           <td>Governed, auditable model and version control native to Vertex</td>
-          <td>Vertex Model Registry</td>
+          <td>Model Registry</td>
         </tr>
         <tr>
           <td>A quick version pin with no governance overhead</td>
@@ -222,7 +221,7 @@
         </tr>
         <tr>
           <td>Measuring quality of a version before promotion</td>
-          <td><a class="src" href="vertex-ai-eval.html">Vertex AI Eval</a> (feeds approval decisions)</td>
+          <td><a class="src" href="vertex-ai-eval.html">Agent Platform Evals</a> (feeds approval decisions)</td>
         </tr>
       </tbody>
     </table>
@@ -231,7 +230,7 @@
     <ul>
       <li><b>Register every production candidate:</b> push each model and prompt version into the registry with metadata,
         rather than referencing a model by a loose string in app config.</li>
-      <li><b>Gate promotion on eval and approval:</b> require a passing <a class="src" href="vertex-ai-eval.html">Vertex AI Eval</a> run and a recorded human approval
+      <li><b>Gate promotion on eval and approval:</b> require a passing <a class="src" href="vertex-ai-eval.html">Agent Platform Evals</a> run and a recorded human approval
         before a version is promoted to the production alias.</li>
       <li><b>Serve through an alias, not a hard-coded ID:</b> point the endpoint at a stable production alias so a
         rollback is repointing the alias to the previous version, fast and auditable.</li>
@@ -245,19 +244,19 @@
     <p>This component backs the <b>Model risk governance</b> override. When the scenario calls for model-risk controls,
       the rules engine turns this on so production models and prompts are pinned to registered, approved versions instead
       of floating on whatever config happens to be deployed.</p>
-    <div class="note"><b>It is the governance counterpart to eval.</b> The designer treats <a class="src" href="vertex-ai-eval.html">Vertex AI Eval</a> as the measure
+    <div class="note"><b>It is the governance counterpart to eval.</b> The designer treats <a class="src" href="vertex-ai-eval.html">Agent Platform Evals</a> as the measure
       and the registry as the gate: eval scores a version, the registry records the approval and pins what ships, and
       together they give you a defensible, reversible promotion path.</div>
 
     <h2>Sources</h2>
     <ul class="sources">
       <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/model-registry/introduction">Introduction to
-          Vertex AI Model Registry (Google Cloud Docs)</a></li>
+          Model Registry (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/model-registry/versioning">Model versioning
           with Model Registry (Google Cloud Docs)</a></li>
       <li><a class="src"
           href="https://docs.cloud.google.com/vertex-ai/docs/model-registry/model-deployment-monitoring">Model
-          governance and lineage on Vertex AI (Google Cloud Docs)</a></li>
+          governance and lineage on Agent Platform (Google Cloud Docs)</a></li>
     </ul>
 
     <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify

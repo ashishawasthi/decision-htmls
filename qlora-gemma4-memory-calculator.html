@@ -392,6 +392,7 @@
             <option value="gemma-2-27b">gemma-2-27b (27B)</option>
           </optgroup>
           <optgroup label="Gemma 3 (262k vocab)">
+            <option value="gemma-3-270m">gemma-3-270m (270M)</option>
             <option value="gemma-3-1b">gemma-3-1b (1B)</option>
             <option value="gemma-3-4b">gemma-3-4b (4B)</option>
             <option value="gemma-3-12b">gemma-3-12b (12B)</option>
@@ -630,6 +631,11 @@
         name: "gemma-2-27b", family: "Gemma 2", ple: false, linearParams: 26.0e9, embedFp16Bytes: 2.36e9,
         layers: 46, hidden: 4608, mlpIntermediate: 36864, vocab: 256000, bnbDequant: 1.8e9,
         heads: 32, kvHeads: 16, headDim: 128, slidingWindow: 4096, localGlobalRatio: 2, kvSharedLayers: 0
+      },
+      "gemma-3-270m": {
+        name: "gemma-3-270m", family: "Gemma 3", ple: false, linearParams: 1.0e8, embedFp16Bytes: 3.4e8,
+        layers: 24, hidden: 640, mlpIntermediate: 2048, vocab: 262144, bnbDequant: 50e6,
+        heads: 4, kvHeads: 1, headDim: 256, slidingWindow: 512, localGlobalRatio: 6, kvSharedLayers: 0
       },
       "gemma-3-1b": {
         name: "gemma-3-1b", family: "Gemma 3", ple: false, linearParams: 0.70e9, embedFp16Bytes: 0.60e9,

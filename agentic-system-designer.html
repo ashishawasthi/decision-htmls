@@ -1153,7 +1153,7 @@
         </div>
         <div class="ctl" data-ov="agentRuntime"><label>Agent runtime</label>
           <select data-bind="overrides.agentRuntime">
-            <option value="agentengine">Agent Engine (managed)</option>
+            <option value="agentengine">Agent Runtime (managed)</option>
             <option value="gke">GKE Autopilot</option>
           </select>
         </div>
@@ -1307,7 +1307,7 @@
         </div>
         <div class="ctl" data-ov="ragEngine" data-vis="retr"><label>Indexing &amp; retrieval engine</label>
           <select data-bind="overrides.ragEngine">
-            <option value="vais">Managed: Vertex AI Search</option>
+            <option value="vais">Managed: Agent Search</option>
             <option value="selfbuilt">Self-built: Vector Search + pipeline</option>
           </select>
         </div>
@@ -1457,18 +1457,21 @@
 
   <details class="sources">
     <summary>Sources and references</summary>
+    <p><b>Naming.</b> Vertex AI was renamed Agent Platform on 2026-05-02 (Agent Engine is now Agent
+      Runtime; Vertex AI Search is now Agent Search; Vector Search and Model Registry dropped the Vertex AI prefix).
+      Product APIs, SDKs, and existing cloud.google.com URLs are unchanged.</p>
     <p><b>Pricing (about May 2026, the same basis as the cost calculator).</b> The token, accelerator,
       managed-service, and storage rates behind the Cost and Bill of materials panels:</p>
     <ul>
-      <li><a href="https://cloud.google.com/vertex-ai/generative-ai/pricing">Vertex AI generative AI pricing</a>:
+      <li><a href="https://cloud.google.com/vertex-ai/generative-ai/pricing">Agent Platform generative AI pricing</a>:
         Gemini and partner model tokens, context caching, grounding and web search.</li>
       <li><a href="https://docs.anthropic.com/en/docs/about-claude/pricing">Claude pricing</a> and
-        <a href="https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude">Claude on Vertex AI</a>.</li>
+        <a href="https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude">Claude on Agent Platform</a>.</li>
       <li><a href="https://cloud.google.com/products/compute/pricing/accelerator-optimized">GCP accelerator-optimized VM
         pricing</a> and <a href="https://cloud.google.com/tpu/pricing">Cloud TPU pricing</a>: self-host node $/hr by
         on-demand, CUD, and spot.</li>
       <li><a href="https://cloud.google.com/bigquery/pricing">BigQuery pricing</a>: on-demand scan ($/TiB) and storage.</li>
-      <li><a href="https://cloud.google.com/generative-ai-app-builder/pricing">Vertex AI Search / Agent Builder
+      <li><a href="https://cloud.google.com/generative-ai-app-builder/pricing">Agent Search / Agent Studio
         pricing</a>: search queries and index storage.</li>
       <li><a href="https://cloud.google.com/storage/pricing">Cloud Storage pricing</a>: vector index and object storage
         ($/GB-mo).</li>
@@ -1493,13 +1496,13 @@
     </ul>
     <p><b>Reference links.</b> Canonical docs for the products this design recommends:</p>
     <ul>
-      <li><a href="https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview">Vertex AI Agent Engine</a>
+      <li><a href="https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview">Agent Runtime</a>
         and the <a href="https://google.github.io/adk-docs/">Agent Development Kit (ADK)</a>.</li>
       <li><a href="https://cloud.google.com/security-command-center/docs/model-armor-overview">Model Armor</a> and
         <a href="https://cloud.google.com/vpc-service-controls/docs/overview">VPC Service Controls</a>.</li>
       <li><a href="https://cloud.google.com/alloydb/docs/overview">AlloyDB</a> vs
         <a href="https://cloud.google.com/spanner/docs">Spanner</a> for the state store.</li>
-      <li><a href="https://cloud.google.com/generative-ai-app-builder/docs/introduction">Vertex AI Search</a> for managed
+      <li><a href="https://cloud.google.com/generative-ai-app-builder/docs/introduction">Agent Search</a> for managed
         retrieval.</li>
     </ul>
   </details>
@@ -1592,7 +1595,7 @@
       // BigQuery on-demand query-time scan: assume ~50 MB scanned per request (the latency model already adds one
       // BigQuery scan per request), billed at $6.25/TiB after the 1 TiB/mo free tier, plus a fixed dataset size.
       bqScanMB: 50, bqStorageGB: 200, bqOnDemandPerTiB: 6.25,
-      // Vertex AI Search (managed RAG): ~$3 per 1k search queries + index storage $/GiB-mo + a website data store base.
+      // Agent Search (managed RAG): ~$3 per 1k search queries + index storage $/GiB-mo + a website data store base.
       vais: { perQuery: 0.003, storageGiB: 5, websiteBase: 30 },
       hnsw: { a: 0.5, b: 120, baseMs: 8 },
       lat: { retrieval: 70, rerank: 80, bigqueryScan: 1200, webGround: 600, onpremCall: 400, qualityGate: 80, cacheExact: 5, cacheSem: 30 },   // gateway/guardrails latency now per-chip in IN_LAT / OUT_LAT
@@ -1930,8 +1933,8 @@
       if (i.latencyPreset === 'subsecond' && (o.pattern === 'multi' || o.retrieval === 'rerank')) add('conflict', 'Sub-second SLO + multi-agent/rerank can blow the TTFT budget - single-agent + cached path, or raise the SLO.', '', 'pattern');
       if (o.retrieval === 'none' && i.dataSources.some(s => INDEXED_SRC.includes(s))) add('conflict', 'A document corpus or website is selected but retrieval is off, so it is never indexed or queried - turn on a retrieval strategy to use it, or remove the source.', '', 'retrieval');
       if (['hybrid', 'dense', 'rerank'].includes(o.retrieval) && !i.dataSources.some(s => INDEXED_SRC.includes(s))) add('conflict', 'Retrieval is on but there is no document corpus or company website to retrieve from - add an indexed source, or set retrieval to none (live grounding and live data do not need it).', '', 'retrieval');
-      // A self-hosted model serves from a separate vLLM-on-GKE fleet inside the VPC; a managed Agent Engine (Cloud Run) runtime cannot reach it without extra wiring.
-      if (selfHostOn(o) && o.agentRuntime === 'agentengine') add('conflict', 'Self-hosted model serves from a vLLM-on-GKE fleet in the VPC, but the agent runs on managed Agent Engine (Cloud Run) - run the agent on GKE, or add a Serverless VPC Access connector so Cloud Run can reach the fleet.', '', 'agentRuntime');
+      // A self-hosted model serves from a separate vLLM-on-GKE fleet inside the VPC; a managed Agent Runtime (Cloud Run) runtime cannot reach it without extra wiring.
+      if (selfHostOn(o) && o.agentRuntime === 'agentengine') add('conflict', 'Self-hosted model serves from a vLLM-on-GKE fleet in the VPC, but the agent runs on managed Agent Runtime (Cloud Run) - run the agent on GKE, or add a Serverless VPC Access connector so Cloud Run can reach the fleet.', '', 'agentRuntime');
       if (i.freshness === 'realtime' && (o.exactCache || o.semanticCache)) add('conflict', 'Caching contradicts real-time freshness - scope to freshness-tolerant intents or shorten TTL.', '', 'exactCache');
       // privacy / safety / residency
       if (lvl >= 3 && o.semanticCache) add('privacy', 'Semantic cache stores query embeddings - isolate per tenant + short TTL, or disable under strict-PII.', '', 'semanticCache');
@@ -2000,9 +2003,9 @@
       Client: 'The user-facing app (web or chat) that sends queries and renders grounded, cited answers.',
       EdgeGW: 'The request-side API gateway at the system edge: authenticates the caller (IAM + mTLS), enforces per-tenant rate limits, redacts inbound PII, and screens for prompt injection and jailbreaks before anything reaches the agent. Implemented by Apigee, Cloud API Gateway, or a third-party gateway such as Kong. Shows only the controls your inputs require. Sized on inbound user QPS.',
       Armor: 'Model Armor screens every model call inline: it filters prompt injection and jailbreaks on the way in and redacts or blocks unsafe or leaking output on the way out. Routing and fail-over between models are configured inside the agent; per-call audit goes to Observability. It sees every model call, so it sizes on model-call QPS (user QPS × fan-out), not user QPS.',
-      Orchestrator: 'Inside Agent Engine: decomposes the request into steps, calls tools and retrieval, coordinates the generate-evaluate-revise loop, and composes the final answer.',
-      Generator: 'Inside Agent Engine: calls the models through Model Armor and reads retrieval to produce the draft, then revises it from the Validator critique until it passes (the Self-Refine loop).',
-      Validator: 'Inside Agent Engine: the automated quality gate. It evaluates the draft against the acceptance criteria and, on a fail, returns a critique to the Generator to revise; on a pass the answer is returned or sent for human review.',
+      Orchestrator: 'Inside Agent Runtime: decomposes the request into steps, calls tools and retrieval, coordinates the generate-evaluate-revise loop, and composes the final answer.',
+      Generator: 'Inside Agent Runtime: calls the models through Model Armor and reads retrieval to produce the draft, then revises it from the Validator critique until it passes (the Self-Refine loop).',
+      Validator: 'Inside Agent Runtime: the automated quality gate. It evaluates the draft against the acceptance criteria and, on a fail, returns a critique to the Generator to revise; on a pass the answer is returned or sent for human review.',
       SecretMgr: 'Secret Manager holds the tool and database credentials the agent needs. The agent service account reads only the secrets it is granted, scoped per tool, so a leak of one credential does not expose the rest.',
       KMS: 'Cloud KMS holds the customer-managed encryption key (CMEK). It encrypts the managed data-at-rest stores - Cloud Storage, the managed state store (AlloyDB / Spanner / Cloud SQL / Memorystore), the Spanner durable tier, the managed Memorystore cache, and the BigQuery feedback dataset - so data at rest is under a key you own and can rotate or revoke. Self-hosted stores (a self-built vector store or Redis on GKE) use disk and application encryption instead.',
       Cache: 'A response cache on the request path: on a hit it returns a stored answer and skips the agent and model entirely, cutting cost and latency on the repeat-heavy head of traffic. Exact-match keys on the normalized query; semantic match keys on the query embedding within a similarity threshold. Sized by the effective hit rate. Invalidation is TTL plus version busting: each entry expires on a TTL set from the data freshness (real-time off, minutes, end-of-day about 24h, static long), and the cache key is namespaced by model, prompt, and index version so shipping a new model or prompt drops stale answers automatically.',
@@ -2010,7 +2013,7 @@
       Retr: 'Narrows candidates in stages (metadata pre-filter → dense + BM25 → rerank) so the model is grounded on only the most relevant passages.',
       Sand: 'Runs PII-sensitive or untrusted tool execution in an ephemeral, isolated instance that is wiped after each use, so sensitive data and side-effects never persist.',
       LLM: 'The reasoning and fast models. Smart routing sends easy lookups to the cheap model and hard queries to the reasoning model.',
-      Store: 'The index that retrieval reads at query time. Managed (Vertex AI Search) or self-built (Vertex AI Vector Search + BM25). Populated offline by the ingestion branch, never at request time.',
+      Store: 'The index that retrieval reads at query time. Managed (Agent Search) or self-built (Vector Search + BM25). Populated offline by the ingestion branch, never at request time.',
       Idx: 'The content indexed offline into the store: the document corpus and crawled company website pages. Re-crawled and re-embedded on a schedule, so the index is only as fresh as the last run.',
       GCS: 'Cloud Storage holds the source documents (uploaded to the seed-docs prefix) and the packaged agent artifact. It feeds the offline index; it is not read at request time.',
       Live: 'Sources queried live at request time (BigQuery text-to-SQL, on-prem DB, knowledge graph, streaming), not pre-indexed.',
@@ -2037,7 +2040,7 @@
       stream: 'Streaming or event source (Pub/Sub, Kafka) for fresh, near-real-time context.',
       kg: 'Knowledge graph for entity and relationship lookups and multi-hop reasoning.',
       web: 'Live web grounding via the model web-search tool (Gemini Google Search or Claude web search) for fresh, public content the company does not own. Per-search cost, adds a network round-trip; self-hosted Llama has no web search tool.',
-      website: 'Company website pages (owned) crawled and indexed into Vertex AI Search (website data store) or a self-built crawler, then served from the index like documents.',
+      website: 'Company website pages (owned) crawled and indexed into Agent Search (website data store) or a self-built crawler, then served from the index like documents.',
     };
     function dataSourceRoleText(v) {
       const subsec = state.purpose === 'assistant' && state.inputs.latencyPreset === 'subsecond';
@@ -2068,8 +2071,8 @@
     const COMPONENT_DOC = {
       'BigQuery': 'components/bigquery.html',
       // data and storage
-      'Vertex AI Vector Search': 'components/vertex-vector-search.html',
-      'Vertex AI Search': 'components/vertex-ai-search.html',
+      'Vector Search': 'components/vertex-vector-search.html',
+      'Agent Search': 'components/vertex-ai-search.html',
       'Spanner': 'components/spanner.html',
       'AlloyDB': 'components/alloydb.html',
       'AlloyDB (state)': 'components/alloydb.html',
@@ -2083,7 +2086,7 @@
       'Document AI': 'components/document-ai.html',
       'Dataflow': 'components/dataflow.html',
       'vLLM on GKE': 'components/vllm-gke.html',
-      'ADK + Agent Engine': 'components/agent-engine.html',
+      'ADK + Agent Runtime': 'components/agent-engine.html',
       'Agent Studio': 'components/agent-studio.html',
       'LangGraph': 'components/langgraph.html',
       'Self-managed infra + ops (LangGraph)': 'components/langgraph.html',
@@ -2091,8 +2094,8 @@
       // observability and governance
       'Cloud Logging (WORM)': 'components/cloud-logging.html',
       'Cloud Trace': 'components/cloud-trace.html',
-      'Vertex AI Eval': 'components/vertex-ai-eval.html',
-      'Vertex Model Registry': 'components/vertex-model-registry.html',
+      'Agent Platform Evals': 'components/vertex-ai-eval.html',
+      'Model Registry': 'components/vertex-model-registry.html',
       // data-source roles (not single GCP products)
       'On-prem DB': 'components/onprem.html',
       'Pub/Sub': 'components/pubsub.html',
@@ -2109,7 +2112,7 @@
       'Llama 4 (self-host)': 'components/model-llama4-selfhost.html',
     };
     // Map a data-source checkbox value to its component name, so the icon can appear on the source too.
-    const DS_COMPONENT = { bigquery: 'BigQuery', doc_corpus: 'Document AI', stream: 'Pub/Sub', onprem: 'On-prem DB', kg: 'Knowledge graph', web: 'Web/OSINT', website: 'Vertex AI Search' };
+    const DS_COMPONENT = { bigquery: 'BigQuery', doc_corpus: 'Document AI', stream: 'Pub/Sub', onprem: 'On-prem DB', kg: 'Knowledge graph', web: 'Web/OSINT', website: 'Agent Search' };
     const INFO_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>';
     // Opens the explainer in a new tab. A relative href works over HTTP (GCS) and from a file:// open.
     const infoIcon = (doc, name) => `<a class="info-i" href="${doc}" target="_blank" rel="noopener" title="About ${name} (opens in new tab)" aria-label="About ${name}">${INFO_SVG}</a>`;
@@ -2142,7 +2145,7 @@
         const liveSel = i.dataSources.filter(s => LIVE_SRC.includes(s));
         const hasIndex = idxSel.length;   // indexed content to retrieve from
         if (ragOn && hasIndex) {
-          const storeLabel = o.ragEngine === 'vais' ? 'Vertex AI Search ⊕' : 'Vector store + BM25 ⊕';
+          const storeLabel = o.ragEngine === 'vais' ? 'Agent Search ⊕' : 'Vector store + BM25 ⊕';
           if (!storePre) L.push(node('Store', storeLabel, 'data', 'cyl'));   // pre-declared inside the VPC subgraph when self-built
           L.push(`${storeReader} --> Store`);
           // offline ingestion branch only when there is content to crawl, parse, and index
@@ -2159,10 +2162,10 @@
         // live web grounding via the model web-search tool (separate from indexed content and live data)
         if (i.dataSources.includes('web')) { L.push(node('WebG', 'Web grounding<br/>Google Search', 'data')); L.push(`${liveReader} --> WebG`); }
       };
-      // Agent Engine (or GKE) hosts the orchestrator, generator, and validator as one runtime. The
+      // Agent Runtime (or GKE) hosts the orchestrator, generator, and validator as one runtime. The
       // internal components are drawn inside a subgraph; the generate-evaluate-revise reflection loop
       // (the Generator revises its own draft on the Validator critique) is shown as a back-edge.
-      const aeLabel = o.agentRuntime === 'gke' ? 'Agent runtime (GKE Autopilot)' : 'Agent Engine';
+      const aeLabel = o.agentRuntime === 'gke' ? 'Agent runtime (GKE Autopilot)' : 'Agent Runtime';
       const agentEngine = () => {
         L.push(`subgraph AE["${aeLabel}"]`);
         ['Orchestrator', 'Generator', 'Validator'].forEach(id => L.push(node(id, id, 'orch')));
@@ -2172,7 +2175,7 @@
         L.push('end');
       };
       // Model Armor sits inline on the model leg (sanitize input and output). The leg originates from
-      // the Agent Engine as a whole, not one component: the orchestrator, generator, and validator all
+      // the Agent Runtime as a whole, not one component: the orchestrator, generator, and validator all
       // make model calls under one runtime identity (roles/aiplatform.user), and Armor screens every one.
       const armorOn = !!(o.guardrails || o.residencyPin || o.toolAuthz);
       const modelLeg = (from) => {
@@ -2182,7 +2185,7 @@
       };
       // Two distinct governance facilities, each showing its real relationship. Secret Manager is read
       // by the agent service account (the runtime, not one component - roles/secretmanager.secretAccessor
-      // sits on the single agent SA), so the edge is drawn from the Agent Engine when tool authz is on.
+      // sits on the single agent SA), so the edge is drawn from the Agent Runtime when tool authz is on.
       // Cloud KMS encrypts data at rest (when CMEK is on): it points at every managed store the Terraform
       // wires the key to - Cloud Storage, the managed state store (AlloyDB / Spanner / Cloud SQL /
       // Memorystore), the Spanner durable tier, and the managed Memorystore cache. Self-hosted stores
@@ -2217,7 +2220,7 @@
       const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
       const hasIndex = i.dataSources.some(s => INDEXED_SRC.includes(s));
       const gcsDrawn = ragOn && hasIndex;                    // Cloud Storage (source docs + agent artifact) is drawn by the ingestion branch
-      const storeInVpc = ragOn && hasIndex && selfbuilt;     // self-built vector store, not managed Vertex AI Search
+      const storeInVpc = ragOn && hasIndex && selfbuilt;     // self-built vector store, not managed Agent Search
       const retrInVpc = ragOn && selfbuilt;                  // the retrieval funnel runs on the self-built search
       const stateInVpc = /alloydb|redis/.test(o.stateStore); // AlloyDB / Memorystore attach to the VPC over PSA
       // The Redis tier is self-hosted on GKE, else managed Memorystore. Spanner (the active-active durable
@@ -2270,7 +2273,7 @@
         // The cache (Memorystore, or self-hosted Redis on GKE) is VPC-resident, so it is drawn inside
         // the dedicated VPC below; its short-circuit edges cross the boundary.
         const cacheOn = responseCacheOn(o);
-        // Self-built draws an explicit retrieval funnel; managed Vertex AI Search retrieves inside
+        // Self-built draws an explicit retrieval funnel; managed Agent Search retrieves inside
         // its store node, so the generator reads the store directly.
         const showFunnel = retrInVpc;
         openPerim();
@@ -2293,7 +2296,7 @@
         dataPlane(showFunnel ? 'Retr' : 'Generator', 'Generator', storeInVpc);
         secretMgrNode('AE');
         // session / conversation state the runtime persists (Memorystore/AlloyDB) - inside the VPC when
-        // private. Persisted under the one runtime identity, so the edge is from the Agent Engine.
+        // private. Persisted under the one runtime identity, so the edge is from the Agent Runtime.
         if (!stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
         L.push('AE -. state .-> State');
         // Spanner durable tier is managed (reached via a PSC endpoint), so it sits outside the VPC even though Redis is inside
@@ -2316,10 +2319,10 @@
         const cacheOn = responseCacheOn(o);
         openPerim();
         // Self-hosted runtime and store, plus a private AlloyDB/Redis state store, sit inside the
-        // VPC; the managed Agent Engine runtime and the managed Google services stay outside it.
+        // VPC; the managed Agent Runtime runtime and the managed Google services stay outside it.
         openVpc(gke || storeInVpc || stateInVpc || cacheOn || hybridLink);
         if (cacheOn) L.push(node('Cache', cacheLabel(o), 'data', 'cyl'));
-        // Agent Engine hosts the orchestrator, generator, and validator; the auto quality gate is the validator
+        // Agent Runtime hosts the orchestrator, generator, and validator; the auto quality gate is the validator
         if (gke) agentEngine();
         if (storeInVpc) L.push(node('Store', 'Vector store + BM25 ⊕', 'data', 'cyl'));
         if (stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
@@ -2429,7 +2432,7 @@
       v.multi = o.pattern === 'multi';
       v.routing = o.smartRouting;
       v.retr = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
-      v.selfbuilt = v.retr && o.ragEngine === 'selfbuilt';   // DIY knobs only when not on managed Vertex AI Search
+      v.selfbuilt = v.retr && o.ragEngine === 'selfbuilt';   // DIY knobs only when not on managed Agent Search
       v.gw = o.gateway;
       v.ctxreuse = o.contextCache;
       v.selfhost = selfHostOn(o);   // GPU / quant knobs show when a self-host model is picked, not by deployment
@@ -2546,8 +2549,8 @@
       const i = state.inputs, o = state.overrides;
       const armorOn = !!(o.guardrails || o.residencyPin || o.toolAuthz);
       const path = state.purpose === 'assistant'
-        ? ['client', inboundControls(o, i).length && 'API Gateway', responseCacheOn(o) && 'response cache', 'Agent Engine', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', armorOn && 'Model Armor', 'LLM'].filter(Boolean)
-        : ['trigger', responseCacheOn(o) && 'response cache', 'Agent Engine', armorOn && 'Model Armor', 'LLM'].filter(Boolean);
+        ? ['client', inboundControls(o, i).length && 'API Gateway', responseCacheOn(o) && 'response cache', 'Agent Runtime', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', armorOn && 'Model Armor', 'LLM'].filter(Boolean)
+        : ['trigger', responseCacheOn(o) && 'response cache', 'Agent Runtime', armorOn && 'Model Armor', 'LLM'].filter(Boolean);
       const crit = state.purpose === 'assistant' ? 'faithfulness + citation accuracy' : 'PR-success + rework rounds';
       const slo = i.latencyPreset === 'subsecond' ? 'p95 < 1s' : (i.latencyPreset === 'minutes' ? 'per-run < N min' : 'p95 < 2s start / 6s full');
       const comps = [inboundControls(o, i).length && 'API Gateway', responseCacheOn(o) && 'response cache', armorOn && 'Model Armor', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
@@ -2596,7 +2599,7 @@
     function bomHtml() {
       const o = state.overrides, i = state.inputs, b = new Set();
       if (o.agentRuntime === 'gke') b.add('GKE Autopilot (agent)');
-      else b.add(o.platform === 'adk' ? 'ADK + Agent Engine' : o.platform === 'studio' ? 'Agent Studio' : 'LangGraph');
+      else b.add(o.platform === 'adk' ? 'ADK + Agent Runtime' : o.platform === 'studio' ? 'Agent Studio' : 'LangGraph');
       // LangGraph is open-source and free, so its platform line looks cheapest. But the supported self-hosted
       // path adds the cloud infra/ops the managed runtimes bundle, plus a LangGraph Platform Enterprise contract
       // (self-hosting is an Enterprise add-on). Surface both as their own visible cost lines.
@@ -2605,9 +2608,9 @@
       const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
       const hasIndex = i.dataSources.some(s => INDEXED_SRC.includes(s));
       if (ragOn && hasIndex && o.ragEngine === 'vais') {
-        b.add('Vertex AI Search');                              // managed: parse + chunk + embed + index + retrieve + rerank in one service
+        b.add('Agent Search');                              // managed: parse + chunk + embed + index + retrieve + rerank in one service
       } else if (ragOn && hasIndex) {
-        b.add(o.vectorDB === 'vertex' ? 'Vertex AI Vector Search' : o.vectorDB === 'alloydb' ? 'AlloyDB' : 'Elasticsearch');
+        b.add(o.vectorDB === 'vertex' ? 'Vector Search' : o.vectorDB === 'alloydb' ? 'AlloyDB' : 'Elasticsearch');
         if (o.retrieval === 'hybrid' || o.retrieval === 'rerank') b.add('BM25');
         if (o.ingestionSep || i.dataSources.includes('website')) b.add('Dataflow');   // ingestion / website crawl pipeline
         if (i.dataSources.includes('doc_corpus') || i.dataSources.includes('website')) b.add('Document AI');
@@ -2617,8 +2620,8 @@
       // AlloyDB line distinct from a vector-DB AlloyDB line. A Redis tier adds Memorystore on top.
       b.add(o.stateStore.includes('spanner') ? 'Spanner' : o.stateStore.includes('alloydb') ? 'AlloyDB (state)' : 'Cloud SQL');
       if (o.stateStore.includes('redis')) b.add('Memorystore');
-      b.add('Cloud Trace'); b.add('Vertex AI Eval');
-      if (o.guardrails) b.add('Model Armor'); if (o.toolAuthz) b.add('Workload Identity'); if (o.modelRiskGov) b.add('Vertex Model Registry');
+      b.add('Cloud Trace'); b.add('Agent Platform Evals');
+      if (o.guardrails) b.add('Model Armor'); if (o.toolAuthz) b.add('Workload Identity'); if (o.modelRiskGov) b.add('Model Registry');
       if (o.enforceVpcSc) b.add('VPC Service Controls'); b.add('Cloud DLP'); b.add('IAM');
       // Storage and secrets are always provisioned; KMS only with CMEK; Pub/Sub triggers automation runs
       b.add('Cloud Storage'); b.add('Secret Manager');
@@ -2640,13 +2643,13 @@
       },
       // Platform lines: make the build-vs-run cost difference legible. The managed runtimes bundle the
       // infrastructure and operations; LangGraph is the free framework with that cost broken out separately.
-      'ADK + Agent Engine': {
+      'ADK + Agent Runtime': {
         note: 'managed runtime bundled',
-        why: 'Bundles the managed runtime on Vertex AI: sessions, state, autoscaling, and tracing. You do not provision or monitor that infrastructure yourself, unlike the self-hosted LangGraph path, so there is no separate ops line.',
+        why: 'Bundles the managed runtime on Agent Platform: sessions, state, autoscaling, and tracing. You do not provision or monitor that infrastructure yourself, unlike the self-hosted LangGraph path, so there is no separate ops line.',
       },
       'Agent Studio': {
         note: 'managed runtime bundled',
-        why: 'Bundles the managed runtime on Vertex AI: sessions, state, autoscaling, and tracing. You do not provision or monitor that infrastructure yourself, unlike the self-hosted LangGraph path, so there is no separate ops line.',
+        why: 'Bundles the managed runtime on Agent Platform: sessions, state, autoscaling, and tracing. You do not provision or monitor that infrastructure yourself, unlike the self-hosted LangGraph path, so there is no separate ops line.',
       },
       'LangGraph': {
         note: 'framework only (free OSS)',
@@ -2654,7 +2657,7 @@
       },
       'Self-managed infra + ops (LangGraph)': {
         note: 'K8s + Postgres + Redis + monitoring',
-        why: 'Illustrative floor for running LangGraph yourself: a Kubernetes cluster (cited 16+ vCPU, 64+ GB), a PostgreSQL checkpoint store, Redis for streaming, and self-hosted monitoring. A fixed floor that scales with peak concurrency, plus the per-request compute that executes each run (moved here from the framework line). Lands near the cited ~$1,000/mo minimum for a small deployment. ADK + Agent Engine and Agent Studio bundle this into their per-request price. Ops and on-call labor is additional and not dollarized here.',
+        why: 'Illustrative floor for running LangGraph yourself: a Kubernetes cluster (cited 16+ vCPU, 64+ GB), a PostgreSQL checkpoint store, Redis for streaming, and self-hosted monitoring. A fixed floor that scales with peak concurrency, plus the per-request compute that executes each run (moved here from the framework line). Lands near the cited ~$1,000/mo minimum for a small deployment. ADK + Agent Runtime and Agent Studio bundle this into their per-request price. Ops and on-call labor is additional and not dollarized here.',
       },
       'LangGraph Platform Enterprise (self-host license)': {
         note: 'custom, ~$2k-5k/mo (illustrative $5k)',
@@ -2674,7 +2677,7 @@
       const pages = state.componentInputs.ingestion.docPages || 40;
       const bqScanTiB = (R * K.bqScanMB) / 1048576;            // MiB scanned/mo → TiB (~1 BigQuery scan/req × bqScanMB)
       const P = {
-        'ADK + Agent Engine': 40 + R * 0.0006,
+        'ADK + Agent Runtime': 40 + R * 0.0006,
         'Agent Studio': 40 + R * 0.0006,
         'LangGraph': 0,            // the framework itself is open source (MIT) and free; real costs are the two lines below
         // Illustrative floor for running LangGraph yourself: a Kubernetes cluster (cited 16+ vCPU, 64+ GB), a
@@ -2689,8 +2692,8 @@
         'Cloud IAP': 0,                                          // no per-request charge at this sizing (bundled with the edge LB)
         'Cloud API Gateway': 3 + R * 0.000003,                   // ~$3 per million API calls
         'Cloud Logging (WORM)': 5 + (Tk / 1e6) * 0.05,
-        'Vertex AI Vector Search': idxNodes * 438,
-        'Vertex AI Search': R * K.vais.perQuery + (m.indexGB || 0) * K.vais.storageGiB + (i.dataSources.includes('website') ? K.vais.websiteBase : 0),
+        'Vector Search': idxNodes * 438,
+        'Agent Search': R * K.vais.perQuery + (m.indexGB || 0) * K.vais.storageGiB + (i.dataSources.includes('website') ? K.vais.websiteBase : 0),
         'AlloyDB': 300 + m.indexGB * 0.3,
         'AlloyDB (state)': 280 + dbNodes * 110 + m.indexGB * 0.3,   // primary + read pool (HA) floor, scales with peak concurrency; below Spanner, above Cloud SQL
         'Elasticsearch': idxNodes * 450,
@@ -2707,10 +2710,10 @@
         'Cloud KMS': 3 + (R / 1e6) * 0.03,                      // CMEK key + crypto operations
         'Pub/Sub': 10 + (R / 1e6) * 0.4,                        // trigger topic + DLQ throughput
         'Cloud Trace': (R / 1e6) * 2.0,
-        'Vertex AI Eval': (R * 0.05 / 1000) * 0.5,
+        'Agent Platform Evals': (R * 0.05 / 1000) * 0.5,
         'Model Armor': (R / 1000) * 0.5,
         'Workload Identity': 0,
-        'Vertex Model Registry': 0,
+        'Model Registry': 0,
         'VPC Service Controls': 0,
         'Cloud DLP': (Tk / 1e6) * 1.0,
         'IAM': 0,
@@ -2762,7 +2765,7 @@
         }
         // drill-down on click (subset of boxes)
         let key = null;
-        if (/API Gateway/.test(t)) key = 'edgegw'; else if (/Model Armor/.test(t)) key = 'modelarmor'; else if (/Response cache/.test(t)) key = 'cache'; else if (/Vertex AI Search/.test(t)) key = 'vais'; else if (/Vector store/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
+        if (/API Gateway/.test(t)) key = 'edgegw'; else if (/Model Armor/.test(t)) key = 'modelarmor'; else if (/Response cache/.test(t)) key = 'cache'; else if (/Agent Search/.test(t)) key = 'vais'; else if (/Vector store/.test(t)) key = 'ingestion'; else if (/Retrieval funnel/.test(t)) key = 'funnel'; else if (/sandbox/i.test(t)) key = 'sandbox';
         if (key) { n.classList.add('drill'); n.style.cursor = 'pointer'; n.addEventListener('click', () => openModal(key)); }
       });
     }
@@ -2770,7 +2773,7 @@
     /* ===================== Drill-down modal ===================== */
     async function openModal(key) {
       state.ui.openModal = key;
-      const titles = { edgegw: 'API Gateway', modelarmor: 'Model Armor', cache: 'Response cache', ingestion: 'Self-built ingestion pipeline', vais: 'Vertex AI Search', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
+      const titles = { edgegw: 'API Gateway', modelarmor: 'Model Armor', cache: 'Response cache', ingestion: 'Self-built ingestion pipeline', vais: 'Agent Search', sandbox: 'Transient sandbox', funnel: 'Retrieval funnel' };
       const purposeId = { edgegw: 'EdgeGW', modelarmor: 'Armor', cache: 'Cache', ingestion: 'Store', vais: 'Store', sandbox: 'Sand', funnel: 'Retr' };   // map modal key to node id in NODE_PURPOSE
       const subcalc = key === 'edgegw' || key === 'modelarmor' || key === 'ingestion';
       const root = $('#modal-root'), box = $('#modal');
@@ -3139,7 +3142,7 @@
       // control-plane split: the API Gateway box and the model-leg controls derive from the same booleans, one inbound, one on the model leg
       assert('external splits into edge + model controls', inboundControls(state.overrides, state.inputs).length > 0 && outboundControls(state.overrides, state.inputs).length > 0);
       assert('edge carries auth, model carries output filter', inboundControls(state.overrides, state.inputs).includes('auth') && outboundControls(state.overrides, state.inputs).includes('output filter'));
-      { const d = buildMainDiagram(); assert('diagram wires Model Armor onto the model leg from the Agent Engine', /AE --> Armor/.test(d) && /Armor --> LLM/.test(d) && !/Generator --> Armor/.test(d) && !/ModelGW/.test(d)); }
+      { const d = buildMainDiagram(); assert('diagram wires Model Armor onto the model leg from the Agent Runtime', /AE --> Armor/.test(d) && /Armor --> LLM/.test(d) && !/Generator --> Armor/.test(d) && !/ModelGW/.test(d)); }
       assert('latency: a model-leg control adds to each model call', (() => {
         applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['doc_corpus'];
         state.inputs.audienceSensitivity = 'internal_low'; deriveOverrides();
@@ -3183,7 +3186,7 @@
       applyPreset('assistant', 'expert_copilot'); state.inputs.actors = 50000; state.inputs.actionsPerDay = 60; state.overrides.reasoningModel = 'gemini-35-flash'; state.overrides.fastModel = 'llama4-selfhost'; state.overrides.smartRouting = true; state.overrides.routingSplit = 70; deriveOverrides();
       const mMix = computeMetrics();
       assert('mixed self-host bills both managed API and a GPU fleet', !selfHostAll(state.overrides) && mMix.costOpt > 0 && mMix.gpuMo > 0);
-      // a self-host model on the managed Agent Engine (Cloud Run) runtime is flagged; the GKE runtime clears it
+      // a self-host model on the managed Agent Runtime (Cloud Run) runtime is flagged; the GKE runtime clears it
       state.overrides.agentRuntime = 'agentengine'; deriveOverrides();
       assert('self-host model on Cloud Run runtime is flagged', runLinter(computeMetrics()).some(x => x.src === 'agentRuntime'));
       state.overrides.agentRuntime = 'gke'; deriveOverrides();
@@ -3254,12 +3257,12 @@
       applyPreset('automation', 'internal_lowstakes'); deriveOverrides();
       assert('automation diagram shows live data sources', /Live data/.test(buildMainDiagram()));
       assert('automation state store renders as a datastore cylinder', /State\[\(/.test(buildMainDiagram()));
-      // Task automation: orchestrator, generator, and validator run inside one Agent Engine subgraph,
+      // Task automation: orchestrator, generator, and validator run inside one Agent Runtime subgraph,
       // with the Generator revising on the Validator critique. No Planner, no separate executor/QG box.
       const dgAuto = buildMainDiagram();
       assert('automation drops the Planner (the orchestrator decomposes)', !/Planner/.test(dgAuto) && /Orchestrator --> Generator/.test(dgAuto));
-      assert('automation runs inside one Agent Engine subgraph', /subgraph AE/.test(dgAuto) && /Generator --> Validator/.test(dgAuto));
-      assert('Agent Engine shows the Generator revise loop and no separate Optimizer', /Validator -\. revise \.-> Generator/.test(dgAuto) && !/Optimizer/.test(dgAuto));
+      assert('automation runs inside one Agent Runtime subgraph', /subgraph AE/.test(dgAuto) && /Generator --> Validator/.test(dgAuto));
+      assert('Agent Runtime shows the Generator revise loop and no separate Optimizer', /Validator -\. revise \.-> Generator/.test(dgAuto) && !/Optimizer/.test(dgAuto));
       assert('automation folds the executor and quality gate into the validator', !/Executor pool/.test(dgAuto) && !/Quality gate/.test(dgAuto) && /Validator/.test(dgAuto));
       // async human approval: the run awaits a reviewer, then resumes on approval
       applyPreset('automation', 'strictpii'); deriveOverrides();
@@ -3310,18 +3313,18 @@
       assert('regulated default does not list VPC-SC in the BOM while the perimeter is off', state.overrides.residencyPin === true && state.overrides.enforceVpcSc === false && !bomHtml().includes('VPC Service Controls'));
       state.overrides.enforceVpcSc = true;
       assert('enabling the perimeter lists VPC-SC in the BOM', bomHtml().includes('VPC Service Controls'));
-      // RAG defaults to managed Vertex AI Search; the engine drives the diagram, BOM, and knobs
+      // RAG defaults to managed Agent Search; the engine drives the diagram, BOM, and knobs
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
-      assert('RAG engine defaults to managed Vertex AI Search', state.overrides.ragEngine === 'vais' && bomHtml().includes('Vertex AI Search'));
+      assert('RAG engine defaults to managed Agent Search', state.overrides.ragEngine === 'vais' && bomHtml().includes('Agent Search'));
       assert('managed collapses the DIY BOM + hides knobs', !bomHtml().includes('Document AI') && !bomHtml().includes('BM25') && !bomHtml().includes('Dataflow') && visibleInputs().selfbuilt === false);
       const dgV = buildMainDiagram();
-      assert('main diagram shows offline ingestion into the store', /Index sources/.test(dgV) && /-\. crawl \+ parse \+ embed \.->/.test(dgV) && /Vertex AI Search/.test(dgV));
+      assert('main diagram shows offline ingestion into the store', /Index sources/.test(dgV) && /-\. crawl \+ parse \+ embed \.->/.test(dgV) && /Agent Search/.test(dgV));
       assert('managed folds retrieval into the store (no separate funnel)', !/Retrieval funnel/.test(dgV) && /Generator --> Store/.test(dgV));
       assert('retrieval index renders as a datastore cylinder', /Store\[\(/.test(dgV));
       const dirWide = !window.matchMedia('(max-width:880px)').matches;
       assert('diagram direction follows the viewport', new RegExp('flowchart ' + (dirWide ? 'LR' : 'TD')).test(buildMainDiagram()));
       state.overrides.ragEngine = 'selfbuilt'; deriveOverrides();
-      assert('self-built restores the pipeline BOM + knobs', bomHtml().includes('Vertex AI Vector Search') && bomHtml().includes('Document AI') && bomHtml().includes('BM25') && visibleInputs().selfbuilt === true);
+      assert('self-built restores the pipeline BOM + knobs', bomHtml().includes('Vector Search') && bomHtml().includes('Document AI') && bomHtml().includes('BM25') && visibleInputs().selfbuilt === true);
       const dgS = buildMainDiagram();
       assert('self-built diagram shows Document AI to vector store', /Document AI/.test(dgS) && /Chunk \+ embed/.test(dgS) && /Vector store \+ BM25/.test(dgS) && /-\. write \.->/.test(dgS));
       // the ingestion branch is offline, so every edge in it is dotted - no solid Idx->DocAI->Emb steps
@@ -3343,7 +3346,7 @@
       // store and offline ingestion branch are coupled: indexed content draws both, a live source draws the Live node alongside
       applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['doc_corpus', 'bigquery']; deriveOverrides();
       const dgP = buildMainDiagram();
-      assert('indexed content draws store + ingestion; live draws Live data', /Index sources/.test(dgP) && /Vertex AI Search/.test(dgP) && /-\. crawl \+ parse \+ embed \.->/.test(dgP) && /Live data/.test(dgP));
+      assert('indexed content draws store + ingestion; live draws Live data', /Index sources/.test(dgP) && /Agent Search/.test(dgP) && /-\. crawl \+ parse \+ embed \.->/.test(dgP) && /Live data/.test(dgP));
       // a corpus/website selected with retrieval off is flagged, not silently dropped
       applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['doc_corpus']; state.overrides.retrieval = 'none'; deriveOverrides();
       assert('corpus without retrieval is flagged', runLinter(computeMetrics()).some(x => x.src === 'retrieval'));
@@ -3365,10 +3368,10 @@
       // a live-grounding preset (no indexed source) defaults retrieval off and draws no phantom store
       applyPreset('assistant', 'strictpii_verify'); deriveOverrides();
       const dgSp = buildMainDiagram();
-      assert('grounding-only preset: retrieval off, no phantom store', state.overrides.retrieval === 'none' && !/Vertex AI Search/.test(dgSp) && /Web grounding/.test(dgSp) && !bomHtml().includes('Vertex AI Search'));
+      assert('grounding-only preset: retrieval off, no phantom store', state.overrides.retrieval === 'none' && !/Agent Search/.test(dgSp) && /Web grounding/.test(dgSp) && !bomHtml().includes('Agent Search'));
       // retrieval on with only a live source: no store/engine billed, and the linter flags it
       applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['bigquery']; state.overrides.retrieval = 'rerank'; deriveOverrides();
-      assert('retrieval on with nothing to retrieve: no store + nudge', !/Vertex AI Search/.test(buildMainDiagram()) && !bomHtml().includes('Vertex AI Search') && runLinter(computeMetrics()).some(x => x.src === 'retrieval'));
+      assert('retrieval on with nothing to retrieve: no store + nudge', !/Agent Search/.test(buildMainDiagram()) && !bomHtml().includes('Agent Search') && runLinter(computeMetrics()).some(x => x.src === 'retrieval'));
       // component explainer: BigQuery is registered and its info icon opens the doc in a new tab
       assert('BigQuery doc registered', COMPONENT_DOC['BigQuery'] === 'components/bigquery.html');
       assert('info icon opens doc in new tab', /href="components\/bigquery\.html"/.test(infoIcon(COMPONENT_DOC['BigQuery'], 'BigQuery')) && /target="_blank"/.test(infoIcon('x', 'y')));
@@ -3377,7 +3380,7 @@
       assert('docFor resolves models and components', docFor('Gemini 3.1 Flash-Lite') === 'components/model-gemini-31-flash-lite.html' && docFor('BigQuery') === 'components/bigquery.html' && docFor('nope') === null);
       assert('model info icon opens in a new tab', /target="_blank"/.test(infoIcon(MODEL_DOC['Claude Opus 4.8'], 'Claude Opus 4.8')));
       // platform pages: all three Platform options resolve to a page that the BOM and the dropdown icon can open
-      assert('every platform has a page', ['ADK + Agent Engine', 'Agent Studio', 'LangGraph'].every(n => /^components\/.+\.html$/.test(docFor(n) || '')));
+      assert('every platform has a page', ['ADK + Agent Runtime', 'Agent Studio', 'LangGraph'].every(n => /^components\/.+\.html$/.test(docFor(n) || '')));
       assert('Agent Studio + LangGraph docs registered', docFor('Agent Studio') === 'components/agent-studio.html' && docFor('LangGraph') === 'components/langgraph.html');
       // LangGraph self-host: the hidden infra + ops cost the managed runtimes bundle is a visible BOM line,
       // and once counted LangGraph is no longer the cheapest platform at the default scale.
@@ -3458,10 +3461,10 @@
         const dvpc = buildMainDiagram();
         assert('Self-Managed assistant draws the Dedicated VPC network boundary', /subgraph VPC\["Dedicated VPC network"\]/.test(dvpc));
         assert('the dedicated VPC nests inside the VPC-SC perimeter with the GKE runtime inside the VPC', dvpc.indexOf('subgraph PERIM') >= 0 && dvpc.indexOf('subgraph PERIM') < dvpc.indexOf('subgraph VPC') && dvpc.indexOf('subgraph VPC') < dvpc.indexOf('subgraph AE'));
-        // Cross-cutting platform connections attach to the Agent Engine as a whole, matching the
+        // Cross-cutting platform connections attach to the Agent Runtime as a whole, matching the
         // Terraform where one runtime service account holds aiplatform.user, secretmanager.secretAccessor,
         // logging.logWriter, and cloudtrace.agent - not the orchestrator/generator/validator individually.
-        assert('model leg, observability, and state attach to the Agent Engine, not one component', /AE --> Armor/.test(dvpc) && /Armor --> LLM/.test(dvpc) && /AE -\. traces \.-> Obs/.test(dvpc) && /AE -\. state \.-> State/.test(dvpc));
+        assert('model leg, observability, and state attach to the Agent Runtime, not one component', /AE --> Armor/.test(dvpc) && /Armor --> LLM/.test(dvpc) && /AE -\. traces \.-> Obs/.test(dvpc) && /AE -\. state \.-> State/.test(dvpc));
         assert('the old per-component runtime edges are gone', !/Generator --> Armor/.test(dvpc) && !/Validator --> Obs/.test(dvpc) && !/Generator -\. session/.test(dvpc));
         // Line style is consistent: solid = synchronous request path (model leg stays solid); dotted = off
         // the request path. Telemetry and the feedback loop are off-path, so they are dotted, not solid.
@@ -3480,10 +3483,10 @@
         // automation has privileged tools (toolAuthz on) and CMEK on, so both governance nodes are
         // drawn as separate boxes: the agent reads credentials from Secret Manager, Cloud KMS encrypts.
         const dsm = buildMainDiagram();
-        assert('tool authz draws a Secret Manager node the Agent Engine reads from', /SecretMgr\["Secret Manager"\]/.test(dsm) && /AE -\. secrets \.-> SecretMgr/.test(dsm));
+        assert('tool authz draws a Secret Manager node the Agent Runtime reads from', /SecretMgr\["Secret Manager"\]/.test(dsm) && /AE -\. secrets \.-> SecretMgr/.test(dsm));
         assert('Secret Manager and Cloud KMS are separate boxes, not one combined node', /KMS\["Cloud KMS \(CMEK\)"\]/.test(dsm) && !/Secret Manager & CMEK/.test(dsm));
       }
-      // managed assistant (Agent Engine + Vertex AI Search): the private Redis session store surfaces the
+      // managed assistant (Agent Runtime + Agent Search): the private Redis session store surfaces the
       // VPC even with no self-hosted compute, matching the Terraform that provisions Memorystore in a VPC.
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
       {
@@ -3529,7 +3532,7 @@
         // runtime, CMEK, and VPC-SC are gated by the design
         applyPreset('assistant', 'customer_support'); state.overrides.agentRuntime = 'agentengine'; state.overrides.cmek = false; state.overrides.enforceVpcSc = false;
         let mt = window.TfGen.generate(buildDeploySpec(exForm)).files['main.tf'];
-        assert('Agent Engine runtime emits a reasoning engine and no GKE agent', /google_vertex_ai_reasoning_engine/.test(mt) && !/enable_autopilot/.test(mt));
+        assert('Agent Runtime runtime emits a reasoning engine and no GKE agent', /google_vertex_ai_reasoning_engine/.test(mt) && !/enable_autopilot/.test(mt));
         assert('CMEK off omits Cloud KMS and VPC-SC off omits the perimeter', !/google_kms_crypto_key/.test(mt) && !/google_access_context_manager_service_perimeter/.test(mt));
         state.overrides.agentRuntime = 'gke'; state.overrides.cmek = true; state.overrides.enforceVpcSc = true;
         mt = window.TfGen.generate(buildDeploySpec(exForm)).files['main.tf'];
@@ -3585,7 +3588,7 @@
       'overrides.multiRegion': 'Run active in multiple regions for failover and locality.',
       'overrides.cmek': 'Encrypt data with customer-managed keys in Cloud KMS. Off uses Google-managed keys, which deploys in one shot with no key setup.',
       'overrides.enforceVpcSc': 'Wrap the Google services in a VPC Service Controls perimeter - a data-egress boundary around managed APIs, distinct from the Dedicated VPC network. Needs an org or folder access policy, so leave off for a sandbox apply and on for production.',
-      'overrides.agentRuntime': 'Where the agent runs. Agent Engine is the managed runtime with built-in sessions, memory, and observability. GKE Autopilot self-manages the runtime and needs a two-phase apply.',
+      'overrides.agentRuntime': 'Where the agent runs. Agent Runtime is the managed runtime with built-in sessions, memory, and observability. GKE Autopilot self-manages the runtime and needs a two-phase apply.',
       'overrides.dedicatedVpc': 'A private network (layer 3/4 isolation) for the self-hosted parts of the system - distinct from the VPC-SC service perimeter, which is a data-egress boundary around Google APIs. On: the diagram wraps the self-hosted resources (GKE runtime, self-built search, AlloyDB/Redis) in a Dedicated VPC network boundary, and the export creates that VPC and attaches GKE, AlloyDB, and Redis to it (AlloyDB gets Private Service Access). Off: it uses the project default network instead. Hybrid deployment forces this on, since the Cloud Router that terminates the interconnect attaches to the VPC.',
       'overrides.pattern': 'One agent, or a coordinated team of specialist agents.',
       'overrides.reactMaxIter': 'Maximum reason-act-observe loops allowed per request.',
@@ -3596,7 +3599,7 @@
       'overrides.routingSplit': 'Share of traffic routed to the fast model.',
       'overrides.judgeDiversity': 'Use a different model to check or judge outputs.',
       'overrides.retrieval': 'Grounding retrieval strategy used at query time.',
-      'overrides.ragEngine': 'Managed Vertex AI Search, or a self-built Vector Search pipeline.',
+      'overrides.ragEngine': 'Managed Agent Search, or a self-built Vector Search pipeline.',
       'overrides.metadataPrefilter': 'Filter candidates by metadata before the vector search.',
       'overrides.vectorDB': 'Backing store for the self-built vector index.',
       'overrides.ingestionSep': 'Index on a separate pipeline from query serving.',

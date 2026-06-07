@@ -529,7 +529,7 @@
             <li><a href="https://ai.google.dev/gemma/docs/core">Gemma</a>,
               <a href="https://huggingface.co/meta-llama/Llama-3.1-70B">Llama 3.1</a>,
               <a href="https://huggingface.co/Qwen/Qwen2.5-72B">Qwen2.5</a>,
-              <a href="https://huggingface.co/mistralai/Mixtral-8x7B-v0.1">Mistral / Mixtral</a></li>
+              <a href="https://research.nvidia.com/labs/nemotron/Nemotron-3/">NVIDIA Nemotron 3</a></li>
           </ul>
           <p style="margin:8px 0 4px; font-weight:600; color:var(--text);">Inference performance method (KV cache, prefill vs decode, roofline)</p>
           <ul>
@@ -560,8 +560,9 @@
       "llama-31-70b": { name: "Llama 3.1 70B",     params: 70.6e9,  layers: 80,  kvHeads: 8,  headDim: 128, fp8: true },
       "llama-31-405b":{ name: "Llama 3.1 405B",    params: 406e9,   layers: 126, kvHeads: 8,  headDim: 128, fp8: true },
       "qwen25-72b":   { name: "Qwen2.5 72B",       params: 72.7e9,  layers: 80,  kvHeads: 8,  headDim: 128, fp8: true },
-      "mistral-7b":   { name: "Mistral 7B",        params: 7.24e9,  layers: 32,  kvHeads: 8,  headDim: 128, fp8: true },
-      "mixtral-8x7b": { name: "Mixtral 8x7B (MoE)",params: 46.7e9,  active: 12.9e9, layers: 32, kvHeads: 8, headDim: 128, fp8: true, moe: true },
+      "gemma-4-31b":  { name: "Gemma 4 31B",       params: 30.7e9,  layers: 60,  kvHeads: 16, headDim: 256, fp8: true },
+      "nemotron-3-super-120b": { name: "Nemotron 3 Super 120B (MoE)", params: 120.6e9, active: 12.7e9, layers: 88,  kvHeads: 2, headDim: 128, fp8: true, moe: true },
+      "nemotron-3-ultra-550b": { name: "Nemotron 3 Ultra 550B (MoE)", params: 550e9,   active: 55e9,   layers: 120, kvHeads: 2, headDim: 128, fp8: true, moe: true },
     };
 
     /* ===================== Accelerator catalog =====================
@@ -888,8 +889,8 @@
       assert("2x H100 decodes faster than 1x at batch 1", tp2.perStreamTps > tp1.perStreamTps);
 
       // MoE reads only active params per token, so it decodes faster than a dense model of equal total size
-      const moe = compute({ ...state, model: "mixtral-8x7b", accel: "h100", tp: 2, batch: 1, ctxTok: 1 });
-      assert("MoE active-param read makes decode fast", moe.perStreamTps > 0 && moe.wBytesStep < totalWeightBytes(MODELS["mixtral-8x7b"], "bf16"));
+      const moe = compute({ ...state, model: "nemotron-3-super-120b", accel: "h100", tp: 2, batch: 1, ctxTok: 1 });
+      assert("MoE active-param read makes decode fast", moe.perStreamTps > 0 && moe.wBytesStep < totalWeightBytes(MODELS["nemotron-3-super-120b"], "bf16"));
 
       const pass = results.filter(r => r[1]).length;
       const fail = results.length - pass;

@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vertex AI Search in agentic systems</title>
+  <title>Agent Search in agentic systems</title>
     <script>
     /* Resolve the theme before first paint to avoid a flash. 'theme' is shared across all
        pages; it is set only when the user has explicitly chosen, absent means follow the OS. */
@@ -155,10 +155,10 @@
 
 <body>
   <main>
-    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Vertex AI Search</div>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Agent Search</div>
     <span class="tag">Managed RAG engine (indexing + search)</span>
-    <h1>Vertex AI Search in agentic systems</h1>
-    <p class="lead">Vertex AI Search (part of Vertex AI Agent Builder) is a <b>managed retrieval engine</b>. It ingests
+    <h1>Agent Search in agentic systems</h1>
+    <p class="lead">Agent Search (part of Agent Platform) is a <b>managed retrieval engine</b>. It ingests
       documents and crawls company websites into managed data stores, then serves <b>blended semantic plus keyword
       search</b> with built-in reranking and optional grounded answers with citations. It replaces the do-it-yourself
       stack of parse, chunk, embed, index, and rank with one service. The design rule that follows: make it the
@@ -207,9 +207,8 @@
       <div class="card avoid">
         <h3>Avoid</h3>
         <ul>
-          <li>You need a custom chunker, a specific embedding model, or fine ANN tuning (HNSW M and efSearch). Use <a class="src" href="vertex-vector-search.html">Vertex
-            AI Vector Search</a> with your own pipeline.</li>
-          <li>You run on-prem or self-host the stack. Managed Vertex AI Search is a Google Cloud service.</li>
+          <li>You need a custom chunker, a specific embedding model, or fine ANN tuning (HNSW M and efSearch). Use <a class="src" href="vertex-vector-search.html">Vector Search</a> with your own pipeline.</li>
+          <li>You run on-prem or self-host the stack. Managed Agent Search is a Google Cloud service.</li>
           <li>You already operate a vector database (<a class="src" href="alloydb.html">AlloyDB</a> pgvector, Elasticsearch) and want to keep retrieval
             there.</li>
           <li>Purely transactional or analytical lookups with no semantic retrieval. Use the right database instead.</li>
@@ -217,7 +216,7 @@
       </div>
     </div>
 
-    <h2>Choosing Vertex AI Search vs. alternatives</h2>
+    <h2>Choosing Agent Search vs. alternatives</h2>
     <table>
       <thead>
         <tr>
@@ -228,7 +227,7 @@
       <tbody>
         <tr>
           <td>Full control of chunking, embeddings, and ANN tuning</td>
-          <td><a class="src" href="vertex-vector-search.html">Vertex AI Vector Search</a> + <a class="src" href="document-ai.html">Document AI</a> pipeline</td>
+          <td><a class="src" href="vertex-vector-search.html">Vector Search</a> + <a class="src" href="document-ai.html">Document AI</a> pipeline</td>
         </tr>
         <tr>
           <td>Postgres plus vector in one engine, SQL pre-filtering</td>
@@ -240,7 +239,7 @@
         </tr>
         <tr>
           <td>Managed end-to-end RAG over documents and websites</td>
-          <td>Vertex AI Search</td>
+          <td>Agent Search</td>
         </tr>
       </tbody>
     </table>
@@ -259,26 +258,25 @@
     </ul>
 
     <h2>How it maps to this tool</h2>
-    <p>In the designer this is the <b>Indexing and retrieval engine</b> input, set to <b>Managed: Vertex AI Search</b> by
+    <p>In the designer this is the <b>Indexing and retrieval engine</b> input, set to <b>Managed: Agent Search</b> by
       default whenever retrieval is on. The architecture diagram shows it as the store that retrieval reads, fed by a
       dashed offline branch from the index sources (documents and website). Switching the engine to <b>Self-built</b>
       reveals the Vector DB, HNSW, and ingestion-separation knobs and swaps the bill of materials to <a class="src" href="document-ai.html">Document AI</a>,
       <a class="src" href="dataflow.html">Dataflow</a>, a vector database, and BM25.</p>
     <div class="note"><b>Default for RAG.</b> Because every RAG system must index its data first, the tool defaults to
-      managed Vertex AI Search when retrieval is on, and treats the self-built Vector Search pipeline as the opt-in
+      managed Agent Search when retrieval is on, and treats the self-built Vector Search pipeline as the opt-in
       alternative for teams that need the extra control.</div>
 
     <h2>Sources</h2>
     <ul class="sources">
       <li><a class="src" href="https://docs.cloud.google.com/generative-ai-app-builder/docs/introduction">Introduction to
-          Vertex AI Search (Google Cloud Docs)</a></li>
+          Agent Search (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/generative-ai-app-builder/docs/create-data-store-es">Create a
           search data store, including website data stores (Google Cloud Docs)</a></li>
-      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/overview">Vertex AI Vector
-          Search overview, the self-built alternative (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/overview">Vector Search overview, the self-built alternative (Google Cloud Docs)</a></li>
       <li><a class="src"
           href="https://medium.com/google-cloud/the-gcp-rag-spectrum-vertex-ai-search-rag-engine-and-vector-search-which-one-should-you-use-f56d50720d5a">The
-          GCP RAG Spectrum: Vertex AI Search, RAG Engine, and Vector Search (Medium)</a></li>
+          GCP RAG Spectrum: Agent Search, RAG Engine, and Vector Search (Medium)</a></li>
     </ul>
 
     <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify

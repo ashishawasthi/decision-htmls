@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vertex AI Eval in agentic systems</title>
+  <title>Agent Platform Evals in agentic systems</title>
     <script>
     /* Resolve the theme before first paint to avoid a flash. 'theme' is shared across all
        pages; it is set only when the user has explicitly chosen, absent means follow the OS. */
@@ -155,10 +155,10 @@
 
 <body>
   <main>
-    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Vertex AI Eval</div>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Agent Platform Evals</div>
     <span class="tag">Managed LLM evaluation</span>
-    <h1>Vertex AI Eval in agentic systems</h1>
-    <p class="lead">Vertex AI Eval scores model and agent output on metrics you choose: computed metrics, model-based
+    <h1>Agent Platform Evals in agentic systems</h1>
+    <p class="lead">Agent Platform Evals scores model and agent output on metrics you choose: computed metrics, model-based
       (LLM-as-judge) scoring, and custom rubrics, usually run on a <b>sampled, asynchronous stream</b> of production
       traffic rather than in the request path. Quality is not something a latency dashboard can see; you have to grade
       the answers, and grading every response with a judge model is too slow and too costly to sit inline. The design
@@ -167,7 +167,7 @@
       May 2026; verify against current Google Cloud docs.</p>
 
     <h2>Role</h2>
-    <p>The role is consistent across an interactive assistant and a task automation system: Vertex AI Eval is the
+    <p>The role is consistent across an interactive assistant and a task automation system: Agent Platform Evals is the
       <b>output-quality measurement layer</b>, running asynchronously beside production. What shifts is the metric set.
       An assistant leans on faithfulness, helpfulness, and citation accuracy; automation leans on task success and
       schema or format correctness. The placement, sampled and async, stays the same.</p>
@@ -197,7 +197,7 @@
       </div>
     </div>
 
-    <h2>Choosing Vertex AI Eval vs. alternatives</h2>
+    <h2>Choosing Agent Platform Evals vs. alternatives</h2>
     <table>
       <thead>
         <tr>
@@ -208,7 +208,7 @@
       <tbody>
         <tr>
           <td>Managed eval with computed, model-based, and custom metrics on Vertex</td>
-          <td>Vertex AI Eval (Gen AI evaluation service)</td>
+          <td>Agent Platform Evals (Gen AI evaluation service)</td>
         </tr>
         <tr>
           <td>Full control over metrics and harness, portable across clouds</td>

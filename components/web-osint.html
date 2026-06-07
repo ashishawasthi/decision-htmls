@@ -158,7 +158,7 @@
     <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / Web/OSINT</div>
     <span class="tag">Live web grounding</span>
     <h1>Web/OSINT in agentic systems</h1>
-    <p class="lead">Web/OSINT is live grounding from web search (Vertex AI grounding with Google Search, or external
+    <p class="lead">Web/OSINT is live grounding from web search (Agent Platform grounding with Google Search, or external
       search and OSINT APIs) for <b>fresh, open-world information</b>. The one fact that drives the design: every call is
       a <b>network round-trip to untrusted pages</b>, which costs latency, money, and brings source-trust and
       prompt-injection risk. The rule that follows: keep it off the sub-second hot path, cache grounded results for the
@@ -232,7 +232,7 @@
         </tr>
         <tr>
           <td>Controlled, fast retrieval over known content</td>
-          <td>Curated internal corpus with vector RAG (<a class="src" href="vertex-vector-search.html">Vertex AI Vector Search</a>)</td>
+          <td>Curated internal corpus with vector RAG (<a class="src" href="vertex-vector-search.html">Vector Search</a>)</td>
         </tr>
         <tr>
           <td>Fresh external content but predictable retrieval cost</td>
@@ -268,13 +268,12 @@
     <h2>Sources</h2>
     <ul class="sources">
       <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/overview">Grounding
-          overview for Vertex AI (Google Cloud Docs)</a></li>
+          overview for Agent Platform (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-search">Ground
           responses with Google Search (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://owasp.org/www-project-top-10-for-large-language-model-applications/">OWASP Top 10
           for LLM Applications, prompt injection (OWASP)</a></li>
-      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/overview">Vertex AI Vector
-          Search overview (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/overview">Vector Search overview (Google Cloud Docs)</a></li>
     </ul>
 
     <footer>Companion reference for the Agentic System Designer. Illustrative guidance as of May 2026; verify

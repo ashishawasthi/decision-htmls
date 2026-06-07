@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ADK + Agent Engine in agentic systems</title>
+  <title>ADK + Agent Runtime in agentic systems</title>
     <script>
     /* Resolve the theme before first paint to avoid a flash. 'theme' is shared across all
        pages; it is set only when the user has explicitly chosen, absent means follow the OS. */
@@ -155,19 +155,21 @@
 
 <body>
   <main>
-    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / ADK + Agent Engine</div>
+    <div class="crumb"><a href="../agentic-system-designer.html">Agentic System Designer</a> / Google Cloud components / ADK + Agent Runtime</div>
     <span class="tag">Agent SDK and managed runtime</span>
-    <h1>ADK + Agent Engine in agentic systems</h1>
+    <h1>ADK + Agent Runtime in agentic systems</h1>
     <p class="lead">The Agent Development Kit (ADK) is the <b>framework</b> for building agents, tools, and multi-agent
-      flows in code; Vertex AI Agent Engine is the <b>managed runtime</b> that handles sessions, state, scaling, and
-      tracing so you do not operate that infrastructure yourself. The design rule that follows: keep the two concerns
+      flows in code; Agent Runtime is the <b>managed runtime</b> that handles sessions, state, scaling, and
+      tracing so you do not operate that infrastructure yourself. Under the 2026 Agent Platform
+      rebrand, Agent Engine was renamed <b>Agent Runtime</b> on Agent Platform; the runtime and its
+      APIs are unchanged. The design rule that follows: keep the two concerns
       separate when you choose: pick the <b>build</b> framework for control over agent logic, and pick the <b>run</b>
       target for how much operations and governance you want to own. Reflects Google Cloud guidance as of May 2026;
       verify against current Google Cloud docs.</p>
 
     <h2>Role</h2>
     <p>This pairing is the platform layer the agent is built and run on. ADK defines the agents, their tools, and how
-      they hand off; Agent Engine runs them with managed sessions, memory, autoscaling, and tracing. The role is the same
+      they hand off; Agent Runtime runs them with managed sessions, memory, autoscaling, and tracing. The role is the same
       for an interactive assistant and for task automation: it is where agent logic lives and executes. What differs is
       how much you lean on the managed runtime for production governance versus operating the runtime yourself.</p>
 
@@ -179,8 +181,8 @@
           <li>Production agents that need managed sessions, state, autoscaling, and built-in tracing without you running
             the runtime.</li>
           <li>Teams that want code-level control over agent and tool logic (ADK) while offloading operations to a managed
-            service (Agent Engine).</li>
-          <li>Governance-sensitive deployments that benefit from a managed, observable runtime on Vertex AI.</li>
+            service (Agent Runtime).</li>
+          <li>Governance-sensitive deployments that benefit from a managed, observable runtime on Agent Platform.</li>
           <li>Multi-agent designs where ADK expresses orchestration and handoffs explicitly in code.</li>
         </ul>
       </div>
@@ -197,7 +199,7 @@
       </div>
     </div>
 
-    <h2>Choosing ADK + Agent Engine vs. alternatives</h2>
+    <h2>Choosing ADK + Agent Runtime vs. alternatives</h2>
     <table>
       <thead>
         <tr>
@@ -209,8 +211,8 @@
       <tbody>
         <tr>
           <td>Production governance with least operations</td>
-          <td>ADK + Agent Engine (managed runtime)</td>
-          <td>code-level control, managed scaling and tracing, on Vertex AI</td>
+          <td>ADK + Agent Runtime (managed runtime)</td>
+          <td>code-level control, managed scaling and tracing, on Agent Platform</td>
         </tr>
         <tr>
           <td>Fastest start, low-code, less control</td>
@@ -227,30 +229,28 @@
 
     <h2>Integration patterns and tuning</h2>
     <ul>
-      <li><b>Build with ADK, run on Agent Engine:</b> author agents, tools, and handoffs in ADK, then deploy to Agent
-        Engine to get managed sessions, state, autoscaling, and tracing for production.</li>
-      <li><b>Sessions and state:</b> let Agent Engine manage conversation sessions and memory rather than building that
+      <li><b>Build with ADK, run on Agent Runtime:</b> author agents, tools, and handoffs in ADK, then deploy to Agent Runtime to get managed sessions, state, autoscaling, and tracing for production.</li>
+      <li><b>Sessions and state:</b> let Agent Runtime manage conversation sessions and memory rather than building that
         layer yourself, which is much of its value for an interactive assistant.</li>
       <li><b>Tracing and governance:</b> use the built-in tracing to debug agent runs and meet observability and
         governance requirements in production.</li>
       <li><b>Portability path:</b> if no-lock-in is a hard requirement, choose <a class="src" href="langgraph.html">LangGraph</a> and accept that you own the
-        runtime, scaling, and observability that Agent Engine would otherwise provide.</li>
+        runtime, scaling, and observability that Agent Runtime would otherwise provide.</li>
     </ul>
 
     <h2>How it maps to this tool</h2>
-    <p>This is the designer's <b>Platform</b> input: ADK + Agent Engine versus <a class="src" href="agent-studio.html">Agent Studio</a> versus <a class="src" href="langgraph.html">LangGraph</a>. The choice
+    <p>This is the designer's <b>Platform</b> input: ADK + Agent Runtime versus <a class="src" href="agent-studio.html">Agent Studio</a> versus <a class="src" href="langgraph.html">LangGraph</a>. The choice
       sets how the agent is built and where it runs.</p>
     <div class="note"><b>It is a governance and operations decision.</b> The tool frames Platform along the build-versus-run
-      axis: the managed runtime (ADK + Agent Engine) for production governance and least operations, Agent Studio for the
+      axis: the managed runtime (ADK + Agent Runtime) for production governance and least operations, Agent Studio for the
       fastest low-code start, and LangGraph for portability and control when no lock-in is the priority.</div>
 
     <h2>Sources</h2>
     <ul class="sources">
       <li><a class="src" href="https://google.github.io/adk-docs/">Agent Development Kit (ADK) documentation</a></li>
-      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview">Vertex
-          AI Agent Engine overview (Google Cloud Docs)</a></li>
+      <li><a class="src" href="https://docs.cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview">Agent Runtime overview (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://docs.cloud.google.com/dialogflow/vertex/docs/concept/agent-builder">Build agents
-          with Vertex AI Agent Builder and Agent Studio (Google Cloud Docs)</a></li>
+          with Agent Platform and Agent Studio (Google Cloud Docs)</a></li>
       <li><a class="src" href="https://langchain-ai.github.io/langgraph/">LangGraph documentation</a></li>
     </ul>
 
