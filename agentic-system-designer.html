@@ -1151,7 +1151,7 @@
         <div class="ctl" data-ov="dedicatedVpc"><label>Dedicated VPC network</label>
           <input type="checkbox" data-bind="overrides.dedicatedVpc">
         </div>
-        <div class="ctl" data-ov="agentRuntime"><label>Agent runtime</label>
+        <div class="ctl" data-ov="agentRuntime"><label>Agent compute</label>
           <select data-bind="overrides.agentRuntime">
             <option value="agentengine">Agent Runtime (managed)</option>
             <option value="gke">GKE Autopilot</option>
@@ -2011,9 +2011,9 @@
       Client: 'The user-facing app (web or chat) that sends queries and renders grounded, cited answers.',
       EdgeGW: 'The request-side API gateway at the system edge: authenticates the caller (IAM + mTLS), enforces per-tenant rate limits, redacts inbound PII, and screens for prompt injection and jailbreaks before anything reaches the agent. Implemented by Apigee, Cloud API Gateway, or a third-party gateway such as Kong. Shows only the controls your inputs require. Sized on inbound user QPS.',
       Armor: 'Model Armor screens every model call inline: it filters prompt injection and jailbreaks on the way in and redacts or blocks unsafe or leaking output on the way out. Routing and fail-over between models are configured inside the agent; per-call audit goes to Observability. It sees every model call, so it sizes on model-call QPS (user QPS × fan-out), not user QPS.',
-      Orchestrator: 'Inside Agent Runtime: decomposes the request into steps, calls tools and retrieval, coordinates the generate-evaluate-revise loop, and composes the final answer.',
-      Generator: 'Inside Agent Runtime: calls the models through Model Armor and reads retrieval to produce the draft, then revises it from the Validator critique until it passes (the Self-Refine loop).',
-      Validator: 'Inside Agent Runtime: the automated quality gate. It evaluates the draft against the acceptance criteria and, on a fail, returns a critique to the Generator to revise; on a pass the answer is returned or sent for human review.',
+      Orchestrator: 'Inside Agent compute: decomposes the request into steps, calls tools and retrieval, coordinates the generate-evaluate-revise loop, and composes the final answer.',
+      Generator: 'Inside Agent compute: calls the models through Model Armor and reads retrieval to produce the draft, then revises it from the Validator critique until it passes (the Self-Refine loop).',
+      Validator: 'Inside Agent compute: the automated quality gate. It evaluates the draft against the acceptance criteria and, on a fail, returns a critique to the Generator to revise; on a pass the answer is returned or sent for human review.',
       SecretMgr: 'Secret Manager holds the tool and database credentials the agent needs. The agent service account reads only the secrets it is granted, scoped per tool, so a leak of one credential does not expose the rest.',
       KMS: 'Cloud KMS holds the customer-managed encryption key (CMEK). It encrypts the managed data-at-rest stores - Cloud Storage, the managed state store (AlloyDB / Spanner / Cloud SQL / Memorystore), the Spanner durable tier, the managed Memorystore cache, and the BigQuery feedback dataset - so data at rest is under a key you own and can rotate or revoke. Self-hosted stores (a self-built vector store or Redis on GKE) use disk and application encryption instead.',
       Cache: 'A response cache on the request path: on a hit it returns a stored answer and skips the agent and model entirely, cutting cost and latency on the repeat-heavy head of traffic. Exact-match keys on the normalized query; semantic match keys on the query embedding within a similarity threshold. Sized by the effective hit rate. Invalidation is TTL plus version busting: each entry expires on a TTL set from the data freshness (real-time off, minutes, end-of-day about 24h, static long), and the cache key is namespaced by model, prompt, and index version so shipping a new model or prompt drops stale answers automatically.',
@@ -2173,7 +2173,7 @@
       // Agent Runtime (or GKE) hosts the orchestrator, generator, and validator as one runtime. The
       // internal components are drawn inside a subgraph; the generate-evaluate-revise reflection loop
       // (the Generator revises its own draft on the Validator critique) is shown as a back-edge.
-      const aeLabel = o.agentRuntime === 'gke' ? 'Agent runtime (GKE Autopilot)' : 'Agent Runtime';
+      const aeLabel = `Agent compute (${o.agentRuntime === 'gke' ? 'GKE Autopilot' : 'Agent Runtime'})`;
       const agentEngine = () => {
         L.push(`subgraph AE["${aeLabel}"]`);
         ['Orchestrator', 'Generator', 'Validator'].forEach(id => L.push(node(id, id, 'orch')));
@@ -2609,8 +2609,8 @@
       // private-only hybrid swaps the public 'API Gateway' hop for the light 'IAP / mTLS' identity check
       const inNode = inboundPath(o, i).length && (ph ? 'IAP / mTLS' : 'API Gateway');
       const path = state.purpose === 'assistant'
-        ? [ingress, inNode, responseCacheOn(o) && 'response cache', 'Agent Runtime', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', armorOn && 'Model Armor', 'LLM'].filter(Boolean)
-        : [ingress, ph && inNode, responseCacheOn(o) && 'response cache', 'Agent Runtime', armorOn && 'Model Armor', 'LLM'].filter(Boolean);
+        ? [ingress, inNode, responseCacheOn(o) && 'response cache', 'Agent compute', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', armorOn && 'Model Armor', 'LLM'].filter(Boolean)
+        : [ingress, ph && inNode, responseCacheOn(o) && 'response cache', 'Agent compute', armorOn && 'Model Armor', 'LLM'].filter(Boolean);
       const crit = state.purpose === 'assistant' ? 'faithfulness + citation accuracy' : 'PR-success + rework rounds';
       const slo = i.latencyPreset === 'subsecond' ? 'p95 < 1s' : (i.latencyPreset === 'minutes' ? 'per-run < N min' : 'p95 < 2s start / 6s full');
       const comps = [inNode, responseCacheOn(o) && 'response cache', armorOn && 'Model Armor', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
@@ -3718,7 +3718,7 @@
       'overrides.multiRegion': 'Run active in multiple regions for failover and locality.',
       'overrides.cmek': 'Encrypt data with customer-managed keys in Cloud KMS. Off uses Google-managed keys, which deploys in one shot with no key setup.',
       'overrides.enforceVpcSc': 'Wrap the Google services in a VPC Service Controls perimeter - a data-egress boundary around managed APIs, distinct from the Dedicated VPC network. Needs an org or folder access policy, so leave off for a sandbox apply and on for production.',
-      'overrides.agentRuntime': 'Where the agent runs. Agent Runtime is the managed runtime with built-in sessions, memory, and observability. GKE Autopilot self-manages the runtime and needs a two-phase apply.',
+      'overrides.agentRuntime': 'Where the agent runs. The managed option is Agent Runtime, with built-in sessions, memory, and observability; GKE Autopilot self-manages the runtime and needs a two-phase apply.',
       'overrides.dedicatedVpc': 'A private network (layer 3/4 isolation) for the self-hosted parts of the system - distinct from the VPC-SC service perimeter, which is a data-egress boundary around Google APIs. On: the diagram wraps the self-hosted resources (GKE runtime, self-built search, a self-hosted Redis-on-GKE tier) in a Dedicated VPC network boundary, and the export creates that VPC and attaches the GKE runtime to it; the managed stores (AlloyDB, Memorystore for Redis Cluster) are reached from the VPC over Private Service Connect endpoints. Off: it uses the project default network instead. Hybrid deployment forces this on, since the Cloud Router that terminates the interconnect attaches to the VPC.',
       'overrides.pattern': 'One agent, or a coordinated team of specialist agents.',
       'overrides.reactMaxIter': 'Maximum reason-act-observe loops allowed per request.',
