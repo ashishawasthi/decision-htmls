@@ -1161,10 +1161,10 @@
 
       <fieldset data-grp="workload">
         <legend>Workload &amp; SLO <span class="vis-count" id="visCount"></span></legend>
-        <div class="ctl" data-vis="always"><label>Latency SLO</label>
+        <div class="ctl" data-vis="latencySlo"><label>Latency SLO</label>
           <select data-bind="inputs.latencyPreset">
-            <option value="subsecond" data-purpose="assistant">Sub-second (deterministic)</option>
-            <option value="agentic" data-purpose="assistant">&lt;2s start / &lt;6s full (agentic)</option>
+            <option value="subsecond">Sub-second (deterministic)</option>
+            <option value="agentic">&lt;2s start / &lt;6s full (agentic)</option>
             <option value="batch">5-10s batch</option>
             <option value="minutes">Per-run minutes (automation)</option>
           </select>
@@ -1738,9 +1738,10 @@
     function deriveOverrides() {
       const o = state.overrides, i = state.inputs, locks = {};
       const lock = (k, v, reason, cause) => { o[k] = v; locks[k] = { reason, cause }; };
-      // Task automation runs are async (seconds-to-minutes); the interactive Sub-second and agentic SLOs
-      // do not apply, so coerce a stale or hand-set value to per-run minutes before the locks evaluate.
-      if (state.purpose === 'automation' && (i.latencyPreset === 'subsecond' || i.latencyPreset === 'agentic')) i.latencyPreset = 'minutes';
+      // Task automation runs are async (per-run minutes); no interactive (Sub-second/agentic) or batch
+      // latency tier applies, so the Latency SLO control is hidden for automation (see visibleInputs)
+      // and the value is pinned to per-run minutes here, coercing any stale or hand-set value first.
+      if (state.purpose === 'automation') i.latencyPreset = 'minutes';
       // performance locks
       if (i.latencyPreset === 'subsecond') { lock('pattern', 'single', 'Sub-second → single-agent path', 'sub-second'); lock('retrieval', o.retrieval === 'rerank' ? 'hybrid' : o.retrieval, 'Sub-second → drop reranker', 'sub-second'); }
       // scale locks
@@ -2013,6 +2014,8 @@
       Armor: 'Model Armor screens every model call inline: it filters prompt injection and jailbreaks on the way in and redacts or blocks unsafe or leaking output on the way out. Routing and fail-over between models are configured inside the agent; per-call audit goes to Observability. It sees every model call, so it sizes on model-call QPS (user QPS × fan-out), not user QPS.',
       Orchestrator: 'Inside Agent compute: decomposes the request into steps, calls tools and retrieval, coordinates the generate-evaluate-revise loop, and composes the final answer.',
       Generator: 'Inside Agent compute: calls the models through Model Armor and reads retrieval to produce the draft, then revises it from the Validator critique until it passes (the Self-Refine loop).',
+      // Single-agent variant: no separate Orchestrator or Validator, so the one agent plans, generates, and self-checks in a single pass.
+      GeneratorSingle: 'Inside Agent compute: the single agent. It plans the request, calls the models through Model Armor, reads retrieval, and produces the final answer in one pass - there is no separate orchestrator or validator critique loop.',
       Validator: 'Inside Agent compute: the automated quality gate. It evaluates the draft against the acceptance criteria and, on a fail, returns a critique to the Generator to revise; on a pass the answer is returned or sent for human review.',
       SecretMgr: 'Secret Manager holds the tool and database credentials the agent needs. The agent service account reads only the secrets it is granted, scoped per tool, so a leak of one credential does not expose the rest.',
       KMS: 'Cloud KMS holds the customer-managed encryption key (CMEK). It encrypts the managed data-at-rest stores - Cloud Storage, the managed state store (AlloyDB / Spanner / Cloud SQL / Memorystore), the Spanner durable tier, the managed Memorystore cache, and the BigQuery feedback dataset - so data at rest is under a key you own and can rotate or revoke. Self-hosted stores (a self-built vector store or Redis on GKE) use disk and application encryption instead.',
@@ -2139,6 +2142,13 @@
     }
     function buildMainDiagram() {
       const i = state.inputs, o = state.overrides; const L = [];
+      // The Agent compute box reflects the pattern. A multi-agent team draws the full Orchestrator → Generator
+      // → Validator triad with its generate-evaluate-revise loop; a single agent collapses to just the Generator
+      // (it plans, generates, and self-checks in one), so the request entry and any human-review edge attach to
+      // the Generator instead of a separate orchestrator / validator.
+      const multiAgent = o.pattern === 'multi';
+      const agentEntry = multiAgent ? 'Orchestrator' : 'Generator';   // node the inbound request lands on
+      const agentReview = multiAgent ? 'Validator' : 'Generator';     // node a human-review / await edge hangs off
       // LR reads as a left-to-right request lifecycle on normal screens; fall back to TD on the
       // mobile single-column layout (same 880px breakpoint), where a wide LR graph is unreadable.
       const dir = window.matchMedia('(max-width:880px)').matches ? 'TD' : 'LR'; L.push('flowchart ' + dir);
@@ -2176,10 +2186,15 @@
       const aeLabel = `Agent compute (${o.agentRuntime === 'gke' ? 'GKE Autopilot' : 'Agent Runtime'})`;
       const agentEngine = () => {
         L.push(`subgraph AE["${aeLabel}"]`);
-        ['Orchestrator', 'Generator', 'Validator'].forEach(id => L.push(node(id, id, 'orch')));
-        L.push('Orchestrator --> Generator');
-        L.push('Generator --> Validator');
-        L.push('Validator -. revise .-> Generator');
+        if (multiAgent) {
+          ['Orchestrator', 'Generator', 'Validator'].forEach(id => L.push(node(id, id, 'orch')));
+          L.push('Orchestrator --> Generator');
+          L.push('Generator --> Validator');
+          L.push('Validator -. revise .-> Generator');
+        } else {
+          // Single agent: one Generator plans, generates, and self-checks - no separate orchestrator or validator.
+          L.push(node('Generator', 'Generator', 'orch'));
+        }
         L.push('end');
       };
       // Model Armor sits inline on the model leg (sanitize input and output). The leg originates from
@@ -2294,9 +2309,9 @@
         if (cacheOn) {
           L.push(`CloudRouter ${edge} Cache`);
           L.push('Cache -. hit .-> OnpremUsers');
-          L.push('Cache -- miss --> Orchestrator');
+          L.push(`Cache -- miss --> ${agentEntry}`);
         } else {
-          L.push(`CloudRouter ${edge} Orchestrator`);
+          L.push(`CloudRouter ${edge} ${agentEntry}`);
         }
         // Egress: the agent reaches on-prem systems of record back over the same private link.
         if (hasOnpremData) L.push('Generator == over interconnect ==> OnpremDB');
@@ -2354,8 +2369,8 @@
         closePerim();
         // cross-boundary entry edge (ingress into the perimeter) and human review (outside). Suppressed in
         // private-only hybrid, where onpremLink() emits the sole ingress straight from the on-prem network.
-        if (!privateOnly) L.push(cacheOn ? 'Cache -- miss --> Orchestrator' : `${head} --> Orchestrator`);
-        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push('Validator -. review .-> Appr'); }
+        if (!privateOnly) L.push(cacheOn ? `Cache -- miss --> ${agentEntry}` : `${head} --> ${agentEntry}`);
+        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push(`${agentReview} -. review .-> Appr`); }
         if (o.feedbackLoop) { L.push(node('Fb', 'Feedback → eval', 'gov')); L.push('Obs -. evals .-> Fb'); }
         onpremLink(cacheOn, inboundPath(o, i).length ? 'IAP / mTLS' : '');
       } else {
@@ -2397,9 +2412,9 @@
         kmsNode();   // CMEK edges, emitted once every managed data store above is declared
         L.push(node('Obs', 'Observability', 'obs')); L.push('AE -. traces .-> Obs');
         closePerim();
-        if (!privateOnly) L.push(cacheOn ? 'Cache -- miss --> Orchestrator' : `${head} --> Orchestrator`);
+        if (!privateOnly) L.push(cacheOn ? `Cache -- miss --> ${agentEntry}` : `${head} --> ${agentEntry}`);
         // human review of the quality gate (outside the perimeter), with resume back into the agent
-        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push('Validator -. await human .-> Appr'); L.push('Appr -. resume on approve .-> Orchestrator'); }
+        if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push(`${agentReview} -. await human .-> Appr`); L.push(`Appr -. resume on approve .-> ${agentEntry}`); }
         onpremLink(cacheOn, inboundPath(o, i).length ? 'IAP / mTLS' : '');
       }
       const dp = DIAGRAM_PALETTE[isLightTheme() ? 'light' : 'dark'];
@@ -2454,8 +2469,6 @@
       $$('.ctl[data-vis]').forEach(el => { total++; const key = el.dataset.vis; const ok = vis[key] !== false; el.classList.toggle('hidden', !ok); if (ok) shown++; });
       $$('fieldset[data-vis]').forEach(el => { const key = el.dataset.vis; el.style.display = vis[key] === false ? 'none' : ''; });
       $('#visCount').textContent = `(${shown}/${total} shown)`;
-      // Sub-second and agentic are interactive-assistant SLOs; hide them from the Latency dropdown for Task automation.
-      $$('select[data-bind="inputs.latencyPreset"] option[data-purpose="assistant"]').forEach(opt => { opt.hidden = state.purpose === 'automation'; });
       // data-source role tooltips (purpose-aware) + info icons. No per-source warning flag: a slow
       // source forced onto a sub-second path is flagged on the Latency p95 metric instead.
       $$('#dataSources label').forEach(lab => {
@@ -2485,6 +2498,7 @@
       const staleable = i.dataSources.some(s => ['stream', 'bigquery', 'onprem', 'doc_corpus', 'website'].includes(s));
       v.corpus = hasCorpus; v.freshness = staleable;
       v.languages = state.purpose === 'assistant';
+      v.latencySlo = state.purpose === 'assistant';   // automation is pinned to per-run minutes; no SLO choice
       v.multi = o.pattern === 'multi';
       v.routing = o.smartRouting;
       v.retr = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
@@ -2814,7 +2828,9 @@
         // purpose tooltip on hover. Cover both the SVG shape (native <title> on the <g>)
         // and the HTML label area (title attr on the foreignObject content, since htmlLabels
         // means the cursor sits over an HTML <div>/<span>, not the SVG shape).
-        const purpose = NODE_PURPOSE[nodeIdFromSvg(n)];
+        const nid = nodeIdFromSvg(n);
+        // The lone single-agent Generator has no Validator-critique loop, so give it a pattern-accurate tip.
+        const purpose = (nid === 'Generator' && state.overrides.pattern !== 'multi') ? NODE_PURPOSE.GeneratorSingle : NODE_PURPOSE[nid];
         if (purpose) {
           if (!n.querySelector(':scope > title')) {
             const ttl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
@@ -3341,9 +3357,12 @@
       applyPreset('automation', 'strictpii'); deriveOverrides();
       const dgHitl = buildMainDiagram();
       assert('async approval shows await + resume edges', /Validator -\. await human \.-> Appr/.test(dgHitl) && /Appr -\. resume on approve \.-> Orchestrator/.test(dgHitl));
-      // Sub-second and agentic SLOs do not apply to automation: a stale value coerces to per-run minutes
+      // No interactive or batch SLO applies to automation: any stale value pins to per-run minutes
       applyPreset('automation', 'internal_lowstakes'); state.inputs.latencyPreset = 'subsecond'; deriveOverrides();
       assert('automation coerces interactive SLO to per-run minutes', state.inputs.latencyPreset === 'minutes');
+      state.inputs.latencyPreset = 'batch'; deriveOverrides();
+      assert('automation coerces batch SLO to per-run minutes', state.inputs.latencyPreset === 'minutes');
+      assert('Latency SLO control is hidden for automation', visibleInputs().latencySlo === false);
       // State store: AlloyDB is the regional automation default; Spanner is derived only for active-active
       // multi-region writes; the diagram label, BOM, and linter track the selected store.
       applyPreset('automation', 'internal_lowstakes'); deriveOverrides();
@@ -3457,7 +3476,8 @@
       // a response cache on a hybrid link short-circuits the PRIVATE ingress: hit back to the on-prem caller, miss to the agent
       applyPreset('assistant', 'highvol_qa'); state.overrides.deployment = 'hybrid'; deriveOverrides();
       const dgPrivCache = buildMainDiagram();
-      assert('hybrid response cache short-circuits the private on-prem ingress, not a public client', responseCacheOn(state.overrides) && /CloudRouter -- IAP \/ mTLS --> Cache/.test(dgPrivCache) && /Cache -\. hit \.-> OnpremUsers/.test(dgPrivCache) && /Cache -- miss --> Orchestrator/.test(dgPrivCache) && !/Cache -\. hit \.-> Client/.test(dgPrivCache));
+      // highvol_qa is sub-second, which locks the single-agent pattern, so the cache miss falls through to the lone Generator
+      assert('hybrid response cache short-circuits the private on-prem ingress, not a public client', responseCacheOn(state.overrides) && /CloudRouter -- IAP \/ mTLS --> Cache/.test(dgPrivCache) && /Cache -\. hit \.-> OnpremUsers/.test(dgPrivCache) && /Cache -- miss --> Generator/.test(dgPrivCache) && !/Cache -\. hit \.-> Client/.test(dgPrivCache));
       // private-only hybrid is consistent across the numeric panels: light IAP hop in latency, on-prem→IAP in the
       // trace, and a BoM that drops the public Apigee + Cloud API Gateway SKUs while keeping Cloud IAP
       applyPreset('assistant', 'expert_copilot'); state.overrides.deployment = 'hybrid'; deriveOverrides();
