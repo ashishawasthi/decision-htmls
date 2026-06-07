@@ -29,7 +29,6 @@
       --bar: #3b82f6;
       --design: #7c5cff;
       --serving: #34d399;
-      --napkin: #818cf8;
     }
 
     /* Light palette. Dark above stays the default, so the page is unchanged in dark mode. */
@@ -47,7 +46,6 @@
       --bar: #0969da;
       --design: #6639ba;
       --serving: #0f9d6b;
-      --napkin: #5b54d6;
     }
 
     * {
@@ -267,10 +265,6 @@
       --accent-color: var(--serving);
     }
 
-    .card.napkin {
-      --accent-color: var(--napkin);
-    }
-
     .deferred {
       margin-top: 32px;
       padding-top: 22px;
@@ -393,23 +387,6 @@
         </div>
       </a>
 
-      <a class="card napkin" href="system-design-napkin.html">
-        <div class="label">Estimate &middot; Resource sizing</div>
-        <h2>System Design Napkin</h2>
-        <p class="description">Back-of-the-envelope for a system design round: turn DAU into <b
-            style="color:var(--napkin)">QPS</b>, size storage and bandwidth, see cache relieve the backend, apply
-          Little's Law to concurrency and pools, and decompose a slow request. Generic distributed systems.</p>
-        <div class="meta">
-          <span class="tag">QPS / storage / bandwidth</span>
-          <span class="tag">Little's Law</span>
-          <span class="tag">Latency ladder &amp; nines</span>
-          <span class="tag">Why is it slow</span>
-        </div>
-        <div class="footer">
-          <span class="open">Open <span class="arrow">&rarr;</span></span>
-        </div>
-      </a>
-
       <a class="card cost" href="agent-infra-cost-calculator.html">
         <div class="label">Cost &middot; Where to run</div>
         <h2>Gen AI Deployment Options &amp; Estimates</h2>
@@ -462,7 +439,7 @@
   </main>
 
   <footer>
-    <p class="footer-note">All five tools are self-contained static HTML, with no build and no dependencies. Open any
+    <p class="footer-note">All four tools are self-contained static HTML, with no build and no dependencies. Open any
       of them directly in a browser.</p>
     <p class="disclaimer">
       Rough estimates for planning and learning, not exact figures. A personal project, provided as is and not
