@@ -1479,6 +1479,29 @@
       model mirrors the <a href="agent-infra-cost-calculator.html">cost calculator</a>. For first-principles serving
       latency, throughput, and KV-cache concurrency, use the
       <a href="llm-serving-performance-calculator.html">LLM Serving Performance calculator</a>.</p>
+    <p><b>Workload and derivation assumptions.</b> Every right-panel number derives from the inputs with these constants:</p>
+    <ul>
+      <li>Requests / month = actors × actions per actor per day × 30.4 days.</li>
+      <li>Average QPS spreads the daily actions across the active window (active hours/week × 3600 ÷ 7); peak applies the
+        burst multiplier on top.</li>
+      <li>Vector index ≈ corpus docs × 5 chunks/doc × 768-dim × 4 bytes, then sharded.</li>
+      <li>Latency p95 sums the critical-path line items; parallel grounding takes the slowest source, not the sum.</li>
+      <li>Per-request line items assume one BigQuery scan of about 50 MB, one web search, and one on-prem call when those
+        sources are selected.</li>
+      <li>Model-call fan-out = agents × a damped ReAct loop (1 + (iterations − 1) × 0.5); the model leg and Model Armor
+        quota size on user QPS × this fan-out.</li>
+    </ul>
+    <p><b>Reference links.</b> Canonical docs for the products this design recommends:</p>
+    <ul>
+      <li><a href="https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview">Vertex AI Agent Engine</a>
+        and the <a href="https://google.github.io/adk-docs/">Agent Development Kit (ADK)</a>.</li>
+      <li><a href="https://cloud.google.com/security-command-center/docs/model-armor-overview">Model Armor</a> and
+        <a href="https://cloud.google.com/vpc-service-controls/docs/overview">VPC Service Controls</a>.</li>
+      <li><a href="https://cloud.google.com/alloydb/docs/overview">AlloyDB</a> vs
+        <a href="https://cloud.google.com/spanner/docs">Spanner</a> for the state store.</li>
+      <li><a href="https://cloud.google.com/generative-ai-app-builder/docs/introduction">Vertex AI Search</a> for managed
+        retrieval.</li>
+    </ul>
   </details>
 
   <div class="foot">A personal project, provided as is and not affiliated with or endorsed by any
@@ -2456,6 +2479,8 @@
       const card = (k, v, t) => `<div class="metric" title="${(t || '').replace(/"/g, '&quot;')}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
       const cards = [];
       cards.push(card(m.volLabel + ' avg / peak', `${fmt(m.volAvg, 2)} <small>/ ${fmt(m.volPeak, 2)}</small>`, 'actors × actions/day over the active window, × burst'));
+      const fan = modelCallsPerReq(o);
+      if (fan > 1) cards.push(card('Model-call QPS (peak)', `${fmt(m.volPeak * fan, 2)} <small>· ×${fan} fan-out</small>`, 'user QPS × agent fan-out (agents × a damped ReAct loop); Model Armor quota and token spend size on this, not user QPS'));
       cards.push(card('Tokens / day', fmt(m.tokensDay, 1), 'daily actions × (in+out)'));
       const chParts = [`base ${o.cacheHit || 0}% (slider)`];
       if (o.autocomplete) chParts.push('autocomplete +25');
@@ -2463,6 +2488,7 @@
       cards.push(card('Cache hit (eff.)', (m.cacheHitEff * 100).toFixed(0) + '%', `final effective response-cache hit rate = ${chParts.join(' + ')}, capped at 80%`));
       if (m.indexGB > 0) cards.push(card('Vector index', fmt(m.indexGB, 1) + ' <small>GB · ' + m.shards + ' shard(s)</small>', 'chunks × dim × 4 bytes'));
       if (m.indexGB > 0 && o.ragEngine === 'selfbuilt') cards.push(card('HNSW recall / ANN p95', (m.hnswRecall * 100).toFixed(1) + '% <small>/ ' + fmt(m.annP95, 0) + 'ms</small>', 'efSearch/M trade recall vs latency'));
+      if (m.gpuNodes) cards.push(card('Self-host fleet', `${m.gpuNodes} <small>× 8 ${(o.accelerator || 'h100').toUpperCase()} · ${m.gpuUtilPct}% util</small>`, 'nodes to serve peak decode tokens/s at the chosen precision and accelerator; sized on peak QPS × output tokens'));
       return cards.join('');
     }
     function latencyPanelHtml(m) {
@@ -2490,6 +2516,11 @@
         rows.push(row('Output', money(cp.output)));
         if (cp.grounding > 0) rows.push(row('Web grounding', money(cp.grounding), 'live web search · $/1k calls'));
         rows.push(row('GenAI', money(m.costOpt), '', true));
+        if (m.costNaive > 0 && m.costNaive > m.costOpt) {
+          const savedPct = Math.round((1 - m.costOpt / m.costNaive) * 100);
+          rows.push(row('Naive baseline', money(m.costNaive), 'reasoning model, no cache/routing'));
+          rows.push(row('Optimizations save', money(m.costNaive - m.costOpt) + ` (${savedPct}%)`, 'vs naive'));
+        }
       }
       if (m.gpuMo) {
         rows.push(grp('GenAI · self-host on GPUs'));
@@ -2505,6 +2536,9 @@
       rows.push(row('Platform', money(s.platMo) + (s.red.length ? ` <span class="cred">+${s.red.length} unpriced</span>` : ''), s.priced.length + ' priced', true));
       // ---- combined run-rate ----
       rows.push(row('Total run-rate', money(s.totalMo), `GenAI + platform${s.red.length ? ' · excludes unpriced' : ''}`, true));
+      // ---- unit economics: the only volume-normalized number that compares two pinned designs ----
+      const reqMo = (state.inputs.actors || 0) * (state.inputs.actionsPerDay || 0) * 30.4;
+      if (reqMo > 0) rows.push(row('Cost / 1k requests', '$' + (s.totalMo / reqMo * 1000).toFixed(2), 'total run-rate ÷ monthly requests', true));
       return `<div class="costbox">${rows.join('')}</div>`;
     }
     function driverTags(drv) { return drv ? drv.map(d => `<span class="tag" title="driven by ${d}">${d}</span>`).join(' ') : '<span class="tag static" title="same for every config">fixed</span>'; }
@@ -2520,6 +2554,7 @@
       const rows = [
         ['Live trace', path.join(' → '), comps.length ? comps : ['components']],
         ['Eval', `Vertex Eval on 5% async sample - ${crit}; drift > 2σ`, ['purpose']],
+        (i.languages && i.languages.length > 1) ? ['Eval languages', `${i.languages.map(l => l.toUpperCase()).join(', ')} - run the faithfulness and citation eval per language so non-English quality is tracked separately`, ['languages']] : null,
         ['SLO', slo, ['latency']],
         o.feedbackLoop ? ['Feedback', 'thumbs + reason → eval store', ['feedback loop']] : null,
         ['Always-on', 'Cloud Trace + Logging (redacted) + OpenTelemetry', null],

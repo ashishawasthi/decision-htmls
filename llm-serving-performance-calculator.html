@@ -416,6 +416,16 @@
             <span class="unit">ms / token</span>
           </div>
           <div class="input-row">
+            <label for="sloTtft">TTFT SLO (first token)</label>
+            <input type="number" id="sloTtft" value="1000" min="0" step="100">
+            <span class="unit">ms</span>
+          </div>
+          <div class="input-row">
+            <label for="targetUtil">Target utilization</label>
+            <input type="number" id="targetUtil" value="70" min="10" max="100" step="5">
+            <span class="unit">% of peak</span>
+          </div>
+          <div class="input-row">
             <label for="costHr">Accelerator cost (per device)</label>
             <input type="number" id="costHr" value="0" min="0" step="0.5">
             <span class="unit">$ / hr</span>
@@ -581,7 +591,7 @@
       model: "llama-31-70b", prec: "fp8", kvFp8: false,
       accel: "h100", tp: 2, mfu: 0.4,
       promptTok: 2000, outTok: 500, ctxTok: 2500, batch: 32,
-      peakQps: 20, sloTpot: 40, costHr: 0,
+      peakQps: 20, sloTpot: 40, sloTtft: 1000, targetUtil: 70, costHr: 0,
     };
 
     const GB = 1e9;
@@ -662,10 +672,15 @@
       }
       let replicas = 0, perReplicaTps = 0, sloFeasible = bSlo > 0;
       const requiredTps = s.peakQps * s.outTok;     // output tokens/s demanded
+      const util = Math.min(1, Math.max(0.1, (s.targetUtil || 100) / 100));   // headroom below saturation
       if (sloFeasible) {
         perReplicaTps = bSlo / stepTime(bSlo).t;
-        replicas = requiredTps > 0 ? Math.ceil(requiredTps / perReplicaTps) : 0;
+        replicas = requiredTps > 0 ? Math.ceil(requiredTps / (perReplicaTps * util)) : 0;
       }
+      // Each request also runs a prefill over promptTok; the replica count above charges decode only.
+      const tPrefillReq = Math.max(tPrefillComp, tPrefillMem);                      // accelerator seconds / request
+      const prefillShare = replicas > 0 ? (s.peakQps * tPrefillReq) / replicas : 0; // fraction of one replica's time
+      const ttftOverSlo = s.sloTtft > 0 && ttftMs > s.sloTtft;
 
       // ---- batch sweep ----
       const sweep = SWEEP_BATCHES.map(b => {
@@ -685,7 +700,7 @@
         ttftMs, ttftBound, e2eMs,
         ridge, aiDecode, batchToSaturate,
         maxConc, freeForKv, fits,
-        bSlo, replicas, perReplicaTps, sloFeasible, requiredTps,
+        bSlo, replicas, perReplicaTps, sloFeasible, requiredTps, prefillShare, ttftOverSlo,
         sweep, costPer1MOut,
         precFellBack: prec !== s.prec,
       };
@@ -701,7 +716,7 @@
 
       // latency
       $("#latStats").innerHTML =
-        statHtml("TTFT", fmtMs(r.ttftMs), `prefill, ${r.ttftBound}-bound`, "accent") +
+        statHtml("TTFT", fmtMs(r.ttftMs), `prefill, ${r.ttftBound}-bound · ${r.ttftOverSlo ? "over SLO by " + fmtMs(r.ttftMs - state.sloTtft) : "within " + fmtInt(state.sloTtft) + " ms SLO"}`, r.ttftOverSlo ? "bad" : "accent") +
         statHtml("TPOT", r.tpotMs.toFixed(1) + " <small>ms/tok</small>", `decode, <span class="bound ${r.decodeBound === "memory" ? "mem" : "comp"}">${r.decodeBound}-bound</span>`) +
         statHtml("Per-stream", fmtTps(r.perStreamTps) + " <small>tok/s</small>", "one request") +
         statHtml("End to end", fmtMs(r.e2eMs), `${fmtInt(state.promptTok)} in, ${fmtInt(state.outTok)} out`);
@@ -744,12 +759,15 @@
           statHtml("Batch at SLO", fmtInt(r.bSlo), `TPOT <= ${state.sloTpot} ms`, "accent") +
           statHtml("Per-replica", fmtTps(r.perReplicaTps) + " <small>tok/s</small>", "at that batch") +
           statHtml("Demand", fmtTps(r.requiredTps) + " <small>tok/s</small>", `${state.peakQps} QPS x ${fmtInt(state.outTok)} out`) +
-          statHtml("Replicas needed", fmtInt(r.replicas), `each ${r.tp}x ${r.a.name.split("(")[0].trim()}`, "accent");
+          statHtml("Replicas needed", fmtInt(r.replicas), `each ${r.tp}x ${r.a.name.split("(")[0].trim()} @ ${state.targetUtil}%`, "accent") +
+          statHtml("Prefill share", (r.prefillShare * 100).toFixed(0) + "%", `${fmtInt(state.promptTok)}-tok prompts, not in replica count`, r.prefillShare > 0.5 ? "bad" : r.prefillShare > 0.25 ? "warn" : "");
         $("#capNote").innerHTML =
           `To hold ${state.peakQps} QPS within a ${state.sloTpot} ms/token SLO you can batch up to ${fmtInt(r.bSlo)} requests per replica` +
           `${r.maxConc <= r.bSlo ? ` (the KV budget caps concurrency at ${fmtInt(r.maxConc)}, which is the binding limit)` : ""}, ` +
-          `giving ${fmtTps(r.perReplicaTps)} output tok/s each, so you need <b>${fmtInt(r.replicas)}</b> replica${r.replicas === 1 ? "" : "s"} of ${r.tp}x ${r.a.name.split("(")[0].trim()}` +
-          `${r.costPer1MOut != null ? `. At $${state.costHr}/device/hr that is about $${r.costPer1MOut.toFixed(2)} per million output tokens at your current batch.` : "."}`;
+          `giving ${fmtTps(r.perReplicaTps)} output tok/s each, so to serve peak at ${state.targetUtil}% utilization you need <b>${fmtInt(r.replicas)}</b> replica${r.replicas === 1 ? "" : "s"} of ${r.tp}x ${r.a.name.split("(")[0].trim()}` +
+          `${r.costPer1MOut != null ? `. At $${state.costHr}/device/hr that is about $${r.costPer1MOut.toFixed(2)} per million output tokens at your current batch.` : "."}` +
+          ` This count charges decode tokens only; prefill of the ${fmtInt(state.promptTok)}-token prompts adds about ${(r.prefillShare * 100).toFixed(0)}% more accelerator time per replica, so treat it as a floor and use chunked or disaggregated prefill if TTFT drifts.` +
+          `${r.maxConc <= r.bSlo ? ` Concurrency is KV-bound here, so the lever is HBM, not the SLO: quantize the KV cache to FP8, shrink the average context, or add tensor-parallel devices.` : ""}`;
       } else {
         $("#capStats").innerHTML = statHtml("Batch at SLO", "0", "SLO not reachable", "bad");
         $("#capNote").innerHTML = `Even batch 1 cannot meet a ${state.sloTpot} ms/token TPOT on this hardware` +
@@ -812,7 +830,7 @@
           render();
         });
       });
-      const nums = [["#promptTok", "promptTok"], ["#outTok", "outTok"], ["#ctxTok", "ctxTok"], ["#peakQps", "peakQps"], ["#sloTpot", "sloTpot"], ["#costHr", "costHr"]];
+      const nums = [["#promptTok", "promptTok"], ["#outTok", "outTok"], ["#ctxTok", "ctxTok"], ["#peakQps", "peakQps"], ["#sloTpot", "sloTpot"], ["#sloTtft", "sloTtft"], ["#targetUtil", "targetUtil"], ["#costHr", "costHr"]];
       nums.forEach(([sel, key]) => $(sel).addEventListener("input", e => {
         const v = parseFloat(e.target.value);
         state[key] = isNaN(v) ? 0 : v;

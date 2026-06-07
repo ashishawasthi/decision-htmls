@@ -937,8 +937,10 @@
         <div class="panel">
           <h3>3-year cumulative cost</h3>
           <div id="threeYearBars"></div>
-          <p class="tradeoff" style="margin-top:8px;border:none;padding:0;">For on-prem, CapEx is paid Year 0 and
-            amortized linearly. GCP CUD locks the rate for the term. Managed API has no commitment.</p>
+          <p class="tradeoff" style="margin-top:8px;border:none;padding:0;">Curves show cumulative spend. Managed API
+            and self-host are pay-as-you-go; on-prem starts with Year-0 CapEx then a lower run-rate, so where its curve
+            drops below the others is its payback point. GCP CUD locks the rate for the term; managed API has no
+            commitment.</p>
         </div>
 
         <div class="panel">
@@ -989,7 +991,10 @@
         rates × 730 hours/month, 3-year amortized on-prem TCO with DR multiplier, capital opportunity cost (WACC), and a
         steady-utilization target on both self-host and on-prem. Throughput estimates per server are illustrative. Real
         numbers depend on batch size, KV cache budget, prefill vs decode mix, and serving framework (vLLM, TensorRT-LLM,
-        SGLang).</p>
+        SGLang). Per-node throughput assumes about 8,000 tok/s for a 70B-class model at FP8 on 8x H100, scaled by
+        70 / active-params, &times;1.0 / &times;2.0 / &times;2.8 for BF16 / FP8 / INT4, with a 0.5&times; penalty for MoE
+        routing. These constants dominate self-host and on-prem fleet sizing, so verify them against the companion
+        <a href="llm-serving-performance-calculator.html">serving-performance calculator</a> and your serving framework.</p>
       <p><b>Often-overlooked on-prem costs not modeled here</b> (rough ranges per cluster, monthly, for a 3-server HGX
         H100 fleet):</p>
       <ul>
@@ -1015,6 +1020,33 @@
       <p style="margin-top:8px; color: var(--warn);">Rough rule of thumb: adding the items above can close the
         on-prem-vs-GCP gap by <b>$10k-20k / mo</b> at this fleet size. With realistic hidden costs included, GCP
         self-host on H100 CUD often lands within ~10% of fully-loaded on-prem TCO at sub-10-server scale.</p>
+    </div>
+
+    <div class="source-notes">
+      <p><b>Reference links</b></p>
+      <p style="margin:0 0 4px; font-weight:600; color:var(--text);">Pricing and TCO</p>
+      <ul>
+        <li><a href="https://cloud.google.com/vertex-ai/generative-ai/pricing">Vertex AI generative AI pricing</a>,
+          <a href="https://docs.anthropic.com/en/docs/about-claude/pricing">Claude pricing</a></li>
+        <li><a href="https://cloud.google.com/products/compute/pricing/accelerator-optimized">GCP accelerator-optimized
+          VM pricing</a>, <a href="https://introl.com/blog/gpu-infrastructure-tco-5-year-cost-model">on-prem GPU TCO
+          model</a></li>
+      </ul>
+      <p style="margin:8px 0 4px; font-weight:600; color:var(--text);">Hardware specs (VRAM, GPU counts)</p>
+      <ul>
+        <li>NVIDIA <a href="https://www.nvidia.com/en-us/data-center/h100/">H100</a>,
+          <a href="https://www.nvidia.com/en-us/data-center/a100/">A100</a>,
+          <a href="https://www.nvidia.com/en-us/data-center/l4/">L4</a></li>
+        <li><a href="https://cloud.google.com/compute/docs/gpus">Compute Engine GPU machine types</a> for per-machine GPU
+          counts</li>
+      </ul>
+      <p style="margin:8px 0 4px; font-weight:600; color:var(--text);">Serving-throughput method</p>
+      <ul>
+        <li>NVIDIA, <a href="https://developer.nvidia.com/blog/mastering-llm-techniques-inference-optimization/">Mastering
+          LLM Techniques: Inference Optimization</a></li>
+        <li>The per-server tok/s here is a rough sizing proxy; for first-principles throughput use the companion
+          <a href="llm-serving-performance-calculator.html">LLM Serving Performance calculator</a>.</li>
+      </ul>
     </div>
 
   </main>
@@ -1816,38 +1848,105 @@
         warning = `<div class="warning">⚠ Self-host is winning but utilization is only ${opts.gcpUtilization}%. Industry TCO models flag &lt;60% as the regime where managed APIs typically win. Consider whether your steady-state load is really this high.</div>`;
       }
       if (winner.key === 'onprem' && opts.onpremDR === 'none') {
-        warning = `<div class="warning">⚠ On-prem is winning but DR is set to <b>None</b>. Most enterprise SLAs require geographic redundancy. Switching to Warm or Hot standby will significantly change this verdict.</div>`;
+        warning += `<div class="warning">⚠ On-prem is winning but DR is set to <b>None</b>. Most enterprise SLAs require geographic redundancy. Switching to Warm or Hot standby will significantly change this verdict.</div>`;
+      }
+      // Spot can carry the "cheapest" badge for a workload the tool itself calls training-only.
+      if (winner.key === 'selfhost' && opts.gcpTier === 'spot') {
+        warning += `<div class="warning">⚠ Self-host wins here only because Spot pricing is selected. Spot VMs pre-empt without warning and are unsuitable for user-facing serving; for a latency-bound workload, compare against On-demand or 3-year CUD.</div>`;
+      }
+      // Cost per quality: tie the selected API model's MMMU-Pro to its blended $/1M tokens, and name
+      // a cheaper API model of similar quality if one exists.
+      let quality = '';
+      const curVolForQ = opts.inputTokensM + opts.outputTokensM;
+      if (apiModel.mmmu != null && curVolForQ > 0) {
+        const blendedPer1M = apiResult.total / curVolForQ;
+        let alt = null;
+        API_MODELS.forEach(mm => {
+          if (mm.id === apiModel.id || mm.mmmu == null || mm.mmmu < apiModel.mmmu - 5) return;
+          const b = calcAPI(mm, { inputTokensM: opts.inputTokensM, outputTokensM: opts.outputTokensM, groundingK: opts.groundingK, cacheHit: opts.cacheHit, batch: opts.apiBatch }).total / curVolForQ;
+          if (b < blendedPer1M && (!alt || b < alt.b)) alt = { name: mm.name, mmmu: mm.mmmu, b };
+        });
+        quality = `<div class="quality-note" style="margin-top:8px; font-size:12px; color:var(--muted);">${apiModel.name}: <b>${apiModel.mmmu.toFixed(1)}% MMMU-Pro</b> at an effective <b>${fmtMoney(blendedPer1M)}/1M blended tokens</b> at your mix.` +
+          (alt ? ` ${alt.name} reaches ${alt.mmmu.toFixed(1)}% at ${fmtMoney(alt.b)}/1M, cheaper for similar quality.` : '') + `</div>`;
       }
       verdictEl.innerHTML = `
     <div class="vlabel">Verdict</div>
     <b>${winner.title.replace(/^[A-C]\. /, '')}</b> is cheapest at this workload, saving
     <b>${fmtMoneyExact(savings)}/mo</b> (${savingsPct}%) vs. next-best (${second.title.replace(/^[A-C]\. /, '')}).
     ${warning}
+    ${quality}
   `;
 
-      // 3-year bars
-      const threeYearTotals = cards.map(c => ({ ...c, threeYr: c.result.total * 36 }));
-      const max3 = Math.max(...threeYearTotals.map(c => c.threeYr));
-      const bars = threeYearTotals.map(c => {
-        const pct = (c.threeYr / max3) * 100;
-        return `
-      <div style="margin: 6px 0;">
-        <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:2px;">
-          <span>${c.title.replace(/^[A-C]\. /, '')}</span>
-          <span style="font-family:ui-monospace,monospace; color:var(--text);">${fmtMoneyExact(c.threeYr)}</span>
-        </div>
-        <div class="three-year-bar">
-          <div style="width:${pct}%; background:var(--${c.cls});"></div>
-        </div>
-      </div>`;
-      }).join('');
-      document.getElementById('threeYearBars').innerHTML = bars;
+      // 3-year cumulative cost: managed API and self-host are pay-as-you-go (cumulative = monthly x
+      // month), while on-prem pays CapEx up front at month 0 then a lower run-rate, so its curve
+      // starts high and crosses the others at its payback point.
+      const months = 36;
+      const onpremCapexMo = onPremResult.breakdown['CapEx amortized (3yr)'] || 0;
+      const onpremUpfront = onpremCapexMo * 36;                      // total CapEx paid Year 0
+      const onpremMoExCapex = onPremResult.total - onpremCapexMo;    // run-rate without amortized CapEx
+      const cum = {
+        api: t => apiResult.total * t,
+        selfhost: t => selfHostResult.total * t,
+        onprem: t => onpremUpfront + onpremMoExCapex * t,
+      };
+      const cumSeries = [
+        { key: 'api', label: 'Managed API', cls: 'api' },
+        { key: 'selfhost', label: 'GCP Self-Host', cls: 'selfhost' },
+        { key: 'onprem', label: 'On-Premise', cls: 'onprem' },
+      ].map(s => ({ ...s, pts: Array.from({ length: months + 1 }, (_, t) => cum[s.key](t)) }));
+      const maxCum = Math.max(...cumSeries.flatMap(s => s.pts), 1);
+      const CW = 360, CH = 150, pL = 10, pR = 10, pT = 10, pB = 22;
+      const cX = t => pL + (t / months) * (CW - pL - pR);
+      const cY = v => (CH - pB) - (v / maxCum) * (CH - pT - pB);
+      const pathFor = s => s.pts.map((v, t) => (t ? 'L' : 'M') + cX(t).toFixed(1) + ' ' + cY(v).toFixed(1)).join(' ');
+      const gridY = [0, 0.5, 1].map(f => { const y = ((CH - pB) - f * (CH - pT - pB)).toFixed(1); return `<line x1="${pL}" y1="${y}" x2="${CW - pR}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`; }).join('');
+      const lines = cumSeries.map(s => `<path d="${pathFor(s)}" fill="none" stroke="var(--${s.cls})" stroke-width="2"/>`).join('');
+      const xLabels = [0, 12, 24, 36].map(t => `<text x="${cX(t).toFixed(1)}" y="${CH - 6}" fill="var(--muted)" font-size="9" text-anchor="middle">${t}mo</text>`).join('');
+      const legend = cumSeries.map(s => `<span style="color:var(--${s.cls});">&#9632;</span> ${s.label} <span style="font-family:ui-monospace,monospace;color:var(--text);">${fmtMoneyExact(s.pts[months])}</span>`).join(' &nbsp; ');
+      // Payback: first month on-prem cumulative falls below managed API and below self-host.
+      let pbApi = null, pbSelf = null;
+      for (let t = 1; t <= months; t++) {
+        if (pbApi === null && cum.onprem(t) < cum.api(t)) pbApi = t;
+        if (pbSelf === null && cum.onprem(t) < cum.selfhost(t)) pbSelf = t;
+      }
+      const pbText = `On-prem cumulative spend ${pbApi ? `undercuts managed API at <b>month ${pbApi}</b>` : 'never undercuts managed API within 36 months'}${pbSelf ? `, and self-host at <b>month ${pbSelf}</b>` : (pbApi ? ', but not self-host within 36 months' : '')}.`;
+      document.getElementById('threeYearBars').innerHTML =
+        `<svg viewBox="0 0 ${CW} ${CH}" style="width:100%; height:auto; display:block;" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative 3-year cost by option">${gridY}${lines}${xLabels}</svg>` +
+        `<div style="font-size:11px; margin-top:6px;">${legend}</div>` +
+        `<div style="font-size:12px; color:var(--muted); margin-top:6px;">${pbText}</div>`;
 
       // Sizing notes
       const apiVol = (opts.inputTokensM + opts.outputTokensM);
       const apiVerb = apiVol >= 8000 ? 'High-volume (≥8B tok/mo): self-host viable' :
         apiVol >= 1000 ? 'Medium-volume (≥1B tok/mo): crossover zone' :
           'Low-volume: managed API regime';
+
+      // Breakeven: hold peak TPS, machine, tier, precision, util and the in:out ratio fixed, then scan
+      // combined monthly token volume to find where managed API stops being the cheapest option. API
+      // cost is linear in volume while self-host (sized by peak TPS) is flat and on-prem steps with volume.
+      const inShare = apiVol > 0 ? opts.inputTokensM / apiVol : 0.5;
+      const groundPerVol = apiVol > 0 ? opts.groundingK / apiVol : 0;
+      const costsAtVol = V => ({
+        api: calcAPI(apiModel, { inputTokensM: V * inShare, outputTokensM: V * (1 - inShare), groundingK: groundPerVol * V, cacheHit: opts.cacheHit, batch: opts.apiBatch }).total,
+        sh: selfHostResult.total,
+        op: calcOnPrem(openModel, { peakTPS: opts.peakTPS, precision: opts.onpremPrecision, personnel: opts.onpremPersonnel, dr: opts.onpremDR, monthlyVolumeM: V, peakAvgRatio: opts.peakAvgRatio, capexPerServer: opts.onpremCapex, fteCount: opts.onpremFteCount, fteSalaryMonthly: opts.onpremFteSalary, waccPct: opts.onpremWacc, utilization: opts.onpremUtil }).total,
+      });
+      const fmtVolM = V => V >= 1000 ? (V / 1000).toFixed(V >= 10000 ? 0 : 1) + 'B' : Math.round(V) + 'M';
+      const loV = 100, hiV = 200000, stepsV = 96;
+      let apiCrossV = null, crossWinner = '', prevApiCheapest = null;
+      for (let i = 0; i <= stepsV; i++) {
+        const V = loV * Math.pow(hiV / loV, i / stepsV);
+        const c = costsAtVol(V);
+        const apiCheapest = c.api <= Math.min(c.sh, c.op);
+        if (prevApiCheapest === true && !apiCheapest && apiCrossV === null) { apiCrossV = V; crossWinner = c.sh <= c.op ? 'GCP self-host' : 'on-prem'; }
+        prevApiCheapest = apiCheapest;
+      }
+      const nowC = costsAtVol(apiVol || loV);
+      const nowCheapest = nowC.api <= Math.min(nowC.sh, nowC.op) ? 'api' : (nowC.sh <= nowC.op ? 'selfhost' : 'onprem');
+      let breakevenHtml;
+      if (nowCheapest === 'api' && apiCrossV) breakevenHtml = `Managed API is cheapest now and stays cheapest up to about <b style="color:var(--api)">${fmtVolM(apiCrossV)} tok/mo</b>; above that, ${crossWinner} wins (peak TPS and utilization held fixed).`;
+      else if (nowCheapest === 'api') breakevenHtml = `Managed API stays cheapest across the modeled range (to 200B tok/mo) at this peak TPS and utilization.`;
+      else breakevenHtml = `At your volume, ${nowCheapest === 'selfhost' ? 'GCP self-host' : 'on-prem'} is already cheaper than managed API; managed API only wins at lower volume.`;
       document.getElementById('sizingNotes').innerHTML = `
     <p><b>Workload class:</b> ${apiVerb} <span style="color:var(--muted)">(${apiVol.toFixed(0)}M tok/mo combined)</span></p>
     <p><b>Self-host fleet:</b> ${selfHostResult.machinesNeeded}× ${machine.name}, autoscaling target ${opts.gcpUtilization}% util.
@@ -1865,6 +1964,7 @@
        <i>or</i> peakTPS exceeds <b style="color:var(--onprem)">${Math.round(onPremResult.nextServerPeakThresholdTPS).toLocaleString()} tok/s</b>.
        Volume-derived peakTPS at your current volume: ~${Math.round(onPremResult.volumeDerivedPeakTPS).toLocaleString()} tok/s
        vs explicit peakTPS ${opts.peakTPS.toLocaleString()} tok/s.</p>
+    <p><b>Breakeven volume:</b> ${breakevenHtml} <span style="color:var(--muted)">(you are at ${fmtVolM(apiVol)} tok/mo)</span></p>
     <p style="margin-top:10px; padding-top:8px; border-top:1px dashed var(--border);">
        <b>Crossover heuristics:</b> &lt;60% utilization → managed API; 70-90% steady → self-host or on-prem;
        on-prem procurement lead time 5-6 months; reference 100-GPU enterprise cluster ≈ $15.7M 5-yr TCO.</p>

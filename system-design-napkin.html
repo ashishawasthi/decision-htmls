@@ -274,9 +274,14 @@
             <input type="number" id="serverQps" value="1000" min="1" step="100">
             <span class="unit">QPS / server</span>
           </div>
+          <div class="range-row">
+            <label for="targetUtil">Target utilization</label>
+            <input type="range" id="targetUtil" min="50" max="95" step="5" value="70">
+            <output id="targetUtilOut">70%</output>
+          </div>
           <div class="tradeoff">A cache absorbs the hits, so backend QPS = total QPS x (1 - hit rate). The 80/20 rule:
-            holding the hot 20% of data in RAM commonly serves most reads. Servers = ceil(peak backend QPS / capacity
-            per server), then add headroom.</div>
+            holding the hot 20% of data in RAM commonly serves most reads. Servers = ceil(peak backend QPS / (capacity
+            per server x target utilization)), so the fleet keeps headroom for spikes, deploys, and failed nodes.</div>
         </fieldset>
 
         <h2>Concurrency (Little's Law)</h2>
@@ -321,6 +326,7 @@
           <h3>Cache, backend &amp; fleet</h3>
           <div class="stat-grid" id="cacheStats"></div>
           <div class="formula" id="cacheFormula"></div>
+          <div class="dominant" id="fleetVerdict"></div>
         </div>
 
         <div class="panel">
@@ -397,7 +403,7 @@
     const state = {
       dau: 10000000, actions: 20, peak: 3, readPct: 80,
       reqBytes: 2, respBytes: 20, writeBytes: 1, retention: 365, replication: 3,
-      cacheHit: 80, serverQps: 1000,
+      cacheHit: 80, serverQps: 1000, targetUtil: 70,
       svcMs: 200, p99Ms: 800, threads: 200,
       slow: { dns: 30, tcp: 40, tls: 50, ttfbApp: 120, ttfbDb: 400, transfer: 150, render: 200 },
     };
@@ -447,8 +453,9 @@
       const hit = s.cacheHit / 100;
       const backendQps = peakQps * (1 - hit);
       const cacheRamBytes = 0.2 * totalStorage;        // 80/20 hot set in RAM
-      const servers = s.serverQps > 0 ? Math.ceil(backendQps / s.serverQps) : 0;
-      const serversNoCache = s.serverQps > 0 ? Math.ceil(peakQps / s.serverQps) : 0;
+      const effCap = s.serverQps * (s.targetUtil / 100);     // usable QPS/server after headroom
+      const servers = effCap > 0 ? Math.ceil(backendQps / effCap) : 0;
+      const serversNoCache = effCap > 0 ? Math.ceil(peakQps / effCap) : 0;
 
       // concurrency (Little's Law)
       const concurrent = peakQps * (s.svcMs / 1000);          // fleet-wide requests in flight
@@ -510,21 +517,31 @@
         statHtml("Stored / day", fmtBytes(r.dailyWriteVol), `${fmtNum(r.writeQps / state.peak)} avg writes/s`) +
         statHtml("Total storage", fmtBytes(r.totalStorage), `${state.retention}d x ${state.replication} copies`, "accent") +
         statHtml("Peak egress", fmtBits(r.egressBps), `${state.respBytes} KB/resp`) +
+        statHtml("Peak ingress", fmtBits(r.ingressBps), `${state.reqBytes} KB/req`) +
         statHtml("Egress / month", fmtBytes(r.egressMonthlyBytes), "at average rate");
       $("#storeFormula").innerHTML =
         `<b>Stored/day</b> = ${fmtNum(r.writeQps / state.peak)} writes/s x ${state.writeBytes} KB x 86,400 = <b>${fmtBytes(r.dailyWriteVol)}</b>\n` +
         `<b>Total</b> = ${fmtBytes(r.dailyWriteVol)} x ${state.retention} days x ${state.replication} = <b>${fmtBytes(r.totalStorage)}</b>\n` +
-        `<b>Peak egress</b> = ${fmtNum(r.peakQps)} req/s x ${state.respBytes} KB x 8 bits = <b>${fmtBits(r.egressBps)}</b>`;
+        `<b>Peak egress</b> = ${fmtNum(r.peakQps)} req/s x ${state.respBytes} KB x 8 bits = <b>${fmtBits(r.egressBps)}</b>\n` +
+        `<b>Peak ingress</b> = ${fmtNum(r.peakQps)} req/s x ${state.reqBytes} KB x 8 bits = <b>${fmtBits(r.ingressBps)}</b>`;
 
       // cache + fleet
       $("#cacheStats").innerHTML =
         statHtml("Backend QPS", fmtNum(r.backendQps), `after ${state.cacheHit}% cache`, "accent") +
         statHtml("Cache RAM (hot 20%)", fmtBytes(r.cacheRamBytes), "80/20 working set") +
-        statHtml("Servers", fmtInt(r.servers), `${fmtNum(r.backendQps)} / ${fmtInt(state.serverQps)} QPS`, "accent") +
+        statHtml("Servers", fmtInt(r.servers), `${fmtNum(r.backendQps)} / ${fmtInt(state.serverQps)} QPS @ ${state.targetUtil}%`, "accent") +
         statHtml("Servers if no cache", fmtInt(r.serversNoCache), `cache saves ${fmtInt(r.serversNoCache - r.servers)}`);
       $("#cacheFormula").innerHTML =
         `<b>Backend QPS</b> = ${fmtNum(r.peakQps)} x (1 - ${state.cacheHit}%) = <b>${fmtNum(r.backendQps)}</b>\n` +
-        `<b>Servers</b> = ceil(${fmtNum(r.backendQps)} / ${fmtInt(state.serverQps)}) = <b>${fmtInt(r.servers)}</b>`;
+        `<b>Servers</b> = ceil(${fmtNum(r.backendQps)} / (${fmtInt(state.serverQps)} x ${state.targetUtil}%)) = <b>${fmtInt(r.servers)}</b>`;
+      const cacheSavedPct = r.serversNoCache > 0 ? Math.round((1 - r.servers / r.serversNoCache) * 100) : 0;
+      $("#fleetVerdict").innerHTML =
+        (r.readFrac >= 0.8
+          ? `Read-bound: the cache carries the load, cutting the fleet from ${fmtInt(r.serversNoCache)} to ${fmtInt(r.servers)} servers (${cacheSavedPct}% fewer). `
+          : `Write-bound: writes bypass the cache, so write throughput and durability, not the hit rate, set the fleet. `) +
+        (r.poolsNeeded > r.servers
+          ? `Binding constraint: per-pool concurrency (${fmtInt(r.poolsNeeded)} pools) exceeds raw QPS capacity (${fmtInt(r.servers)} servers), so latency, not throughput, sizes the fleet.`
+          : `Binding constraint: raw QPS capacity (${fmtInt(r.servers)} servers).`);
 
       // concurrency
       $("#concStats").innerHTML =
@@ -589,6 +606,7 @@
         ["#peak", "peak", "#peakOut", v => v.toFixed(1) + "x"],
         ["#readPct", "readPct", "#readPctOut", v => v + "%"],
         ["#cacheHit", "cacheHit", "#cacheHitOut", v => v + "%"],
+        ["#targetUtil", "targetUtil", "#targetUtilOut", v => v + "%"],
       ];
       ranges.forEach(([sel, key, out, fmt]) => $(sel).addEventListener("input", e => {
         state[key] = parseFloat(e.target.value);
