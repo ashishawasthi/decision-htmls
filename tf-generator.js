@@ -125,13 +125,12 @@
     if (usesAlloy(s)) apis.push('alloydb.googleapis.com');
     if (usesSpanner(s)) apis.push('spanner.googleapis.com');
     if (usesCloudSql(s)) apis.push('sqladmin.googleapis.com');
-    if (s.managedRedis) apis.push('redis.googleapis.com');
+    if (s.managedRedis) { apis.push('redis.googleapis.com'); apis.push('networkconnectivity.googleapis.com'); }   // Redis Cluster reached over PSC service connectivity automation
     if (s.isAutomation) apis.push('pubsub.googleapis.com');
     if (s.cmek) apis.push('cloudkms.googleapis.com');
     if (s.enforceVpcSc) apis.push('accesscontextmanager.googleapis.com');
     if (s.gke || s.selfHost) apis.push('container.googleapis.com');
     if (networkUser(s)) apis.push('compute.googleapis.com');
-    if (usesAlloy(s)) apis.push('servicenetworking.googleapis.com');
     if (s.hybrid) apis.push('dns.googleapis.com');
     return apis;
   }
@@ -306,21 +305,16 @@
         '}'
       ].join('\n'));
     }
-    if (usesAlloy(s)) {
+    // Shared PSC consumer subnet reference: the Memorystore (Redis Cluster) service connection policy and the
+    // AlloyDB / Cloud SQL PSC endpoints all draw their endpoint IPs from a subnet in the consumer VPC. An
+    // auto-mode VPC creates one subnet per region named like the network, so reference it via a data source.
+    if (s.managedRedis || usesAlloy(s) || usesCloudSql(s)) {
       B.push([
-        '# Private Service Access range so AlloyDB can attach to the network',
-        'resource "google_compute_global_address" "psa" {',
-        '  name          = "${local.name}-psa"',
-        '  purpose       = "VPC_PEERING"',
-        '  address_type  = "INTERNAL"',
-        '  prefix_length = 16',
-        '  network       = ' + netRef(s),
-        '}',
-        '',
-        'resource "google_service_networking_connection" "psa" {',
-        '  network                 = ' + netRef(s),
-        '  service                 = "servicenetworking.googleapis.com"',
-        '  reserved_peering_ranges = [google_compute_global_address.psa.name]',
+        'data "google_compute_subnetwork" "psc" {',
+        '  name       = ' + (createVpc(s) ? 'google_compute_network.vpc.name' : '"default"'),
+        '  region     = var.region',
+        '  project    = var.project_id',
+        '  depends_on = [' + (createVpc(s) ? 'google_compute_network.vpc' : 'google_project_service.enabled') + ']',
         '}'
       ].join('\n'));
     }
@@ -826,15 +820,18 @@
     }
 
     if (usesAlloy(s)) {
+      // AlloyDB reached over Private Service Connect: a PSC-enabled cluster publishes a service attachment per
+      // instance (no VPC peering / PSA range); the consumer VPC reaches the primary through a PSC endpoint
+      // (an internal address + forwarding rule targeting the instance's service attachment) declared below.
       var alloyEnc = s.cmek ? ['  encryption_config {', '    kms_key_name = google_kms_crypto_key.key.id', '  }'] : [];
-      var alloyDeps = s.cmek ? 'google_service_networking_connection.psa, google_kms_crypto_key_iam_member.alloydb' : 'google_service_networking_connection.psa';
+      var alloyDeps = s.cmek ? 'google_project_service.enabled, google_kms_crypto_key_iam_member.alloydb' : 'google_project_service.enabled';
       B.push([
         'resource "google_alloydb_cluster" "state" {',
         '  cluster_id      = "${local.name}-state"',
         '  location        = var.region',
         '  deletion_policy = "FORCE"',
-        '  network_config {',
-        '    network = ' + netRef(s),
+        '  psc_config {',
+        '    psc_enabled = true',
         '  }'
       ].concat(alloyEnc).concat([
         '  depends_on = [' + alloyDeps + ']',
@@ -847,6 +844,26 @@
         '  machine_config {',
         '    cpu_count = 2',
         '  }',
+        '  psc_instance_config {',
+        '    allowed_consumer_projects = [var.project_id]',
+        '  }',
+        '}',
+        '',
+        '# Consumer PSC endpoint: an internal IP + forwarding rule targeting the AlloyDB primary service attachment.',
+        'resource "google_compute_address" "alloydb_psc" {',
+        '  name         = "${local.name}-alloydb-psc"',
+        '  region       = var.region',
+        '  subnetwork   = data.google_compute_subnetwork.psc.id',
+        '  address_type = "INTERNAL"',
+        '}',
+        '',
+        'resource "google_compute_forwarding_rule" "alloydb_psc" {',
+        '  name                  = "${local.name}-alloydb-psc"',
+        '  region                = var.region',
+        '  network               = ' + netRef(s),
+        '  ip_address            = google_compute_address.alloydb_psc.id',
+        '  load_balancing_scheme = ""',
+        '  target                = google_alloydb_instance.state.psc_instance_config[0].service_attachment_link',
         '}'
       ]).join('\n'));
     } else if (usesSpanner(s)) {
@@ -865,6 +882,8 @@
         '  name     = "agent"'
       ].concat(spanEnc).concat(['}']).join('\n'));
     } else if (usesCloudSql(s)) {
+      // Cloud SQL reached over Private Service Connect: public IP off (ipv4_enabled = false), PSC enabled; the
+      // consumer VPC reaches it through a PSC endpoint (forwarding rule to the instance service attachment) below.
       var sqlEnc = s.cmek ? ['  encryption_key_name = google_kms_crypto_key.key.id'] : [];
       var sqlDep = s.cmek ? '  depends_on = [google_project_service.enabled, google_kms_crypto_key_iam_member.cloudsql]' : DEP;
       B.push([
@@ -876,24 +895,73 @@
       ].concat(sqlEnc).concat([
         '  settings {',
         '    tier = "db-custom-2-7680"',
+        '    ip_configuration {',
+        '      ipv4_enabled = false',
+        '      psc_config {',
+        '        psc_enabled               = true',
+        '        allowed_consumer_projects = [var.project_id]',
+        '      }',
+        '    }',
+        '    backup_configuration {',
+        '      enabled = true',
+        '    }',
         '  }',
         sqlDep,
+        '}',
+        '',
+        '# Consumer PSC endpoint for Cloud SQL: an internal IP + forwarding rule targeting the instance service attachment.',
+        'resource "google_compute_address" "cloudsql_psc" {',
+        '  name         = "${local.name}-cloudsql-psc"',
+        '  region       = var.region',
+        '  subnetwork   = data.google_compute_subnetwork.psc.id',
+        '  address_type = "INTERNAL"',
+        '}',
+        '',
+        'resource "google_compute_forwarding_rule" "cloudsql_psc" {',
+        '  name                  = "${local.name}-cloudsql-psc"',
+        '  region                = var.region',
+        '  network               = ' + netRef(s),
+        '  ip_address            = google_compute_address.cloudsql_psc.id',
+        '  load_balancing_scheme = ""',
+        '  target                = google_sql_database_instance.state.psc_service_attachment_link',
         '}'
       ]).join('\n'));
     }
 
     if (s.managedRedis) {
-      var redisEnc = s.cmek ? ['  customer_managed_key = google_kms_crypto_key.key.id'] : [];
-      var redisDep = s.cmek ? '  depends_on = [google_project_service.enabled, google_kms_crypto_key_iam_member.redis]' : DEP;
+      // Managed in-memory tier on Memorystore for Redis Cluster, reached over Private Service Connect (PSC).
+      // Redis Cluster is PSC-native (classic google_redis_instance was VPC-peering only). A service connection
+      // policy authorizes PSC service connectivity automation so the cluster auto-creates consumer endpoints in
+      // the VPC, drawing IPs from the shared PSC subnet (data.google_compute_subnetwork.psc).
+      var redisNet = netRef(s);
+      var redisKms = s.cmek ? ['  kms_key                     = google_kms_crypto_key.key.id'] : [];
+      var redisDeps = ['google_network_connectivity_service_connection_policy.redis', 'google_project_service.enabled'];
+      if (s.cmek) redisDeps.push('google_kms_crypto_key_iam_member.redis');
       B.push([
-        'resource "google_redis_instance" "cache" {',
-        '  name               = "${local.name}-cache"',
-        '  tier               = "BASIC"',
-        '  memory_size_gb     = 1',
-        '  region             = var.region',
-        '  authorized_network = ' + netRef(s)
-      ].concat(redisEnc).concat([
-        redisDep,
+        '# Authorize PSC service connectivity automation for Memorystore (Redis Cluster) in this network; the',
+        '# cluster auto-creates its consumer endpoints, drawing IPs from the shared PSC subnet (data.google_compute_subnetwork.psc).',
+        'resource "google_network_connectivity_service_connection_policy" "redis" {',
+        '  name          = "${local.name}-redis-scp"',
+        '  location      = var.region',
+        '  service_class = "gcp-memorystore-redis"',
+        '  network       = ' + redisNet,
+        '  psc_config {',
+        '    subnetworks = [data.google_compute_subnetwork.psc.id]',
+        '  }',
+        DEP,
+        '}',
+        '',
+        'resource "google_redis_cluster" "cache" {',
+        '  name                        = "${local.name}-cache"',
+        '  shard_count                 = 1',
+        '  node_type                   = "REDIS_SHARED_CORE_NANO"',
+        '  region                      = var.region',
+        '  deletion_protection_enabled = false',
+        '  psc_configs {',
+        '    network = ' + redisNet,
+        '  }'
+      ].concat(redisKms).concat([
+        '  depends_on = [' + redisDeps.join(', ') + ']',
         '}'
       ]).join('\n'));
     }
@@ -1147,11 +1215,11 @@
     if (s.selfHostSearch) L.push('- Self-hosted Elasticsearch in the cluster for vector search (reached at http://elasticsearch:9200).');
     L.push('- Cloud Storage bucket with a seed-docs/ prefix for your documents and the agent archive.');
     if (s.modelArmor) L.push('- Model Armor template for prompt-injection and content filtering.');
-    if (usesAlloy(s)) L.push('- AlloyDB for agent state on ' + (createVpc(s) ? 'a dedicated VPC' : 'the default network') + ' with Private Service Access.');
-    if (createVpc(s)) L.push('- A dedicated VPC network for GKE, AlloyDB, and Redis (toggle Dedicated VPC off to use the default network).');
+    if (usesAlloy(s)) L.push('- AlloyDB for agent state, reached from ' + (createVpc(s) ? 'the dedicated VPC' : 'the default network') + ' over a Private Service Connect endpoint (a forwarding rule to the instance service attachment).');
+    if (createVpc(s)) L.push('- A dedicated VPC network for GKE, AlloyDB, and Memorystore (toggle Dedicated VPC off to use the default network).');
     if (usesSpanner(s)) L.push('- Spanner for agent state.');
-    if (usesCloudSql(s)) L.push('- Cloud SQL (PostgreSQL) for agent state.');
-    if (s.managedRedis) L.push('- Memorystore on the VPC for the response cache.');
+    if (usesCloudSql(s)) L.push('- Cloud SQL (PostgreSQL) for agent state, reached over a Private Service Connect endpoint (public IP off).');
+    if (s.managedRedis) L.push('- Memorystore for Redis Cluster, reached over Private Service Connect (a service connection policy plus PSC service connectivity automation), for the response cache / session state.');
     if (s.selfHostCache) L.push('- Self-hosted Redis in the cluster for the response cache (reached at redis://redis:6379).');
     L.push('- BigQuery dataset for feedback and evaluation.');
     if (s.isAutomation) L.push('- Pub/Sub trigger topic with a dead-letter queue and the service-agent IAM it needs.');

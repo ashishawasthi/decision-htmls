@@ -1143,7 +1143,7 @@
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
             <polyline points="7 10 12 15 17 10" />
             <line x1="12" y1="15" x2="12" y2="3" />
-          </svg><span>Terraform</span></button>
+          </svg><span>Terraform (WIP)</span></button>
       </div>
 
       <fieldset data-grp="target">
@@ -1277,10 +1277,10 @@
 
       <fieldset data-grp="3c">
         <legend>Models &amp; routing</legend>
-        <div class="ctl" data-ov="reasoningModel"><label>Reasoning model</label>
+        <div class="ctl" data-ov="reasoningModel"><label>Model for High Reasoning</label>
           <select data-bind="overrides.reasoningModel"></select>
         </div>
-        <div class="ctl" data-ov="fastModel"><label>Fast / lookup model</label>
+        <div class="ctl" data-ov="fastModel"><label>Model for Fast Lookups</label>
           <select data-bind="overrides.fastModel"></select>
         </div>
         <div class="ctl" data-ov="smartRouting"><label>Smart routing</label>
@@ -1343,7 +1343,7 @@
             <option value="spanner">Spanner</option>
             <option value="redis_spanner">Redis + Spanner</option>
             <option value="cloudsql">Cloud SQL</option>
-            <option value="redis">Memorystore (Redis)</option>
+            <option value="redis">Memorystore (Redis Cluster)</option>
           </select>
         </div>
         <div class="ctl" data-ov="contextCache"><label>Context cache (system prompt)</label>
@@ -1658,7 +1658,7 @@
     // outbound half sizes the model-leg control overhead (latency plus Model Armor); it is no longer
     // a separate diagram box, since routing and fail-over now run inside the agent. Latency maps are
     // per-chip milliseconds.
-    const IN_LAT = { 'auth': 8, 'rate-limit': 2, 'PII redact': 8, 'injection screen': 20 };
+    const IN_LAT = { 'auth': 8, 'rate-limit': 2, 'PII redact': 8, 'injection screen': 20, 'IAP / mTLS': 3 };
     const OUT_LAT = { 'route': 4, 'fan-out': 3, 'PII redact': 8, 'output filter': 20, 'audit': 3 };
     function inboundControls(o, i) {
       const { lvl } = sens(i.audienceSensitivity); const c = [];
@@ -1676,6 +1676,14 @@
       if (o.auditLog) c.push('audit');                           // per-call prompt/completion + token meter
       return c;
     }
+    // Private-only hybrid bypasses the public API gateway (Apigee / Cloud API Gateway and its inbound
+    // screens); the sole inbound control on the private interconnect is a lightweight identity check
+    // (Cloud IAP / mTLS). inboundPath() returns the controls actually on the request path so latency, the
+    // live trace, cost, and the BoM all match the private-only diagram. It collapses to the light auth only
+    // when a gateway would otherwise have been derived on; with no gateway the private path is direct.
+    const LIGHT_AUTH = 'IAP / mTLS';
+    const privateOnlyIngress = o => o.deployment === 'hybrid';
+    function inboundPath(o, i) { const c = inboundControls(o, i); return privateOnlyIngress(o) ? (c.length ? [LIGHT_AUTH] : []) : c; }
     const edgeLabel = c => `API Gateway ⊕<br/>${c.join(' · ')}`;
     // Response cache box on the request path: a hit returns a stored answer and skips the agent and
     // model (the respHit fraction of traffic). Drawn only when an exact or semantic cache is enabled.
@@ -1774,7 +1782,7 @@
       const G = [];
       const set = (key, label, on, why, cat) => { o[key] = on; G.push({ key, label, on, why, cat }); };
       // Access & gateway
-      set('gateway', 'API gateway + Model Armor (IAP + Apigee)', lvl >= 2 || ext,
+      set('gateway', o.deployment === 'hybrid' ? 'Private ingress auth (IAP + mTLS) + Model Armor' : 'API gateway + Model Armor (IAP + Apigee)', lvl >= 2 || ext,
         lvl >= 2 ? 'regulated+' : ext ? (aud === 'public' ? 'public' : 'external') : 'not required', 'access');
       set('auditLog', 'Immutable audit log', lvl >= 2 || ext,
         lvl >= 2 ? 'regulated+' : ext ? 'external' : 'not required', 'access');
@@ -1866,11 +1874,11 @@
       const parts = [];
       // API Gateway is on the request path: counted once. The model-leg control (Model Armor plus
       // routing) rides every model call (genGw) and compounds with the ReAct loop / executor pool.
-      const inbChips = inboundControls(o, i), outbChips = outboundControls(o, i);
+      const inbChips = inboundPath(o, i), outbChips = outboundControls(o, i);
       const inMs = inbChips.reduce((s, c) => s + (IN_LAT[c] || 0), 0);
       const outMs = outbChips.reduce((s, c) => s + (OUT_LAT[c] || 0), 0);
       const genGw = gen + outMs;
-      if (inbChips.length) parts.push({ label: 'API Gateway', ms: inMs, note: inbChips.join(' · ') });
+      if (inbChips.length) parts.push({ label: privateOnlyIngress(o) ? 'IAP / mTLS' : 'API Gateway', ms: inMs, note: privateOnlyIngress(o) ? 'private-path identity check (no public gateway)' : inbChips.join(' · ') });
       // Response cache lookup sits once on the request path; the p95 path is a miss (lookup, then fall
       // through to the agent), so the lookup overhead is added once here, not per model call.
       if (responseCacheOn(o)) parts.push({ label: 'Response cache lookup', ms: o.semanticCache ? L.cacheSem : L.cacheExact, note: o.semanticCache ? 'embed + ANN on miss' : 'key lookup on miss' });
@@ -2029,7 +2037,7 @@
       Exec: 'The specialist agents that do the work (generation, review, test, docs, migrate), running in parallel where possible.',
       QG: 'Automated checks (tests, linters, policy rules) that must pass before the result moves to approval.',
       State: 'Transactional run and session state, so long workflows and conversations can resume after a failure. Default is AlloyDB: PostgreSQL-compatible, HA, with pgvector/ScaNN for agent memory and columnar HTAP, and cheaper than Spanner for a single region. Use Spanner when you need active-active multi-region writes, five-nines, or extreme write throughput. Durable audit and long-term event history belong in BigQuery, not this transactional store.',
-      StateDur: 'Spanner durable tier for active-active multi-region writes (AlloyDB is single-primary and cannot serve those). Managed and reached through a Private Service Connect endpoint, so it lives outside the dedicated VPC while the hot Redis store stays inside it.',
+      StateDur: 'Durable tier paired with the hot Redis cache: AlloyDB (regional HA) by default, or Spanner (active-active multi-region writes) when the design needs them. Both are managed services reached over a Private Service Connect endpoint, so they live outside the dedicated VPC; only a self-hosted Redis-on-GKE hot tier sits inside.',
     };
     const nodeIdFromSvg = el => { const m = (el.id || '').match(/flowchart-([A-Za-z0-9]+)-\d+$/); return m ? m[1] : null; };
     // Role of each data source, shown as a hover tooltip on the checkbox. BigQuery's role
@@ -2076,7 +2084,7 @@
       'Spanner': 'components/spanner.html',
       'AlloyDB': 'components/alloydb.html',
       'AlloyDB (state)': 'components/alloydb.html',
-      'Memorystore': 'components/memorystore.html',
+      'Memorystore Cluster': 'components/memorystore.html',
       // gateway and security
       'Apigee': 'components/apigee.html',
       'Model Armor': 'components/model-armor.html',
@@ -2178,8 +2186,10 @@
       // the Agent Runtime as a whole, not one component: the orchestrator, generator, and validator all
       // make model calls under one runtime identity (roles/aiplatform.user), and Armor screens every one.
       const armorOn = !!(o.guardrails || o.residencyPin || o.toolAuthz);
-      const modelLeg = (from) => {
-        L.push(node('LLM', selfHostOn(o) ? 'Model(s)<br/>vLLM on GKE' : 'Model(s)', 'orch'));
+      const modelLeg = (from, pre) => {
+        // The LLM node is pre-declared inside the VPC when the model is self-hosted (vLLM on GKE); otherwise
+        // it is a managed model endpoint, declared here in the perimeter. Model Armor stays managed, outside.
+        if (!pre) L.push(node('LLM', llmSelf ? 'Model(s)<br/>vLLM on GKE' : 'Model(s)', 'orch'));
         if (armorOn) { L.push(node('Armor', 'Model Armor<br/>injection, redaction', 'gateway')); L.push(`${from} --> Armor`); L.push('Armor --> LLM'); }
         else { L.push(`${from} --> LLM`); }
       };
@@ -2196,8 +2206,8 @@
         const cacheOn = responseCacheOn(o);
         const targets = [];
         if (gcsDrawn) targets.push('GCS');               // Cloud Storage (docs + agent artifact)
-        if (stateManaged) targets.push('State');         // managed AlloyDB / Spanner / Cloud SQL / Memorystore
-        if (stateSpanner) targets.push('StateDur');      // Spanner active-active durable tier
+        if (stateManaged) targets.push('State');         // managed standalone store or managed Memorystore hot tier
+        if (durTier) targets.push('StateDur');           // managed durable tier (AlloyDB or Spanner, both via PSC)
         if (cacheOn && !gke) targets.push('Cache');      // managed Memorystore response cache
         if (!targets.length) return;
         L.push(node('KMS', 'Cloud KMS (CMEK)', 'gov'));
@@ -2208,12 +2218,15 @@
       const perim = o.enforceVpcSc;
       const openPerim = () => { if (perim) L.push('subgraph PERIM["VPC-SC perimeter"]'); };
       const closePerim = () => { if (perim) L.push('end'); };
-      // Dedicated VPC network: a layer 3/4 boundary around the self-hosted / private resources - the
-      // GKE agent runtime, a self-built vector store + retrieval, and AlloyDB/Redis (reached over
-      // Private Service Access), plus the hybrid Cloud Router that terminates the interconnect. Mirrors
-      // the Terraform createVpc = (dedicatedVpc || hybrid) && networkUser rule so the diagram and the
-      // export agree on when a VPC exists. It is a network boundary, distinct from the VPC-SC service
-      // perimeter, and nests inside it when both are on; managed services stay out.
+      // Dedicated VPC network: a layer 3/4 boundary around the SELF-HOSTED compute only (Convention B) -
+      // the GKE agent runtime, a self-built vector store + retrieval, a self-hosted Redis cache/state tier,
+      // and the vLLM-on-GKE model fleet - plus the hybrid Cloud Router that terminates the interconnect.
+      // Managed services (Agent Engine, AlloyDB / Spanner / Cloud SQL, managed Memorystore, the Google APIs)
+      // are reached privately over a PSC endpoint and are drawn OUTSIDE this box, in the VPC-SC perimeter,
+      // with the mechanism shown as an edge tag (PSC). It is a network boundary, distinct from the VPC-SC
+      // service perimeter, and nests inside it when both are on. Terraform may still create a VPC for the PSC
+      // consumer endpoints / subnet when nothing is self-hosted; the box reflects drawn contents, so a fully
+      // managed design shows no VPC box and the private connectivity surfaces as PSC edge tags instead.
       const gke = o.agentRuntime === 'gke';
       const hybridLink = o.deployment === 'hybrid';   // on-prem interconnect bridge: a Cloud Router in the VPC
       const selfbuilt = o.ragEngine === 'selfbuilt';
@@ -2222,33 +2235,49 @@
       const gcsDrawn = ragOn && hasIndex;                    // Cloud Storage (source docs + agent artifact) is drawn by the ingestion branch
       const storeInVpc = ragOn && hasIndex && selfbuilt;     // self-built vector store, not managed Agent Search
       const retrInVpc = ragOn && selfbuilt;                  // the retrieval funnel runs on the self-built search
-      const stateInVpc = /alloydb|redis/.test(o.stateStore); // AlloyDB / Memorystore attach to the VPC over PSA
-      // The Redis tier is self-hosted on GKE, else managed Memorystore. Spanner (the active-active durable
-      // tier) is managed and reached via a PSC endpoint, so it sits outside the VPC while the hot Redis store
-      // stays inside; AlloyDB / Cloud SQL follow the VPC rule above.
-      const redisName = gke ? 'Redis on GKE' : 'Memorystore';
-      const stateSpanner = o.stateStore === 'redis_spanner';   // straddles the boundary: Redis in, Spanner out
-      // The State node is CMEK-eligible unless it is purely self-hosted Redis on GKE; AlloyDB / Spanner /
-      // Cloud SQL / managed Memorystore all take a customer key. Mirrors what tf-generator.js encrypts.
-      const stateManaged = !(gke && (o.stateStore === 'redis' || o.stateStore === 'redis_spanner'));
-      const stateLabel = ({
-        redis: `State store (${redisName})`,
-        redis_alloydb: `State store (${redisName} + AlloyDB)`,
-        redis_spanner: `State store (${redisName})`,
+      const llmSelf = selfHostOn(o);                         // vLLM on GKE: a self-hosted model fleet, so it lives in the VPC
+      // State store model (Convention B): only self-hosted compute lives inside the dedicated VPC. The hot
+      // Redis tier is self-hosted on GKE (in the VPC) or managed Memorystore (a managed service, out). The
+      // durable tier (AlloyDB / Spanner) and any standalone managed store (AlloyDB / Spanner / Cloud SQL) are
+      // managed services reached privately over a PSC endpoint (AlloyDB / Cloud SQL via PSC-enabled instances,
+      // Spanner and Memorystore for Redis Cluster natively) - so they sit in the VPC-SC perimeter, outside the VPC box, tagged on the edge.
+      const redisTier = /redis/.test(o.stateStore);          // a hot Redis/Memorystore session tier is present
+      // Self-hosted Redis on GKE, else managed Memorystore for Redis Cluster - the PSC-native Memorystore
+      // product (classic Memorystore for Redis is VPC-peering only; Redis Cluster / Valkey are PSC).
+      const redisName = gke ? 'Redis on GKE' : 'Memorystore Cluster';
+      const redisSelf = redisTier && gke;                    // self-hosted Redis on GKE -> the only state node inside the VPC
+      const stateInVpc = redisSelf;
+      // The durable tier paired with a Redis hot tier (always a managed service, always outside the VPC). Both
+      // are reached over a PSC endpoint: AlloyDB via a PSC-enabled cluster, Spanner via PSC for its global API.
+      const durTier = o.stateStore === 'redis_alloydb' ? { label: 'AlloyDB<br/>durable', conn: 'PSC' }
+                    : o.stateStore === 'redis_spanner' ? { label: 'Spanner<br/>active-active durable', conn: 'PSC' }
+                    : null;
+      // The primary State node: the hot Redis/Memorystore tier when there is one, else the standalone store.
+      // stateConn is the private-connectivity tag on the runtime->state edge (null when the node is in-VPC).
+      // Every managed store is reached over a PSC endpoint - Memorystore for Redis Cluster, AlloyDB and Cloud SQL
+      // (PSC-enabled), and Spanner; only a self-hosted Redis-on-GKE tier is in-VPC and untagged.
+      const stateConn = redisSelf ? null : 'PSC';
+      const stateLabel = redisTier ? `State store (${redisName})` : (({
         alloydb: 'State store (AlloyDB)',
         spanner: 'State store (Spanner)',
         cloudsql: 'State store (Cloud SQL)',
-      })[o.stateStore] || STATE_STORE_LABEL[o.stateStore] || 'State store';
+      })[o.stateStore] || STATE_STORE_LABEL[o.stateStore] || 'State store');
+      // CMEK-eligible (a managed store taking a customer key) unless the node is the self-hosted Redis-on-GKE
+      // tier; the durable tier and standalone managed stores always take a key. Mirrors what tf-generator.js encrypts.
+      const stateManaged = !redisSelf;
       let vpcDrawn = false;
       const openVpc = (hasMember) => { if (o.dedicatedVpc && hasMember) { vpcDrawn = true; L.push('subgraph VPC["Dedicated VPC network"]'); } };
       const closeVpc = () => { if (vpcDrawn) L.push('end'); };
       // Hybrid deployment: the same managed system, now reachable from on-premise over an existing Cloud
-      // Interconnect. The on-premise network sits outside the VPC and the VPC-SC perimeter. The thick
-      // interconnect edge terminates at the Cloud Router INSIDE the VPC (drawn as a VPC member), not at
-      // the public API gateway, mirroring the Terraform bridge (Cloud Router + VLAN attachment + firewall)
-      // so the diagram and the export agree on both the private link and the VPC it attaches to.
+      // Interconnect. Because the whole point of the private link is to NOT expose the app on the public
+      // internet, hybrid is private-only: the on-premise network is the SOLE human ingress and the public
+      // Client UI / API Gateway door is not drawn (see the privateOnly guards in each purpose branch). The
+      // on-premise network sits outside the VPC and the VPC-SC perimeter. The thick interconnect edge
+      // terminates at the Cloud Router INSIDE the VPC (drawn as a VPC member), not at the public API gateway,
+      // mirroring the Terraform bridge (Cloud Router + VLAN attachment + firewall) so the diagram and the
+      // export agree on both the private link and the VPC it attaches to.
       let onpremDrawn = false;
-      const onpremLink = () => {
+      const onpremLink = (cacheOn, authLabel) => {
         if (!hybridLink) return;
         onpremDrawn = true;
         const hasOnpremData = i.dataSources.includes('onprem');
@@ -2256,95 +2285,122 @@
         L.push(node('OnpremUsers', 'On-prem users / network', 'client'));
         if (hasOnpremData) L.push(node('OnpremDB', 'On-prem systems / DB', 'data', 'cyl'));
         L.push('end');
-        // Private ingress lands on the in-VPC Cloud Router, then reaches the agent (not via the public gateway).
         L.push('OnpremUsers == Cloud Interconnect ==> CloudRouter');
-        L.push('CloudRouter --> Orchestrator');
+        // Private ingress lands on the in-VPC Cloud Router, then reaches the agent direct - not via the public
+        // gateway, but through a lightweight identity check (Cloud IAP / mTLS) when one is derived on. When a
+        // response cache is on it short-circuits this private path: a hit returns the stored answer to the
+        // on-prem caller, a miss falls through to the orchestrator.
+        const edge = authLabel ? `-- ${authLabel} -->` : '-->';
+        if (cacheOn) {
+          L.push(`CloudRouter ${edge} Cache`);
+          L.push('Cache -. hit .-> OnpremUsers');
+          L.push('Cache -- miss --> Orchestrator');
+        } else {
+          L.push(`CloudRouter ${edge} Orchestrator`);
+        }
         // Egress: the agent reaches on-prem systems of record back over the same private link.
         if (hasOnpremData) L.push('Generator == over interconnect ==> OnpremDB');
       };
       if (state.purpose === 'assistant') {
-        L.push(node('Client', 'Client UI', 'client'));
+        // Hybrid is private-only: on-prem users are the sole ingress, so the public Client UI and its
+        // API Gateway door are not drawn (the on-prem path below reaches the orchestrator directly).
+        const privateOnly = hybridLink;
+        if (!privateOnly) L.push(node('Client', 'Client UI', 'client'));
         let head = 'Client';
-        // API Gateway: request-side auth and rate-limit, plus the inbound guardrail screen. Drawn
-        // only when a control is derived on. Sits outside the VPC-SC perimeter.
+        // API Gateway: request-side auth and rate-limit, plus the inbound guardrail screen. Drawn only
+        // when a control is derived on and there is a public door (suppressed in private-only hybrid).
         const inb = inboundControls(o, i);
-        if (inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
-        // Response cache short-circuit: a hit returns the stored answer and skips the agent and model.
-        // The cache (Memorystore, or self-hosted Redis on GKE) is VPC-resident, so it is drawn inside
-        // the dedicated VPC below; its short-circuit edges cross the boundary.
+        if (!privateOnly && inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
+        // Response cache short-circuit: a hit returns the stored answer and skips the agent and model. The
+        // cache is self-hosted Redis on GKE (inside the VPC) or managed Memorystore for Redis Cluster (outside,
+        // PSC); its short-circuit edges cross the boundary either way.
         const cacheOn = responseCacheOn(o);
+        const cacheInVpc = cacheOn && gke;   // self-hosted Redis cache lives in the VPC; managed Memorystore for Redis Cluster sits in the perimeter (PSC)
         // Self-built draws an explicit retrieval funnel; managed Agent Search retrieves inside
         // its store node, so the generator reads the store directly.
         const showFunnel = retrInVpc;
         openPerim();
-        // Self-hosted runtime, search, and store sit inside the dedicated VPC; the managed Agent
-        // Engine runtime and the managed Google services stay outside it but inside the perimeter.
-        openVpc(gke || retrInVpc || storeInVpc || stateInVpc || cacheOn || hybridLink);
-        if (cacheOn) L.push(node('Cache', cacheLabel(o), 'data', 'cyl'));
+        // Convention B: only self-hosted compute sits inside the dedicated VPC - the GKE runtime, a self-built
+        // search + store, a self-hosted Redis cache/state tier, and the vLLM-on-GKE model fleet. Managed
+        // services (Agent Engine, AlloyDB/Spanner/Cloud SQL, managed Memorystore, the Google APIs) stay in the
+        // perimeter, reached over PSC shown as edge tags - so the box is drawn only when something is
+        // self-hosted (or hybrid needs an in-VPC Cloud Router); a fully managed design draws no VPC box.
+        openVpc(gke || retrInVpc || storeInVpc || llmSelf || hybridLink);
+        if (cacheInVpc) L.push(node('Cache', cacheLabel(o), 'data', 'cyl'));
         if (gke) agentEngine();
         if (showFunnel) L.push(node('Retr', 'Retrieval funnel ⊕', 'retr'));
         if (storeInVpc) L.push(node('Store', 'Vector store + BM25 ⊕', 'data', 'cyl'));
-        if (stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
+        if (stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));   // self-hosted Redis on GKE hot tier
+        if (llmSelf) L.push(node('LLM', 'Model(s)<br/>vLLM on GKE', 'orch'));   // self-hosted model fleet on GKE
         if (hybridLink) L.push(node('CloudRouter', 'Cloud Router<br/>+ VLAN attachment', 'gateway'));   // terminates the on-prem interconnect inside the VPC
         closeVpc();
         if (!gke) agentEngine();
-        if (cacheOn) { L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Client'); }
+        if (cacheOn && !cacheInVpc) L.push(node('Cache', cacheLabel(o), 'data', 'cyl'));   // managed Memorystore cache, in the perimeter
+        if (cacheOn && !privateOnly) { L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Client'); }
         if (showFunnel) L.push('Generator --> Retr');
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Generator --> Sand'); }
-        modelLeg('AE');
+        modelLeg('AE', llmSelf);
         // data plane: offline index (written by ingestion, read by retrieval) + live sources
         dataPlane(showFunnel ? 'Retr' : 'Generator', 'Generator', storeInVpc);
         secretMgrNode('AE');
-        // session / conversation state the runtime persists (Memorystore/AlloyDB) - inside the VPC when
-        // private. Persisted under the one runtime identity, so the edge is from the Agent Runtime.
+        // session / conversation state the runtime persists. A self-hosted Redis-on-GKE tier is in the VPC; a
+        // managed store (Memorystore / AlloyDB / Spanner / Cloud SQL) is reached privately over a PSC endpoint, tagged PSC.
         if (!stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
-        L.push('AE -. state .-> State');
-        // Spanner durable tier is managed (reached via a PSC endpoint), so it sits outside the VPC even though Redis is inside
-        if (stateSpanner) { L.push(node('StateDur', 'Spanner<br/>active-active durable', 'data', 'cyl')); L.push('State -. durable .-> StateDur'); }
+        L.push(`AE -. state${stateConn ? ` · ${stateConn}` : ''} .-> State`);
+        // durable tier (AlloyDB or Spanner, both via a PSC endpoint) - a managed service, drawn outside the VPC
+        if (durTier) { L.push(node('StateDur', durTier.label, 'data', 'cyl')); L.push(`State -. durable · ${durTier.conn} .-> StateDur`); }
         kmsNode();   // CMEK edges, emitted once every managed data store above is declared
         L.push(node('Obs', 'Observability', 'obs')); L.push('AE -. traces .-> Obs');
         closePerim();
-        // cross-boundary entry edge (ingress into the perimeter) and human review (outside)
-        L.push(cacheOn ? 'Cache -- miss --> Orchestrator' : `${head} --> Orchestrator`);
+        // cross-boundary entry edge (ingress into the perimeter) and human review (outside). Suppressed in
+        // private-only hybrid, where onpremLink() emits the sole ingress straight from the on-prem network.
+        if (!privateOnly) L.push(cacheOn ? 'Cache -- miss --> Orchestrator' : `${head} --> Orchestrator`);
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push('Validator -. review .-> Appr'); }
         if (o.feedbackLoop) { L.push(node('Fb', 'Feedback → eval', 'gov')); L.push('Obs -. evals .-> Fb'); }
-        onpremLink();
+        onpremLink(cacheOn, inboundPath(o, i).length ? 'IAP / mTLS' : '');
       } else {
-        L.push(node('Trig', 'Trigger (ticket/event)', 'client'));
+        // Hybrid is private-only here too: the triggering events arrive from the on-prem network over the
+        // interconnect, so the public Trigger node and its API Gateway door are not drawn.
+        const privateOnly = hybridLink;
+        if (!privateOnly) L.push(node('Trig', 'Trigger (ticket/event)', 'client'));
         let head = 'Trig';
         const inb = inboundControls(o, i);
-        if (inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
-        // Response cache short-circuit (dedup): a hit resolves a repeat trigger without planning.
-        // The cache (Memorystore / self-hosted Redis) is VPC-resident, so it is drawn inside the VPC below.
+        if (!privateOnly && inb.length) { L.push(node('EdgeGW', edgeLabel(inb), 'gateway')); L.push(`${head} --> EdgeGW`); head = 'EdgeGW'; }
+        // Response cache short-circuit (dedup): a hit resolves a repeat trigger without planning. The cache is
+        // self-hosted Redis on GKE (inside the VPC) or managed Memorystore for Redis Cluster (outside, PSC).
         const cacheOn = responseCacheOn(o);
+        const cacheInVpc = cacheOn && gke;   // self-hosted Redis cache lives in the VPC; managed Memorystore for Redis Cluster sits in the perimeter (PSC)
         openPerim();
-        // Self-hosted runtime and store, plus a private AlloyDB/Redis state store, sit inside the
-        // VPC; the managed Agent Runtime runtime and the managed Google services stay outside it.
-        openVpc(gke || storeInVpc || stateInVpc || cacheOn || hybridLink);
-        if (cacheOn) L.push(node('Cache', cacheLabel(o), 'data', 'cyl'));
+        // Convention B: only self-hosted compute sits inside the dedicated VPC - the GKE runtime, a self-built
+        // store, a self-hosted Redis cache/state tier, and the vLLM-on-GKE model fleet. Managed stores and the
+        // managed Agent Runtime stay in the perimeter, reached over PSC shown as edge tags.
+        openVpc(gke || storeInVpc || llmSelf || hybridLink);
+        if (cacheInVpc) L.push(node('Cache', cacheLabel(o), 'data', 'cyl'));
         // Agent Runtime hosts the orchestrator, generator, and validator; the auto quality gate is the validator
         if (gke) agentEngine();
         if (storeInVpc) L.push(node('Store', 'Vector store + BM25 ⊕', 'data', 'cyl'));
-        if (stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
+        if (stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));   // self-hosted Redis on GKE hot tier
+        if (llmSelf) L.push(node('LLM', 'Model(s)<br/>vLLM on GKE', 'orch'));   // self-hosted model fleet on GKE
         if (hybridLink) L.push(node('CloudRouter', 'Cloud Router<br/>+ VLAN attachment', 'gateway'));   // terminates the on-prem interconnect inside the VPC
         closeVpc();
         if (!gke) agentEngine();
-        if (cacheOn) { L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Trig'); }
+        if (cacheOn && !cacheInVpc) L.push(node('Cache', cacheLabel(o), 'data', 'cyl'));   // managed Memorystore cache, in the perimeter
+        if (cacheOn && !privateOnly) { L.push(`${head} --> Cache`); L.push('Cache -. hit .-> Trig'); }
         if (o.sandbox) { L.push(node('Sand', 'Transient sandbox ⊕', 'gov')); L.push('Generator --> Sand'); }
-        modelLeg('AE');
+        modelLeg('AE', llmSelf);
         dataPlane('Generator', 'Generator', storeInVpc);
         secretMgrNode('AE');
         if (!stateInVpc) L.push(node('State', stateLabel, 'data', 'cyl'));
-        L.push('AE -. state .-> State');
-        // Spanner durable tier is managed (reached via a PSC endpoint), so it sits outside the VPC even though Redis is inside
-        if (stateSpanner) { L.push(node('StateDur', 'Spanner<br/>active-active durable', 'data', 'cyl')); L.push('State -. durable .-> StateDur'); }
+        L.push(`AE -. state${stateConn ? ` · ${stateConn}` : ''} .-> State`);
+        // durable tier (AlloyDB or Spanner, both via a PSC endpoint) - a managed service, drawn outside the VPC
+        if (durTier) { L.push(node('StateDur', durTier.label, 'data', 'cyl')); L.push(`State -. durable · ${durTier.conn} .-> StateDur`); }
         kmsNode();   // CMEK edges, emitted once every managed data store above is declared
         L.push(node('Obs', 'Observability', 'obs')); L.push('AE -. traces .-> Obs');
         closePerim();
-        L.push(cacheOn ? 'Cache -- miss --> Orchestrator' : `${head} --> Orchestrator`);
+        if (!privateOnly) L.push(cacheOn ? 'Cache -- miss --> Orchestrator' : `${head} --> Orchestrator`);
         // human review of the quality gate (outside the perimeter), with resume back into the agent
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push('Validator -. await human .-> Appr'); L.push('Appr -. resume on approve .-> Orchestrator'); }
-        onpremLink();
+        onpremLink(cacheOn, inboundPath(o, i).length ? 'IAP / mTLS' : '');
       }
       const dp = DIAGRAM_PALETTE[isLightTheme() ? 'light' : 'dark'];
       if (perim) L.push(`style PERIM stroke:${dp.perim},stroke-dasharray: 4 4,fill:transparent;`);
@@ -2548,12 +2604,16 @@
     function obsHtml(m) {
       const i = state.inputs, o = state.overrides;
       const armorOn = !!(o.guardrails || o.residencyPin || o.toolAuthz);
+      const ph = privateOnlyIngress(o);
+      const ingress = ph ? 'on-prem' : (state.purpose === 'assistant' ? 'client' : 'trigger');
+      // private-only hybrid swaps the public 'API Gateway' hop for the light 'IAP / mTLS' identity check
+      const inNode = inboundPath(o, i).length && (ph ? 'IAP / mTLS' : 'API Gateway');
       const path = state.purpose === 'assistant'
-        ? ['client', inboundControls(o, i).length && 'API Gateway', responseCacheOn(o) && 'response cache', 'Agent Runtime', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', armorOn && 'Model Armor', 'LLM'].filter(Boolean)
-        : ['trigger', responseCacheOn(o) && 'response cache', 'Agent Runtime', armorOn && 'Model Armor', 'LLM'].filter(Boolean);
+        ? [ingress, inNode, responseCacheOn(o) && 'response cache', 'Agent Runtime', o.retrieval === 'rerank' && 'rerank', o.sandbox && 'sandbox', armorOn && 'Model Armor', 'LLM'].filter(Boolean)
+        : [ingress, ph && inNode, responseCacheOn(o) && 'response cache', 'Agent Runtime', armorOn && 'Model Armor', 'LLM'].filter(Boolean);
       const crit = state.purpose === 'assistant' ? 'faithfulness + citation accuracy' : 'PR-success + rework rounds';
       const slo = i.latencyPreset === 'subsecond' ? 'p95 < 1s' : (i.latencyPreset === 'minutes' ? 'per-run < N min' : 'p95 < 2s start / 6s full');
-      const comps = [inboundControls(o, i).length && 'API Gateway', responseCacheOn(o) && 'response cache', armorOn && 'Model Armor', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
+      const comps = [inNode, responseCacheOn(o) && 'response cache', armorOn && 'Model Armor', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
       const rows = [
         ['Live trace', path.join(' → '), comps.length ? comps : ['components']],
         ['Eval', `Vertex Eval on 5% async sample - ${crit}; drift > 2σ`, ['purpose']],
@@ -2604,7 +2664,7 @@
       // path adds the cloud infra/ops the managed runtimes bundle, plus a LangGraph Platform Enterprise contract
       // (self-hosting is an Enterprise add-on). Surface both as their own visible cost lines.
       if (o.platform === 'langgraph') { b.add('Self-managed infra + ops (LangGraph)'); b.add('LangGraph Platform Enterprise (self-host license)'); }
-      if (o.gateway) { b.add('Cloud IAP'); b.add('Cloud API Gateway'); b.add('Apigee'); } if (o.auditLog) b.add('Cloud Logging (WORM)');
+      if (o.gateway) { b.add('Cloud IAP'); if (!privateOnlyIngress(o)) { b.add('Cloud API Gateway'); b.add('Apigee'); } } if (o.auditLog) b.add('Cloud Logging (WORM)');
       const ragOn = ['hybrid', 'dense', 'rerank'].includes(o.retrieval);
       const hasIndex = i.dataSources.some(s => INDEXED_SRC.includes(s));
       if (ragOn && hasIndex && o.ragEngine === 'vais') {
@@ -2619,7 +2679,7 @@
       // Transactional state store: name the actual service so its cost line is correct, and keep the state
       // AlloyDB line distinct from a vector-DB AlloyDB line. A Redis tier adds Memorystore on top.
       b.add(o.stateStore.includes('spanner') ? 'Spanner' : o.stateStore.includes('alloydb') ? 'AlloyDB (state)' : 'Cloud SQL');
-      if (o.stateStore.includes('redis')) b.add('Memorystore');
+      if (o.stateStore.includes('redis')) b.add('Memorystore Cluster');
       b.add('Cloud Trace'); b.add('Agent Platform Evals');
       if (o.guardrails) b.add('Model Armor'); if (o.toolAuthz) b.add('Workload Identity'); if (o.modelRiskGov) b.add('Model Registry');
       if (o.enforceVpcSc) b.add('VPC Service Controls'); b.add('Cloud DLP'); b.add('IAM');
@@ -2703,7 +2763,7 @@
         'BigQuery': Math.max(0, bqScanTiB - 1) * K.bqOnDemandPerTiB + Math.max(0, K.bqStorageGB - 10) * K.storageBQ,  // on-demand scan + storage; 1 TiB & 10 GiB/mo free
         'Spanner': dbNodes * 657 + m.indexGB * 0.3,
         'Cloud SQL': 200 + dbNodes * 120,
-        'Memorystore': 70,
+        'Memorystore Cluster': 70,
         'GKE Autopilot (agent)': 140 + dbNodes * 20,            // Autopilot pod resources for the self-managed agent runtime
         'Cloud Storage': 5 + (m.indexGB || 0) * 0.02,           // docs + agent artifact bucket
         'Secret Manager': 1,                                    // a few secret versions + access calls
@@ -3126,6 +3186,19 @@
     /* ===================== Self-test ===================== */
     function selfTest() {
       const results = []; const assert = (n, c) => results.push([n, !!c]);
+      // Extract the Dedicated VPC subgraph block from a diagram, accounting for the nested GKE runtime
+      // subgraph (so an inside-the-VPC membership check is not truncated at the inner subgraph's `end`).
+      const vpcBlock = (d) => {
+        const start = d.indexOf('subgraph VPC[');
+        if (start < 0) return '';
+        const out = []; let depth = 0;
+        for (const ln of d.slice(start).split('\n')) {
+          out.push(ln);
+          if (/^\s*subgraph /.test(ln)) depth++;
+          else if (/^\s*end\s*$/.test(ln)) { depth--; if (depth === 0) break; }
+        }
+        return out.join('\n');
+      };
       // determinism
       applyPreset('assistant', 'expert_copilot'); deriveOverrides(); const a = JSON.stringify(computeMetrics()); deriveOverrides(); const b = JSON.stringify(computeMetrics());
       assert('determinism: same state → same metrics', a === b);
@@ -3285,28 +3358,57 @@
       applyPreset('automation', 'internal_lowstakes'); state.overrides.stateStore = 'spanner'; deriveOverrides();
       assert('a manual Spanner pick at regional scale is kept, with an AlloyDB nudge', state.overrides.stateStore === 'spanner' && runLinter(computeMetrics()).some(x => x.src === 'stateStore' && /cheaper regional default/.test(x.msg)));
       applyPreset('automation', 'internal_lowstakes'); state.overrides.stateStore = 'cloudsql'; deriveOverrides();
-      assert('a deliberate Cloud SQL pick is preserved and labels the node', state.overrides.stateStore === 'cloudsql' && /State store \(Cloud SQL\)/.test(buildMainDiagram()));
+      assert('a deliberate Cloud SQL pick is preserved, labels the node, and is reached over a PSC endpoint', state.overrides.stateStore === 'cloudsql' && /State store \(Cloud SQL\)/.test(buildMainDiagram()) && /AE -\. state · PSC \.-> State/.test(buildMainDiagram()));
       assert('automation routes audit history to BigQuery in the linter', runLinter(computeMetrics()).some(x => x.src === 'auditLog' && /BigQuery/.test(x.msg)));
-      // single-region default uses Redis + AlloyDB (all VPC-resident); the Redis tier is labelled Memorystore (managed)
+      // single-region default is a managed Memorystore for Redis Cluster hot tier + a managed AlloyDB durable
+      // tier, both reached over a PSC endpoint - so under Convention B both sit OUTSIDE the VPC, the durable
+      // tier split into its own node, and a fully managed design draws no VPC box at all (only self-hosted would).
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
-      assert('single-region default keeps the durable tier on AlloyDB, no Spanner', state.overrides.stateStore === 'redis_alloydb' && !/Spanner/.test(buildMainDiagram()));
-      assert('the default labels the managed Redis tier as Memorystore', /State store \(Memorystore \+ AlloyDB\)/.test(buildMainDiagram()));
-      // self-managed (GKE) labels the Redis tier as self-hosted in the cluster
+      {
+        const d = buildMainDiagram();
+        assert('single-region default keeps the durable tier on AlloyDB, no Spanner', state.overrides.stateStore === 'redis_alloydb' && !/Spanner/.test(d));
+        assert('the default labels the managed hot tier as Memorystore for Redis Cluster (PSC-native)', /State store \(Memorystore Cluster\)/.test(d) && !/Memorystore \+ AlloyDB/.test(d));
+        assert('the default splits AlloyDB into a managed durable node reached over a PSC endpoint', /StateDur\[\("AlloyDB/.test(d) && /State -\. durable · PSC \.-> StateDur/.test(d));
+        assert('the managed Memorystore hot tier is reached over PSC on the runtime edge', /AE -\. state · PSC \.-> State/.test(d));
+        assert('a fully managed default draws no VPC box', !/subgraph VPC\[/.test(d));
+      }
+      // self-managed (GKE): the hot Redis tier is self-hosted in the cluster (inside the VPC); the durable
+      // AlloyDB tier is managed, so it is split out and drawn OUTSIDE the VPC, reached over a PSC endpoint.
       applyPreset('assistant', 'self_managed'); deriveOverrides();
-      assert('self-managed labels the Redis tier as self-hosted on GKE', /Redis on GKE/.test(buildMainDiagram()));
-      // active-active upgrades the durable tier to Spanner and draws it OUTSIDE the VPC (PSC, managed), Memorystore inside
+      {
+        const d = buildMainDiagram();
+        assert('self-managed labels the hot Redis tier as self-hosted on GKE inside the VPC', /State store \(Redis on GKE\)/.test(d) && /State\[\(/.test(vpcBlock(d)));
+        assert('self-managed splits the managed AlloyDB durable tier outside the VPC over a PSC endpoint', /StateDur\[\("AlloyDB/.test(d) && !/StateDur/.test(vpcBlock(d)) && /State -\. durable · PSC \.-> StateDur/.test(d));
+      }
+      // active-active upgrades the durable tier to Spanner. On a managed runtime (default) both the hot
+      // Memorystore for Redis Cluster tier (PSC) and the Spanner durable tier (PSC) are managed, so both sit
+      // OUTSIDE the VPC and no VPC box is drawn; the connectivity mechanism shows on each edge.
       applyPreset('assistant', 'expert_copilot'); state.overrides.multiRegion = true; deriveOverrides();
       {
-        const d = buildMainDiagram(); const vo = d.indexOf('subgraph VPC['); const ve = d.indexOf('\nend', vo);
+        const d = buildMainDiagram();
         assert('active-active assistant upgrades the durable tier to Spanner', state.overrides.stateStore === 'redis_spanner');
-        assert('the hot Memorystore store sits inside the dedicated VPC', vo >= 0 && /State\[\(/.test(d.slice(vo, ve)));
-        assert('Spanner (durable) is drawn outside the VPC box', /StateDur\[\("Spanner/.test(d) && d.indexOf('StateDur') > ve);
+        assert('the managed hot Memorystore tier is drawn outside the VPC, reached over PSC', /AE -\. state · PSC \.-> State/.test(d) && !/subgraph VPC\[/.test(d));
+        assert('Spanner (durable) is drawn outside the VPC, reached over a PSC endpoint', /StateDur\[\("Spanner/.test(d) && /State -\. durable · PSC \.-> StateDur/.test(d));
       }
-      // Rule 2: the VPC box matches the Terraform networkUser - the response cache (Memorystore) is VPC-resident and sits inside it
+      // active-active on a GKE runtime: the self-hosted Redis hot tier is INSIDE the VPC, the managed Spanner
+      // durable tier is OUTSIDE it over PSC - so the boundary genuinely straddles the two tiers.
+      applyPreset('assistant', 'self_managed'); state.overrides.multiRegion = true; deriveOverrides();
+      {
+        const d = buildMainDiagram();
+        assert('GKE active-active keeps the self-hosted Redis hot tier inside the VPC', state.overrides.stateStore === 'redis_spanner' && /State\[\(/.test(vpcBlock(d)) && /State store \(Redis on GKE\)/.test(d));
+        assert('GKE active-active draws Spanner durable outside the VPC over PSC', /StateDur\[\("Spanner/.test(d) && !/StateDur/.test(vpcBlock(d)) && /State -\. durable · PSC \.-> StateDur/.test(d));
+      }
+      // Convention B: a managed Memorystore (Redis Cluster) response cache is a managed service, so it sits
+      // OUTSIDE the VPC (PSC); only a self-hosted Redis-on-GKE cache is drawn inside.
       applyPreset('assistant', 'expert_copilot'); state.overrides.stateStore = 'spanner'; state.overrides.exactCache = true; deriveOverrides();
       {
-        const d = buildMainDiagram(); const vo = d.indexOf('subgraph VPC['); const ve = d.indexOf('\nend', vo);
-        assert('the response cache surfaces the VPC and sits inside it', vo >= 0 && /Cache\[\(/.test(d.slice(vo, ve)));
+        const d = buildMainDiagram();
+        assert('a managed Memorystore cache is drawn outside the VPC (no box surfaced by it)', /Cache\[\(/.test(d) && !/subgraph VPC\[/.test(d));
+      }
+      applyPreset('assistant', 'self_managed'); deriveOverrides();
+      {
+        const d = buildMainDiagram();
+        assert('a self-hosted Redis-on-GKE cache sits inside the VPC', /Cache\[\(/.test(vpcBlock(d)));
       }
       // Rule 3: VPC-SC is claimed in the BOM only when the perimeter is actually enforced, not merely regulated
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
@@ -3342,7 +3444,33 @@
       // the VPC box is drawn for hybrid even with no other VPC-resident component, matching the Terraform that creates it for the Cloud Router
       applyPreset('assistant', 'expert_copilot'); state.overrides.deployment = 'hybrid'; state.overrides.stateStore = 'spanner'; state.overrides.exactCache = false; state.overrides.semanticCache = false; state.inputs.dataSources = ['web']; deriveOverrides();
       assert('hybrid draws the VPC box even with no other VPC-resident component', /subgraph VPC/.test(buildMainDiagram()) && /CloudRouter/.test(buildMainDiagram()));
+      // hybrid is private-only: the on-prem network is the SOLE ingress, so the public Client UI and its API
+      // Gateway door are never drawn and the on-prem path reaches the orchestrator directly (no internet door)
+      applyPreset('assistant', 'expert_copilot'); state.overrides.deployment = 'hybrid'; state.inputs.dataSources = ['doc_corpus']; deriveOverrides();
+      const dgPriv = buildMainDiagram();
+      assert('hybrid drops the public Client UI / API Gateway ingress (private-only)', !/Client UI/.test(dgPriv) && !/EdgeGW/.test(dgPriv) && !/API Gateway/.test(dgPriv));
+      assert('hybrid routes the sole ingress from the on-prem network through the light IAP hop to the orchestrator', /OnpremUsers == Cloud Interconnect ==> CloudRouter/.test(dgPriv) && /CloudRouter -- IAP \/ mTLS --> Orchestrator/.test(dgPriv) && !/CloudRouter --> Orchestrator/.test(dgPriv));
+      // private-only holds regardless of audience: an external automation over a hybrid link still has no public door
+      applyPreset('automation', 'external_facing'); state.overrides.deployment = 'hybrid'; deriveOverrides();
+      const dgPrivAuto = buildMainDiagram();
+      assert('hybrid automation is private-only even for an external audience (no public Trigger or gateway)', !/Trigger \(ticket/.test(dgPrivAuto) && !/EdgeGW/.test(dgPrivAuto) && /OnpremUsers == Cloud Interconnect ==> CloudRouter/.test(dgPrivAuto) && /CloudRouter -- IAP \/ mTLS --> Orchestrator/.test(dgPrivAuto));
+      // a response cache on a hybrid link short-circuits the PRIVATE ingress: hit back to the on-prem caller, miss to the agent
+      applyPreset('assistant', 'highvol_qa'); state.overrides.deployment = 'hybrid'; deriveOverrides();
+      const dgPrivCache = buildMainDiagram();
+      assert('hybrid response cache short-circuits the private on-prem ingress, not a public client', responseCacheOn(state.overrides) && /CloudRouter -- IAP \/ mTLS --> Cache/.test(dgPrivCache) && /Cache -\. hit \.-> OnpremUsers/.test(dgPrivCache) && /Cache -- miss --> Orchestrator/.test(dgPrivCache) && !/Cache -\. hit \.-> Client/.test(dgPrivCache));
+      // private-only hybrid is consistent across the numeric panels: light IAP hop in latency, on-prem→IAP in the
+      // trace, and a BoM that drops the public Apigee + Cloud API Gateway SKUs while keeping Cloud IAP
+      applyPreset('assistant', 'expert_copilot'); state.overrides.deployment = 'hybrid'; deriveOverrides();
+      const lpHy = computeMetrics().latParts;
+      assert('hybrid latency swaps the 10ms public gateway hop for a 3ms IAP / mTLS check', lpHy.some(p => p.label === 'IAP / mTLS' && p.ms === 3) && !lpHy.some(p => p.label === 'API Gateway'));
+      const obsHy = obsHtml(computeMetrics());
+      assert('hybrid live trace starts at on-prem via the IAP hop, not a public client + gateway', /on-prem → IAP \/ mTLS/.test(obsHy) && !/client → API Gateway/.test(obsHy));
+      const bomHy = bomHtml();
+      assert('hybrid BoM keeps Cloud IAP but drops the public Apigee + Cloud API Gateway', /Cloud IAP/.test(bomHy) && !/Apigee/.test(bomHy) && !/Cloud API Gateway/.test(bomHy));
+      assert('GCP still bills the public gateway and traces client → API Gateway (no regression)', (() => { applyPreset('assistant', 'expert_copilot'); state.overrides.deployment = 'gcp'; deriveOverrides(); const b = bomHtml(); return /Apigee/.test(b) && /Cloud API Gateway/.test(b) && /client → API Gateway/.test(obsHtml(computeMetrics())); })());
       assert('GCP diagram draws no on-premise subgraph (decoupled, no regression)', (() => { applyPreset('assistant', 'expert_copilot'); state.overrides.deployment = 'gcp'; deriveOverrides(); return !/subgraph ONPREM|Cloud Interconnect/.test(buildMainDiagram()); })());
+      // GCP keeps the public Client UI door (the private-only rule is hybrid-specific, no regression)
+      assert('GCP keeps the public Client UI ingress', (() => { applyPreset('assistant', 'expert_copilot'); state.overrides.deployment = 'gcp'; deriveOverrides(); return /Client UI/.test(buildMainDiagram()); })());
       // store and offline ingestion branch are coupled: indexed content draws both, a live source draws the Live node alongside
       applyPreset('assistant', 'expert_copilot'); state.inputs.dataSources = ['doc_corpus', 'bigquery']; deriveOverrides();
       const dgP = buildMainDiagram();
@@ -3469,10 +3597,11 @@
         // Line style is consistent: solid = synchronous request path (model leg stays solid); dotted = off
         // the request path. Telemetry and the feedback loop are off-path, so they are dotted, not solid.
         assert('telemetry and feedback are dotted (off the request path), the model leg stays solid', /AE -\. traces \.-> Obs/.test(dvpc) && /Obs -\. evals \.-> Fb/.test(dvpc) && !/--> Obs/.test(dvpc) && !/Obs --> Fb/.test(dvpc) && /AE --> Armor/.test(dvpc));
-        // CMEK reaches every managed store drawn: Cloud Storage and the managed AlloyDB state tier here.
-        // The Redis-on-GKE cache is self-hosted, so it takes no key edge, and there is no combined box.
-        assert('CMEK encrypts Cloud Storage and the managed state store', /KMS\["Cloud KMS \(CMEK\)"\]/.test(dvpc) && /KMS -\. encrypts \.-> GCS/.test(dvpc) && /KMS -\. encrypts \.-> State/.test(dvpc));
-        assert('CMEK draws no edge to the self-hosted Redis-on-GKE cache', !/KMS -\. encrypts \.-> Cache/.test(dvpc));
+        // CMEK reaches every managed store drawn: Cloud Storage and the managed AlloyDB durable tier (split
+        // out, drawn outside the VPC). The hot Redis-on-GKE tier and the response cache are self-hosted, so
+        // they take no key edge.
+        assert('CMEK encrypts Cloud Storage and the managed durable state tier', /KMS\["Cloud KMS \(CMEK\)"\]/.test(dvpc) && /KMS -\. encrypts \.-> GCS/.test(dvpc) && /KMS -\. encrypts \.-> StateDur/.test(dvpc));
+        assert('CMEK draws no edge to the self-hosted Redis-on-GKE hot tier or cache', !/KMS -\. encrypts \.-> State(?!Dur)/.test(dvpc) && !/KMS -\. encrypts \.-> Cache/.test(dvpc));
         assert('CMEK on with no privileged tools draws no Secret Manager node and no combined box', !/SecretMgr\[/.test(dvpc) && !/Secret Manager & CMEK/.test(dvpc));
       }
       state.overrides.dedicatedVpc = false;
@@ -3486,16 +3615,17 @@
         assert('tool authz draws a Secret Manager node the Agent Runtime reads from', /SecretMgr\["Secret Manager"\]/.test(dsm) && /AE -\. secrets \.-> SecretMgr/.test(dsm));
         assert('Secret Manager and Cloud KMS are separate boxes, not one combined node', /KMS\["Cloud KMS \(CMEK\)"\]/.test(dsm) && !/Secret Manager & CMEK/.test(dsm));
       }
-      // managed assistant (Agent Runtime + Agent Search): the private Redis session store surfaces the
-      // VPC even with no self-hosted compute, matching the Terraform that provisions Memorystore in a VPC.
+      // managed assistant (Agent Runtime + Agent Search, managed stores): under Convention B nothing is
+      // self-hosted, so NO VPC box is drawn - the managed Memorystore (Redis Cluster) hot tier and the AlloyDB
+      // durable tier both sit in the perimeter, reached over PSC endpoints shown on each edge.
       applyPreset('assistant', 'expert_copilot'); deriveOverrides();
       {
         const dmgd = buildMainDiagram();
         assert('a managed assistant draws its session state store', /State\[/.test(dmgd));
-        assert('the private Redis session store surfaces the dedicated VPC on a managed assistant', /subgraph VPC\["Dedicated VPC network"\]/.test(dmgd));
+        assert('a fully managed assistant draws no VPC box; the managed Memorystore hot tier is reached over PSC', !/subgraph VPC\[/.test(dmgd) && /AE -\. state · PSC \.-> State/.test(dmgd));
       }
       state.overrides.stateStore = 'spanner';
-      assert('a managed assistant on Spanner-only state (nothing private) draws no VPC boundary', !/subgraph VPC\[/.test(buildMainDiagram()));
+      assert('a managed assistant on Spanner-only state draws no VPC boundary and reaches it over PSC', !/subgraph VPC\[/.test(buildMainDiagram()) && /AE -\. state · PSC \.-> State/.test(buildMainDiagram()));
       applyPreset('assistant', 'strictpii_verify'); assert('Strict-PII verification ships CMEK + VPC-SC', state.overrides.cmek === true && state.overrides.enforceVpcSc === true);
       applyPreset('automation', 'strictpii'); assert('Strict-PII automation ships CMEK + VPC-SC', state.overrides.cmek === true && state.overrides.enforceVpcSc === true);
       applyPreset('assistant', 'expert_copilot'); assert('Expert copilot leaves CMEK + VPC-SC off', state.overrides.cmek === false && state.overrides.enforceVpcSc === false);
@@ -3589,7 +3719,7 @@
       'overrides.cmek': 'Encrypt data with customer-managed keys in Cloud KMS. Off uses Google-managed keys, which deploys in one shot with no key setup.',
       'overrides.enforceVpcSc': 'Wrap the Google services in a VPC Service Controls perimeter - a data-egress boundary around managed APIs, distinct from the Dedicated VPC network. Needs an org or folder access policy, so leave off for a sandbox apply and on for production.',
       'overrides.agentRuntime': 'Where the agent runs. Agent Runtime is the managed runtime with built-in sessions, memory, and observability. GKE Autopilot self-manages the runtime and needs a two-phase apply.',
-      'overrides.dedicatedVpc': 'A private network (layer 3/4 isolation) for the self-hosted parts of the system - distinct from the VPC-SC service perimeter, which is a data-egress boundary around Google APIs. On: the diagram wraps the self-hosted resources (GKE runtime, self-built search, AlloyDB/Redis) in a Dedicated VPC network boundary, and the export creates that VPC and attaches GKE, AlloyDB, and Redis to it (AlloyDB gets Private Service Access). Off: it uses the project default network instead. Hybrid deployment forces this on, since the Cloud Router that terminates the interconnect attaches to the VPC.',
+      'overrides.dedicatedVpc': 'A private network (layer 3/4 isolation) for the self-hosted parts of the system - distinct from the VPC-SC service perimeter, which is a data-egress boundary around Google APIs. On: the diagram wraps the self-hosted resources (GKE runtime, self-built search, a self-hosted Redis-on-GKE tier) in a Dedicated VPC network boundary, and the export creates that VPC and attaches the GKE runtime to it; the managed stores (AlloyDB, Memorystore for Redis Cluster) are reached from the VPC over Private Service Connect endpoints. Off: it uses the project default network instead. Hybrid deployment forces this on, since the Cloud Router that terminates the interconnect attaches to the VPC.',
       'overrides.pattern': 'One agent, or a coordinated team of specialist agents.',
       'overrides.reactMaxIter': 'Maximum reason-act-observe loops allowed per request.',
       'overrides.platform': 'Agent framework and runtime that hosts the system.',
