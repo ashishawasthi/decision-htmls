@@ -249,6 +249,9 @@
       <li><b>Data stores:</b> create an unstructured data store for documents (Cloud Storage or BigQuery) and a website
         data store for site pages by URL pattern. Advanced website indexing crawls and refreshes pages on a
         schedule.</li>
+      <li><b>Rich-context parsing:</b> the advanced parser is the <a class="src" href="document-ai.html">Document AI</a> Layout Parser, which chunks on
+        structural boundaries (sections, tables, lists). For filterable grounding, import documents with structData
+        metadata so extracted entities travel with each chunk and can pre-filter results.</li>
       <li><b>Blended search and rerank:</b> the engine fuses semantic and keyword signals and reranks, so you do not wire
         BM25 and a separate reranker yourself.</li>
       <li><b>Grounded answers:</b> use the answer and grounding APIs to return cited summaries, or return passages and let

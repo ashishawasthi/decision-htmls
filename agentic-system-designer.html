@@ -2048,12 +2048,12 @@
       Retr: 'Narrows candidates in stages (metadata pre-filter → dense + BM25 → rerank) so the model is grounded on only the most relevant passages.',
       Sand: 'Runs PII-sensitive or untrusted tool execution in an ephemeral, isolated instance that is wiped after each use, so sensitive data and side-effects never persist.',
       LLM: 'The reasoning and fast models. Smart routing sends easy lookups to the cheap model and hard queries to the reasoning model.',
-      Store: 'The index that retrieval reads at query time. Managed (Agent Search) or self-built (Vector Search + BM25). Populated offline by the ingestion branch, never at request time.',
+      Store: 'The index that retrieval reads at query time. Managed (Agent Search) or self-built (Vector Search + BM25). Populated offline by the ingestion branch, never at request time. Managed Agent Search parses and chunks with the Document AI Layout Parser, and documents can be imported with structData metadata (extracted entities such as dates, amounts, or parties) that becomes filterable rich context at query time.',
       Idx: 'The content indexed offline into the store: the document corpus and crawled company website pages. Re-crawled and re-embedded on a schedule, so the index is only as fresh as the last run.',
       GCS: 'Cloud Storage holds the source documents (uploaded to the seed-docs prefix) and the packaged agent artifact. It feeds the offline index; it is not read at request time.',
       Live: 'Sources queried live at request time (BigQuery text-to-SQL, on-prem DB, knowledge graph, streaming), not pre-indexed.',
       WebG: 'Live web grounding via the model web-search tool (Gemini Google Search or Claude web search) for fresh, public, non-owned content. Billed per search and adds a network round-trip; not available on self-hosted Llama.',
-      DocAI: 'Parses source documents and pages into clean structured text (layout, tables, OCR) before chunking and embedding.',
+      DocAI: 'Parses source documents and pages into clean structured text (layout, tables, OCR) before chunking and embedding, and extracts entities that can ride along as searchable metadata.',
       Emb: 'Splits parsed content into chunks, embeds them, and writes the vectors plus a BM25 index into the store.',
       Obs: 'Traces, logs, and evals for every step, so quality, latency, and cost stay measurable and regressions get caught.',
       Appr: 'A human review step (maker-checker or dual-control) before a high-stakes action is committed. Async: the run pauses here and resumes only when a reviewer approves.',
@@ -2278,7 +2278,7 @@
       // Dedicated VPC network: a layer 3/4 boundary around the SELF-HOSTED compute only (Convention B) -
       // the GKE agent runtime, a self-built vector store + retrieval, a self-hosted Redis cache/state tier,
       // and the vLLM-on-GKE model fleet - plus the hybrid Cloud Router that terminates the interconnect.
-      // Managed services (Agent Engine, AlloyDB / Spanner / Cloud SQL, managed Memorystore, the Google APIs)
+      // Managed services (Agent Runtime, AlloyDB / Spanner / Cloud SQL, managed Memorystore, the Google APIs)
       // are reached privately over a PSC endpoint and are drawn OUTSIDE this box, in the VPC-SC perimeter,
       // with the mechanism shown as an edge tag (PSC). It is a network boundary, distinct from the VPC-SC
       // service perimeter, and nests inside it when both are on. Terraform may still create a VPC for the PSC
@@ -2383,7 +2383,7 @@
         openPerim();
         // Convention B: only self-hosted compute sits inside the dedicated VPC - the GKE runtime, a self-built
         // search + store, a self-hosted Redis cache/state tier, and the vLLM-on-GKE model fleet. Managed
-        // services (Agent Engine, AlloyDB/Spanner/Cloud SQL, managed Memorystore, the Google APIs) stay in the
+        // services (Agent Runtime, AlloyDB/Spanner/Cloud SQL, managed Memorystore, the Google APIs) stay in the
         // perimeter, reached over PSC shown as edge tags - so the box is drawn only when something is
         // self-hosted (or hybrid needs an in-VPC Cloud Router); a fully managed design draws no VPC box.
         openVpc(gke || retrInVpc || storeInVpc || llmSelf || hybridLink);
@@ -2418,7 +2418,7 @@
         // private-only hybrid, where onpremLink() emits the sole ingress straight from the on-prem network.
         if (!privateOnly) L.push(cacheOn ? `Cache -- miss --> ${agentEntry}` : `${head} --> ${agentEntry}`);
         if (o.hitlApproval !== 'none') { L.push(node('Appr', 'Human review', 'gov')); L.push(`${agentReview} -. review .-> Appr`); }
-        if (o.feedbackLoop) { L.push(node('Fb', 'Feedback → eval', 'gov')); L.push('Obs -. evals .-> Fb'); }
+        if (o.feedbackLoop) { L.push(node('Fb', 'Feedback → Agent Platform evals', 'gov')); L.push('Obs -. evals .-> Fb'); }
         onpremLink(cacheOn, inboundPath(o, i).length ? 'IAP / mTLS' : '');
       } else {
         // Hybrid is private-only here too: the triggering events arrive from the on-prem network over the
@@ -2501,7 +2501,7 @@
         modelarmor: 'flowchart LR\n A[Input sanitize]-->B[Injection / jailbreak screen]-->C[Model call]-->D[Output safety filter]-->E[Egress PII redact]',
         cache: 'flowchart LR\n A[Normalize + version-namespace key]-->B[Exact-match lookup]-->C[Semantic embed + ANN match]-->D[Serve stored answer or write back on miss]-->E[TTL by freshness + evict]',
         ingestion: 'flowchart LR\n A[Docs + Website]-->B[Document AI / crawler]-->C[Chunker]-->D[Embeddings]-->E[Vector + BM25 + GCS]',
-        vais: 'flowchart LR\n A[Docs + Website data store]-->B[Managed parse + chunk + embed]-->C[Managed index]-->D["RRF (semantic + keyword) + rerank"]-->E[Grounded answer + citations]',
+        vais: 'flowchart LR\n A[Docs + Website + structData metadata]-->B["Layout parser (Document AI) + chunk + embed"]-->C[Managed index]-->D["RRF (semantic + keyword) + rerank"]-->E[Grounded answer + citations]',
         sandbox: 'flowchart LR\n A[Ephemeral instance + KMS]-->B[Entity resolution]-->C[Web/OSINT + risk rules]-->D[Memory wipe]-->E[Audit hash]',
         funnel: 'flowchart LR\n A[Metadata pre-filter]-->B[Dense + BM25 RRF]-->C[Reranker]-->D[Grounded generation + citations]',
       };
@@ -2678,10 +2678,10 @@
       const comps = [inNode, responseCacheOn(o) && 'response cache', armorOn && 'Model Armor', (o.retrieval === 'rerank') && 'rerank', o.sandbox && 'sandbox'].filter(Boolean);
       const rows = [
         ['Live trace', path.join(' → '), comps.length ? comps : ['components']],
-        ['Eval', `Vertex Eval on 5% async sample - ${crit}; drift > 2σ`, ['purpose']],
+        ['Eval', `Agent Platform evals (Online Monitors) on 5% async sample - ${crit}; drift > 2σ`, ['purpose']],
         (i.languages && i.languages.length > 1) ? ['Eval languages', `${i.languages.map(l => l.toUpperCase()).join(', ')} - run the faithfulness and citation eval per language so non-English quality is tracked separately`, ['languages']] : null,
         ['SLO', slo, ['latency']],
-        o.feedbackLoop ? ['Feedback', 'thumbs + reason → eval store', ['feedback loop']] : null,
+        o.feedbackLoop ? ['Feedback', 'app captures thumbs + reason → eval dataset feeding Agent Platform evals', ['feedback loop']] : null,
         ['Always-on', 'Cloud Trace + Logging (redacted) + OpenTelemetry', null],
       ].filter(Boolean);
       return rows.map(([k, v, drv]) => `<div class="obs-row"><b>${k}</b> ${driverTags(drv)}<br>${v}</div>`).join('');

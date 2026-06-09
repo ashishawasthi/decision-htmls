@@ -193,7 +193,10 @@
             cheaper and adequate.</li>
           <li>Very high document volumes where per-page parsing cost is not budgeted: it can dominate ingestion spend.</li>
           <li>When the platform's built-in parsing already meets quality needs (for example <a class="src" href="vertex-ai-search.html">Agent Search</a> ingesting
-            PDFs directly), adding a separate parser may be redundant.</li>
+            PDFs directly), adding a separate parser may be redundant. Agent Search's own advanced parsing is the
+            Document AI Layout Parser, so managed ingestion already uses Document AI under the hood; add a standalone
+            processor when you need high-fidelity OCR, specialized entity extraction, or custom metadata to attach as
+            structData.</li>
         </ul>
       </div>
     </div>
@@ -231,6 +234,9 @@
       <li><b>Parse then chunk then embed:</b> run Document AI first to recover clean text and layout, then chunk on
         structural boundaries (sections, tables, paragraphs) rather than fixed character windows, then embed. Better
         parsing yields better chunks and better retrieval.</li>
+      <li><b>Enrich the search index:</b> instead of embedding into your own store, import the Document AI JSON into an
+        <a class="src" href="vertex-ai-search.html">Agent Search</a> unstructured data store with structData metadata, so the
+        entities it extracted become filterable fields in managed retrieval, not just raw text.</li>
       <li><b>Batch over online:</b> for an initial corpus load or a reindex, use batch processing across the whole corpus
         rather than per-document online calls. It is cheaper and matches the offline nature of ingestion.</li>
       <li><b>Pick the right processor:</b> use the general or layout parser for broad corpora and a specialized processor
