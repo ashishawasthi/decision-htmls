@@ -25,7 +25,7 @@
         <path d="M19 12H5" />
         <path d="M12 19l-7-7 7-7" />
       </svg></a>
-    <h1>Agentic System Designer v2 <span style="color:var(--muted);font-weight:400;font-size:13px">- inputs derive the
+    <h1>Agentic System Designer <span style="color:var(--muted);font-weight:400;font-size:0.7em">v2</span> <span style="color:var(--muted);font-weight:400;font-size:13px">- inputs derive the
         design; pin a decision to override it</span></h1>
     <div class="legend">
       <span><i style="background:var(--client)"></i>client</span>
@@ -225,23 +225,48 @@
     <p><b>Naming.</b> Vertex AI was renamed Agent Platform on 2026-05-02 (Agent Engine is now Agent Runtime; Vertex AI
       Search is now Agent Search; Vector Search dropped the Vertex AI prefix). Product APIs, SDKs, and existing
       cloud.google.com URLs are unchanged.</p>
-    <p><b>Pricing (about May 2026).</b> The token, accelerator, managed-service, and storage rates behind the Cost and
-      Bill of materials panels:</p>
+    <p><b>Pricing (list prices verified June 2026; workload assumptions illustrative).</b> Every cost row expands on
+      click to the substituted formula it was computed from, the assumption behind it, and a link to its official
+      pricing page. The pages those links point to:</p>
     <ul>
       <li><a href="https://cloud.google.com/vertex-ai/generative-ai/pricing">Agent Platform generative AI pricing</a>:
-        Gemini and partner model tokens, context caching, grounding and web search.</li>
+        Gemini and partner model tokens, context caching, web grounding, and gemini-embedding.</li>
       <li><a href="https://docs.anthropic.com/en/docs/about-claude/pricing">Claude pricing</a> and
         <a href="https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude">Claude on Agent
           Platform</a>.</li>
+      <li><a href="https://cloud.google.com/vertex-ai/pricing">Agent Platform pricing</a>: Agent Runtime
+        vCPU/GiB-hours, Vector Search serving nodes, and the Gen AI evaluation service.</li>
+      <li><a href="https://cloud.google.com/generative-ai-app-builder/pricing">Agent Search pricing</a>: Standard vs
+        Enterprise queries and index storage.</li>
       <li><a href="https://cloud.google.com/products/compute/pricing/accelerator-optimized">GCP accelerator-optimized
           VM pricing</a> and <a href="https://cloud.google.com/tpu/pricing">Cloud TPU pricing</a>: self-host node $/hr
         by on-demand, CUD, and spot.</li>
-      <li><a href="https://cloud.google.com/bigquery/pricing">BigQuery pricing</a>: on-demand scan ($/TiB) and storage.
+      <li><a href="https://cloud.google.com/bigquery/pricing">BigQuery</a>,
+        <a href="https://cloud.google.com/alloydb/pricing">AlloyDB</a>,
+        <a href="https://cloud.google.com/spanner/pricing">Spanner</a>,
+        <a href="https://cloud.google.com/sql/pricing">Cloud SQL</a>,
+        <a href="https://cloud.google.com/memorystore/docs/cluster/pricing">Memorystore Cluster</a>, and
+        <a href="https://cloud.google.com/storage/pricing">Cloud Storage</a>: data and state stores.</li>
+      <li><a href="https://cloud.google.com/document-ai/pricing">Document AI</a>,
+        <a href="https://cloud.google.com/dataflow/pricing">Dataflow</a>, and
+        <a href="https://cloud.google.com/pubsub/pricing">Pub/Sub</a>: ingestion and eventing.</li>
+      <li><a href="https://cloud.google.com/apigee/pricing">Apigee</a> and
+        <a href="https://cloud.google.com/api-gateway/pricing">API Gateway</a>: the request edge.</li>
+      <li><a href="https://cloud.google.com/stackdriver/pricing">Cloud Logging and Cloud Trace</a> (also covers the
+        Data Access audit stream),
+        <a href="https://cloud.google.com/sensitive-data-protection/pricing">Sensitive Data Protection (Cloud
+          DLP)</a>,
+        <a href="https://cloud.google.com/security-command-center/pricing">Model Armor</a>,
+        <a href="https://cloud.google.com/kms/pricing">Cloud KMS</a>, and
+        <a href="https://cloud.google.com/secret-manager/pricing">Secret Manager</a>: observability and governance.
       </li>
-      <li><a href="https://cloud.google.com/generative-ai-app-builder/pricing">Agent Search pricing</a>: search queries
-        and index storage.</li>
-      <li><a href="https://cloud.google.com/storage/pricing">Cloud Storage pricing</a>: vector index and object
-        storage.</li>
+      <li><a href="https://cloud.google.com/kubernetes-engine/pricing">GKE pricing</a>: Autopilot cluster fee and pod
+        rates.</li>
+      <li><a href="https://cloud.google.com/vpc/network-pricing">VPC network pricing</a> (internet egress) and
+        <a href="https://cloud.google.com/network-connectivity/docs/interconnect/pricing">Cloud Interconnect
+          pricing</a> (Partner VLAN attachments and link egress).</li>
+      <li><a href="https://cloud.google.com/support">Google Cloud Customer Care</a> (the Enhanced support tier) and
+        <a href="https://www.langchain.com/pricing">LangChain pricing</a> (LangGraph Platform).</li>
     </ul>
     <p><b>Vector search is a managed ScaNN service here.</b> Both vector store options (Vertex AI Vector Search, the
       AlloyDB ScaNN index) and managed Agent Search run Google's ScaNN approximate-nearest-neighbour index, so there
@@ -256,6 +281,15 @@
       <li>Vector index = corpus docs x 5 chunks/doc x 768-dim x 4 bytes, then sharded.</li>
       <li>Latency p95 sums the critical-path line items; parallel grounding takes the slowest source, not the sum.</li>
       <li>Model-call fan-out = agents x a damped ReAct loop (1 + (iterations - 1) x 0.5).</li>
+      <li>Egress bytes = output tokens x 4 bytes. Internet egress appears only for external or public audiences on
+        GCP; hybrid designs bill a Partner Interconnect VLAN instead (private-only ingress).</li>
+      <li>Embedding refresh re-embeds 0.2% of the corpus per day at 5 chunks x 500 tokens per document; the one-time
+        backfill is shown in the row detail but kept out of the monthly total.</li>
+      <li>Logging assumes ~12 logged bytes per token with a 36-month WORM hold; Cloud Trace assumes ~30 spans per
+        request; DLP inspects prompt + response bytes; Model Armor screens ~2x the billed tokens.</li>
+      <li>Below the line: ops labor at illustrative loaded-FTE fractions (0.5 for GKE ops, 1 per 8 GPU nodes with a
+        0.5 floor, 0.5 for self-managed LangGraph) x $18k/mo, plus Enhanced support (the greater of $100 or a tiered
+        10/7/5/3% of spend). Neither enters the Total run-rate or Cost / 1k requests.</li>
     </ul>
     <p><b>Reference links.</b> Canonical docs for the products this design recommends:</p>
     <ul>

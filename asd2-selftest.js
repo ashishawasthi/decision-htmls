@@ -229,6 +229,57 @@
       assert('LangGraph self-host TCO exceeds the managed runtime at default scale', x.cs.platMo > adk.cs.platMo);
     }
 
+    /* ---- 6b. cost justification: calc strings, refs, and the new cost lines ---- */
+    {
+      const base = P.assistant.expert_copilot.inputs;
+      const x = pipe('assistant', base);
+      const bq = NS.metrics.priceComponent('BigQuery', x.m, base);
+      assert('priceComponent returns { mo, calc } for a priced component', !!bq && isFinite(bq.mo) && typeof bq.calc === 'string' && /\d/.test(bq.calc));
+      assert('priceComponent returns null for an unknown component', NS.metrics.priceComponent('NopeXYZ', x.m, base) === null);
+      const allPresets = Object.entries(P).flatMap(([pur, g]) => Object.values(g).map(p => pipe(pur, p.inputs)));
+      assert('every priced row carries a substituted calc string (all presets)', allPresets.every(t => t.cs.priced.every(c => typeof c.calc === 'string' && /\d/.test(c.calc))));
+      const hyIn = clone(base); hyIn.deployment = 'hybrid';
+      const covered = allPresets.concat([pipe('assistant', hyIn), pipe('assistant', base, { platform: 'langgraph' })]);
+      const modelNames = new Set(NS.catalog.MODELS.map(mm => mm.name));
+      assert('every BoM component has a PRICE book entry (no silent red rows)', covered.every(t => t.comps.every(n => modelNames.has(n) || n in NS.catalog.PRICE)));
+      assert('GenAI calc strings cover fresh, output, and the naive baseline', ['fresh', 'output', 'naive'].every(k => x.m.costCalc[k] && /\d/.test(x.m.costCalc[k])));
+      const big = Object.assign(clone(P.automation.internal_lowstakes.inputs), { actors: 50000, actionsPerDay: 60, tokensOut: 2000, modelStrategy: 'self_host' });
+      assert('self-host fleet carries a GPU calc string', /\d.*node/.test(pipe('automation', big).m.costCalc.gpu));
+    }
+    {
+      const hyIn = clone(P.assistant.expert_copilot.inputs); hyIn.deployment = 'hybrid';
+      const hy = pipe('assistant', hyIn), gcp = pipe('assistant', P.assistant.expert_copilot.inputs);
+      assert('hybrid bills the interconnect and lists the BoM chip', hy.comps.includes('Cloud Interconnect + VLAN') && hy.cs.priced.some(c => c.name === 'Cloud Interconnect + VLAN' && c.mo > 100));
+      assert('gcp deployment has no interconnect line', !gcp.comps.includes('Cloud Interconnect + VLAN'));
+      assert('internal audience on gcp has no internet egress line', !gcp.cs.priced.some(c => c.name === 'Network egress (internet)'));
+      const ext = pipe('assistant', P.assistant.customer_support.inputs);
+      assert('external audience on gcp adds a small internet egress line', ext.cs.priced.some(c => c.name === 'Network egress (internet)' && c.mo > 0 && c.mo < 50));
+      assert('hybrid never bills internet egress (private-only ingress)', !hy.cs.priced.some(c => c.name === 'Network egress (internet)'));
+    }
+    {
+      const man = pipe('assistant', P.assistant.expert_copilot.inputs);
+      const slf = pipe('assistant', P.assistant.self_managed.inputs);
+      assert('below the line reconciles and never enters the run-rate', Math.abs(man.cs.allInMo - (man.cs.totalMo + man.cs.btlMo)) < 1e-6 && Math.abs(man.cs.totalMo - (man.cs.genai + man.cs.platMo)) < 1e-6);
+      assert('fully managed design carries support but no ops labor below the line', man.cs.btl.length === 1 && man.cs.btl[0].name === 'Enterprise support (Enhanced)' && NS.metrics.laborLines(man.arch, man.m).length === 0);
+      assert('self-managed design adds an ops labor line below the line', slf.cs.btl.some(b => b.name.indexOf('Ops & on-call labor') === 0) && slf.cs.btlMo > man.cs.btlMo);
+      const lr = NS.catalog.PRICE['Ops & on-call labor (build vs buy)'].rates;
+      const big = Object.assign(clone(P.automation.internal_lowstakes.inputs), { actors: 50000, actionsPerDay: 60, tokensOut: 2000, modelStrategy: 'self_host' });
+      const sh = pipe('automation', big);
+      const shLabor = NS.metrics.laborLines(sh.arch, sh.m)[0];
+      assert('a self-host fleet prices labor at no less than the FTE floor', !!shLabor && shLabor.mo >= lr.gpuMinFte * lr.ftePerMo);
+      assert('support is the greater of the minimum or the tiered percentage', man.cs.btl[man.cs.btl.length - 1].mo >= NS.catalog.PRICE['Enterprise support (Enhanced)'].rates.minMo);
+    }
+    {
+      const man = pipe('assistant', P.assistant.expert_copilot.inputs);
+      const slf = pipe('assistant', P.assistant.self_managed.inputs);
+      assert('self-built pipeline prices embedding ingestion; Agent Search bundles it', slf.cs.priced.some(c => c.name === 'Embeddings (ingestion)' && c.mo > 0) && !man.comps.includes('Embeddings (ingestion)'));
+      const nc = clone(P.assistant.self_managed.inputs); nc.corpusSize = 0;
+      assert('no corpus, no embedding line', !pipe('assistant', nc).comps.includes('Embeddings (ingestion)'));
+      const dlp = man.cs.priced.find(c => c.name === 'Cloud DLP');
+      assert('DLP prices per GB inspected, not per token (the old rate gave ~$1,459 here)', !!dlp && dlp.mo > 0 && dlp.mo < 100);
+      assert('cost per 1k requests reconciles with the run-rate', Math.abs(man.cs.perK - man.cs.totalMo / man.m.reqMo * 1000) < 1e-9);
+    }
+
     /* ---- 7. decisions registry covers every derived decision ---- */
     {
       const r = NS.derive('assistant', P.assistant.expert_copilot.inputs, {});

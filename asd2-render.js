@@ -129,42 +129,61 @@
   }
 
   function costPanelHtml(m, cs, arch, inputs) {
-    const money = C().money;
-    const row = (label, val, sub, tot) => `<div class="cost-row${tot ? ' tot' : ''}"><span class="cl">${label}${sub ? ` <small>${sub}</small>` : ''}</span><span class="cn">${val}</span></div>`;
+    const money = C().money, PRICE = C().PRICE, GP = C().GENAI_PRICE;
+    const esc = s => String(s == null ? '' : s).replace(/"/g, '&quot;');
+    /* A row with any of calc / why / ref renders as an expandable <details>: the
+       summary is the normal cost row; the detail shows the substituted formula,
+       the assumption, and the pricing link. Rows with none stay a plain div.
+       Open state is browser presentation state; a re-render collapses it, which
+       is correct because the expanded math belonged to the old numbers. */
+    const row = (label, val, o = {}) => {
+      const core = `<span class="cl"${o.why ? ` title="${esc(o.why)}"` : ''}>${label}${o.sub ? ` <small>${o.sub}</small>` : ''}</span><span class="cn">${val}</span>`;
+      if (!o.calc && !o.why && !o.ref) return `<div class="cost-row${o.tot ? ' tot' : ''}">${core}</div>`;
+      const detail = (o.calc ? `<div class="calc">${o.calc}</div>` : '') +
+        (o.why ? `<div class="why">${o.why}</div>` : '') +
+        (o.ref ? `<a href="${o.ref}" target="_blank" rel="noopener">pricing -&gt;</a>` : '');
+      return `<details class="cost-line"><summary class="cost-row${o.tot ? ' tot' : ''}">${core}</summary><div class="cost-detail">${detail}</div></details>`;
+    };
     const grp = t => `<div class="cost-grp">${t}</div>`;
     const rows = [];
-    const cp = m.costParts || {};
+    const cp = m.costParts || {}, cc = m.costCalc || {};
     if (!arch.models.selfHostAll) {
       rows.push(grp('GenAI · managed inference'));
-      rows.push(row('Input · fresh', money(cp.fresh)));
-      rows.push(row('Input · cached', money(cp.cached), 'billed at model cache-read rate'));
-      rows.push(row('Output', money(cp.output)));
-      if (cp.grounding > 0) rows.push(row('Web grounding', money(cp.grounding), 'live web search · $/1k calls'));
-      rows.push(row('GenAI', money(m.costOpt), '', true));
+      rows.push(row('Input · fresh', money(cp.fresh), { calc: cc.fresh, why: GP.fresh.why, ref: GP.fresh.ref }));
+      rows.push(row('Input · cached', money(cp.cached), { sub: 'billed at model cache-read rate', calc: cc.cached, why: GP.cached.why, ref: GP.cached.ref }));
+      rows.push(row('Output', money(cp.output), { calc: cc.output, why: GP.output.why, ref: GP.output.ref }));
+      if (cp.grounding > 0) rows.push(row('Web grounding', money(cp.grounding), { sub: 'live web search · $/1k calls', calc: cc.grounding, why: GP.grounding.why, ref: GP.grounding.ref }));
+      rows.push(row('GenAI', money(m.costOpt), { tot: true, why: GP.genai.why }));
       if (m.costNaive > 0 && m.costNaive > m.costOpt) {
         const savedPct = Math.round((1 - m.costOpt / m.costNaive) * 100);
-        rows.push(row('Naive baseline', money(m.costNaive), 'reasoning model, no cache/routing'));
-        rows.push(row('Optimizations save', money(m.costNaive - m.costOpt) + ` (${savedPct}%)`, 'vs naive'));
+        rows.push(row('Naive baseline', money(m.costNaive), { sub: 'reasoning model, no cache/routing', calc: cc.naive, why: GP.naive.why }));
+        rows.push(row('Optimizations save', money(m.costNaive - m.costOpt) + ` (${savedPct}%)`, { sub: 'vs naive', calc: cc.saved, why: GP.saved.why }));
       }
     }
     if (m.gpuMo) {
       rows.push(grp('GenAI · self-host on GPUs'));
-      rows.push(row('GPU fleet', money(m.gpuMo), `${m.gpuNodes}x8 ${(arch.sizing.accelerator || 'h100').toUpperCase()} · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util`));
-      rows.push(row('Inference', money(m.gpuMo), '', true));
+      rows.push(row('GPU fleet', money(m.gpuMo), { sub: `${m.gpuNodes}x8 ${(arch.sizing.accelerator || 'h100').toUpperCase()} · ${m.gpuTierLabel} · ${m.gpuUtilPct}% util`, calc: cc.gpu, why: GP.gpu.why, ref: GP.gpu.ref }));
+      rows.push(row('Inference', money(m.gpuMo), { tot: true }));
     }
     rows.push(grp('Platform &amp; infrastructure <small>(derived)</small>'));
-    const EST = C().BOM_EST_NOTE;
     cs.priced.forEach(x => {
-      const en = EST[x.name];
-      const tag = x.mo === 0 ? (en ? en.note : 'free') : ('est.' + (en ? ' · ' + en.note : ''));
-      rows.push(`<div class="cost-row"><span class="cl"${en ? ` title="${en.why.replace(/"/g, '&quot;')}"` : ''}>${x.name} <small>${tag}</small></span><span class="cn">${money(x.mo)}</span></div>`);
+      const en = PRICE[x.name] || {};
+      const tag = x.mo === 0 ? (en.note || 'within free tier') : ('est.' + (en.note ? ' · ' + en.note : ''));
+      rows.push(row(x.name, money(x.mo), { sub: tag, calc: x.calc, why: en.why, ref: en.ref }));
     });
-    cs.red.forEach(x => rows.push(`<div class="cost-row red"><span class="cl" title="${(x.why || '').replace(/"/g, '&quot;')}">${x.name} <small>${x.short} · not modeled</small></span><span class="cn">n/a</span></div>`));
+    cs.red.forEach(x => rows.push(`<div class="cost-row red"><span class="cl" title="${esc(x.why)}">${x.name} <small>${x.short} · not modeled</small></span><span class="cn">n/a</span></div>`));
     if (cs.free.length) rows.push(`<div class="cost-row"><span class="cl">Included at no charge <small>${cs.free.join(' · ')}</small></span><span class="cn">$0</span></div>`);
-    rows.push(row('Platform', money(cs.platMo) + (cs.red.length ? ` <span class="cred">+${cs.red.length} unpriced</span>` : ''), cs.priced.length + ' priced', true));
-    rows.push(row('Total run-rate', money(cs.totalMo), `GenAI + platform${cs.red.length ? ' · excludes unpriced' : ''}`, true));
-    const reqMo = (inputs.actors || 0) * (inputs.actionsPerDay || 0) * 30.4;
-    if (reqMo > 0) rows.push(row('Cost / 1k requests', '$' + (cs.totalMo / reqMo * 1000).toFixed(2), 'total run-rate / monthly requests', true));
+    rows.push(row('Platform', money(cs.platMo) + (cs.red.length ? ` <span class="cred">+${cs.red.length} unpriced</span>` : ''), { sub: cs.priced.length + ' priced', tot: true, calc: cs.calc && cs.calc.plat, why: GP.plat.why }));
+    rows.push(row('Total run-rate', money(cs.totalMo), { sub: `GenAI + platform${cs.red.length ? ' · excludes unpriced' : ''}`, tot: true, calc: cs.calc && cs.calc.total, why: GP.total.why }));
+    if (m.reqMo > 0) rows.push(row('Cost / 1k requests', '$' + cs.perK.toFixed(2), { sub: 'total run-rate / monthly requests', tot: true, calc: cs.calc && cs.calc.perK, why: GP.perK.why }));
+    if (cs.btl && cs.btl.length) {
+      rows.push(grp('Below the line <small>(people &amp; support · excluded from run-rate)</small>'));
+      cs.btl.forEach(x => {
+        const en = PRICE[x.name] || {};
+        rows.push(row(x.name, money(x.mo), { sub: 'est.' + (en.note ? ' · ' + en.note : ''), calc: x.calc, why: en.why, ref: en.ref }));
+      });
+      rows.push(row('All-in', money(cs.allInMo), { sub: 'run-rate + below-the-line', tot: true, calc: cs.calc && cs.calc.allin, why: GP.allin.why }));
+    }
     return `<div class="costbox">${rows.join('')}</div>`;
   }
 

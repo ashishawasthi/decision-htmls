@@ -595,6 +595,51 @@ fieldset,
   margin-left: 6px
 }
 
+/* Expandable cost rows: the summary is the normal row, the detail underneath
+   shows the substituted formula, the assumption, and the pricing link. */
+details.cost-line summary.cost-row {
+  cursor: pointer;
+  list-style: none
+}
+
+details.cost-line summary.cost-row::-webkit-details-marker { display: none }
+
+details.cost-line summary.cost-row .cl::after {
+  content: '\25B8';
+  margin-left: 5px;
+  font-size: 9px;
+  opacity: .55
+}
+
+details.cost-line[open] > summary.cost-row .cl::after { content: '\25BE' }
+
+details.cost-line summary.cost-row:hover .cl { color: var(--text) }
+
+.cost-detail {
+  margin: 2px 0 6px 10px;
+  padding: 3px 0 3px 8px;
+  border-left: 2px solid var(--border);
+  font-size: 11px;
+  color: var(--muted)
+}
+
+.cost-detail .calc {
+  font-family: ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums
+}
+
+.cost-detail .why { margin-top: 3px }
+
+.cost-detail a {
+  display: inline-block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--accent)
+}
+
 .bomlist {
   display: flex;
   flex-wrap: wrap;
