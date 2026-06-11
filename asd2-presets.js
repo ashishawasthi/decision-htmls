@@ -29,10 +29,15 @@
         desc: 'Interactive assistant that self-manages the agent, retrieval pipeline, and cache on GKE under CMEK and a VPC-SC perimeter, on a managed ScaNN vector store.',
         inputs: inp({ dataSources: ['doc_corpus'], opsModel: 'self_managed' }),
       },
-      highvol_qa: {
-        label: 'High-volume Q&A',
-        desc: 'Very high-volume Q&A over a large document corpus, tuned for sub-second latency and low cost per query.',
-        inputs: inp({ actors: 20000, actionsPerDay: 50, burst: 6, activeHoursPerWeek: 120, latencyPreset: 'subsecond', tokensIn: 3000, tokensOut: 500, dataSources: ['doc_corpus'], corpusSize: 1e7, freshness: 'static' }),
+      enterprise_search: {
+        label: 'Enterprise search',
+        desc: 'Company-wide grounded search over the document corpus and crawled website at sub-second latency, with response caching on the popular head.',
+        inputs: inp({ actors: 20000, actionsPerDay: 12, burst: 6, activeHoursPerWeek: 60, latencyPreset: 'subsecond', tokensIn: 2000, tokensOut: 300, dataSources: ['doc_corpus', 'website'], corpusSize: 1e7, freshness: 'eod' }),
+      },
+      conversational_analytics: {
+        label: 'Conversational analytics',
+        desc: 'Natural-language analytics over BigQuery: the agent writes and validates SQL (text-to-SQL), runs it, and narrates the result at agentic latency.',
+        inputs: inp({ actors: 500, actionsPerDay: 15, burst: 4, tokensIn: 6000, tokensOut: 800, dataSources: ['bigquery'], corpusSize: 0, freshness: 'minutes' }),
       },
       customer_support: {
         label: 'Customer support',

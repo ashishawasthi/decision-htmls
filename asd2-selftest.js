@@ -50,7 +50,8 @@
         } catch (e) { allPure = false; }
       }
     }
-    assert('derive/metrics/diagram are deterministic for all 9 presets', allDet);
+    const presetCount = Object.values(P).reduce((n, g) => n + Object.keys(g).length, 0);
+    assert(`derive/metrics/diagram are deterministic for all ${presetCount} presets`, allDet);
     assert('the pipeline never mutates frozen inputs or overrides', allPure);
 
     /* ---- 2. revert round-trips: the bug class this rewrite exists to kill ---- */
@@ -94,10 +95,16 @@
       assert('Self-Managed ships CMEK + VPC-SC from its regulated tier', x.dv('cmek') === true && x.dv('enforceVpcSc') === true);
     }
     {
-      const x = pipe('assistant', P.assistant.highvol_qa.inputs);
+      const x = pipe('assistant', P.assistant.enterprise_search.inputs);
       assert('sub-second derives single-agent, hybrid retrieval, 85% fast routing', x.dv('pattern') === 'single' && x.dv('retrieval') === 'hybrid' && x.dv('routingSplit') === 85);
-      assert('high-volume Q&A derives response caching on', x.arch.caching.responseCacheOn);
-      assert('high-volume Q&A stays within the sub-second budget', x.m.latencyOverBudget === false);
+      assert('enterprise search derives response caching on', x.arch.caching.responseCacheOn);
+      assert('enterprise search stays within the sub-second budget', x.m.latencyOverBudget === false);
+      assert('enterprise search derives Agent Search + separated ingestion over the drawn store', x.dv('ragEngine') === 'vais' && x.dv('ingestionSep') === true && x.arch.retrieval.storeDrawn === true);
+    }
+    {
+      const x = pipe('assistant', P.assistant.conversational_analytics.inputs);
+      assert('conversational analytics derives no retrieval and no store (BigQuery is live)', x.dv('retrieval') === 'none' && x.arch.retrieval.ragOn === false && x.arch.retrieval.storeDrawn === false && x.arch.retrieval.liveSel.includes('bigquery'));
+      assert('conversational analytics derives the multi-agent team + context cache, response cache off', x.dv('pattern') === 'multi' && x.arch.caching.contextCache === true && x.arch.caching.responseCacheOn === false);
     }
     {
       const x = pipe('assistant', P.assistant.strictpii_verify.inputs);
@@ -146,7 +153,7 @@
       assert('gcp keeps the public door and gateway SKUs (no regression)', /Client UI/.test(gcp.dg) && gcp.comps.includes('Apigee') && gcp.comps.includes('Cloud API Gateway') && !/ONPREM/.test(gcp.dg));
     }
     {
-      const x = pipe('assistant', P.assistant.highvol_qa.inputs);
+      const x = pipe('assistant', P.assistant.enterprise_search.inputs);
       assert('single-agent box holds the Generator only', /Generator\[/.test(x.dg) && !/Orchestrator/.test(x.dg) && !/Validator/.test(x.dg));
     }
 
@@ -166,7 +173,7 @@
       assert('self-host model pinned onto the managed runtime lints', x.lint.some(l => l.src === 'agentRuntime'));
     }
     {
-      const sub = clone(P.assistant.highvol_qa.inputs);
+      const sub = clone(P.assistant.enterprise_search.inputs);
       const x = pipe('assistant', sub, { pattern: 'multi' });
       assert('multi-agent pinned at sub-second lints, value stays pinned', x.dv('pattern') === 'multi' && x.lint.some(l => l.src === 'pattern'));
     }
@@ -177,7 +184,7 @@
       assert('realtime without a streaming source suggests adding one', x.lint.some(l => l.src === 'freshness'));
     }
     {
-      const sub = clone(P.assistant.highvol_qa.inputs); sub.dataSources = ['doc_corpus', 'bigquery'];
+      const sub = clone(P.assistant.enterprise_search.inputs); sub.dataSources = ['doc_corpus', 'bigquery'];
       const x = pipe('assistant', sub);
       assert('a slow source forced onto sub-second flags the latency metric', x.m.latencyOverBudget === true && x.lint.some(l => l.src === 'latencyPreset'));
     }

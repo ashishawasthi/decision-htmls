@@ -20,6 +20,7 @@
 
   /* ---- preset application: clone inputs, clear pins. Nothing else. ---- */
   function applyPreset(purpose, preset) {
+    if (!NS.presets.PRESETS[purpose][preset]) preset = Object.keys(NS.presets.PRESETS[purpose])[0]; /* stale permalink preset key */
     state.purpose = purpose;
     state.preset = preset;
     state.custom = false;
