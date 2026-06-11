@@ -40,15 +40,24 @@
     const storeLabel = a.retrieval.ragEngine === 'vais' ? 'Agent Search'
       : a.retrieval.vectorDB === 'vertex' ? 'Vector Search (ScaNN)' : 'AlloyDB vector (ScaNN)';
 
-    /* Agent compute box: single = Generator only; multi = the Orchestrator ->
-       Generator -> Validator triad with its generate-evaluate-revise loop. */
+    /* Agent compute box: single = Generator only; multi = an Orchestrator-routed
+       team (hub-and-spoke). The Retrieval agent owns the data tools, the
+       Generator drafts, the Validator critiques, and every hand-off returns to
+       the Orchestrator, which enforces the loop cap and keeps run state in the
+       state store consistent. No agent talks point-to-point to another. */
     const agentBox = () => {
       L.push(`subgraph AE["${aeLabel}"]`);
       if (a.agent.multiAgent) {
         ['Orchestrator', 'Generator', 'Validator'].forEach(id => L.push(node(id, id, 'orch')));
+        if (a.agent.retrieverDrawn) {
+          L.push(node('Retriever', 'Retrieval agent', 'retr'));
+          L.push('Orchestrator --> Retriever');
+          L.push('Retriever -- context --> Orchestrator');
+        }
         L.push('Orchestrator --> Generator');
-        L.push('Generator --> Validator');
-        L.push('Validator -. revise .-> Generator');
+        L.push('Generator -- draft --> Orchestrator');
+        L.push('Orchestrator --> Validator');
+        L.push('Validator -. revise .-> Orchestrator');
       } else {
         L.push(node('Generator', 'Generator', 'orch'));
       }
@@ -88,8 +97,8 @@
     if (!a.agent.gke) agentBox();
     if (cacheOn && !a.caching.cacheInVpc) L.push(node('Cache', cacheLabel, 'data', 'cyl'));
     if (cacheOn && !privateOnly) { L.push(`${head} --> Cache`); L.push(`Cache -. hit .-> ${ingressId}`); }
-    if (showFunnel) L.push('Generator --> Retr');
-    if (a.gov.sandbox) { L.push(node('Sand', 'Transient sandbox', 'gov')); L.push('Generator --> Sand'); }
+    if (showFunnel) L.push(`${a.agent.dataAgent} --> Retr`);
+    if (a.gov.sandbox) { L.push(node('Sand', 'Transient sandbox', 'gov')); L.push(`${a.agent.execAgent} --> Sand`); }
 
     /* ---- model leg: Model Armor inline when derived on ---- */
     if (!a.models.selfHostAny) L.push(node('LLM', 'Model(s)', 'orch'));
@@ -105,7 +114,7 @@
     const cat = C();
     if (a.retrieval.storeDrawn) {
       L.push(node('Store', storeLabel, 'data', 'cyl'));
-      const storeReader = showFunnel ? 'Retr' : 'Generator';
+      const storeReader = showFunnel ? 'Retr' : a.agent.dataAgent;
       L.push(a.retrieval.selfbuilt ? `${storeReader} -- PSC --> Store` : `${storeReader} --> Store`);
       L.push(node('GCS', 'Cloud Storage<br/>docs + artifacts', 'data', 'cyl'));
       L.push(node('Idx', `Index sources<br/>${a.retrieval.idxSel.map(s => cat.INDEXED_LABEL[s]).join(' / ')}`, 'data'));
@@ -122,11 +131,11 @@
     }
     if (a.retrieval.liveSel.length) {
       L.push(node('Live', `Live data<br/>${a.retrieval.liveSel.map(s => cat.SRC_LABEL[s]).join(' · ')}`, 'data'));
-      L.push('Generator --> Live');
+      L.push(`${a.agent.dataAgent} --> Live`);
     }
     if (a.retrieval.hasWebGrounding) {
       L.push(node('WebG', 'Web grounding<br/>Google Search', 'data'));
-      L.push('Generator --> WebG');
+      L.push(`${a.agent.dataAgent} --> WebG`);
     }
 
     /* ---- secrets: only a self-hosted Redis-on-GKE tier stores one ---- */
@@ -192,7 +201,7 @@
       } else {
         L.push(`CloudRouter ${edge} ${a.agent.agentEntry}`);
       }
-      if (hasOnpremData) L.push('Generator == over interconnect ==> OnpremDB');
+      if (hasOnpremData) L.push(`${a.agent.dataAgent} == over interconnect ==> OnpremDB`);
     }
 
     /* ---- styling ---- */

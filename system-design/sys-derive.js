@@ -196,6 +196,14 @@
     const idxSel = i.dataSources.filter(s => cat.INDEXED_SRC.includes(s));
     const liveSel = i.dataSources.filter(s => cat.LIVE_SRC.includes(s));
     const storeDrawn = ragOn && idxSel.length > 0;
+
+    /* Tool-call dispatch (ADK style): in a multi-agent team the Orchestrator
+       dispatches every hand-off, a dedicated Retrieval agent owns the data
+       tools, and the Generator only drafts. A single agent keeps every call on
+       the Generator: it is the whole agent. The Retrieval agent is drawn only
+       when the design has a data tool for it to own. */
+    const multiAgent = d('pattern') === 'multi';
+    const retrieverDrawn = multiAgent && (storeDrawn || retrInVpc || liveSel.length > 0 || i.dataSources.includes('web'));
     const stateLabel = redisTier
       ? `State store (${gke ? 'Redis on GKE' : 'Memorystore Cluster'})`
       : (cat.STATE_STORE_LABEL[d('stateStore')] || 'State store');
@@ -222,10 +230,13 @@
         multiRegion: !!d('multiRegion'), vpcMembers, vpcDrawn, perimeterOn: !!d('enforceVpcSc'),
       },
       agent: {
-        runtime: d('agentRuntime'), gke, pattern: d('pattern'), multiAgent: d('pattern') === 'multi',
+        runtime: d('agentRuntime'), gke, pattern: d('pattern'), multiAgent,
         numAgents: d('numAgents'), reactMaxIter: d('reactMaxIter'), platform: d('platform'),
-        agentEntry: d('pattern') === 'multi' ? 'Orchestrator' : 'Generator',
-        agentReview: d('pattern') === 'multi' ? 'Validator' : 'Generator',
+        agentEntry: multiAgent ? 'Orchestrator' : 'Generator',
+        agentReview: multiAgent ? 'Validator' : 'Generator',
+        retrieverDrawn,
+        dataAgent: retrieverDrawn ? 'Retriever' : 'Generator',
+        execAgent: multiAgent ? 'Orchestrator' : 'Generator',
         modelCallsPerReq: modelCallsPerReq(d('pattern'), d('numAgents'), d('reactMaxIter')),
       },
       models: {

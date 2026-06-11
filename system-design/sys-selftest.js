@@ -118,6 +118,7 @@
       assert('automation derives AlloyDB state + per-run minutes', low.dv('stateStore') === 'alloydb' && low.arch.effLatency === 'minutes');
       const sp = pipe('automation', P.automation.strictpii.inputs);
       assert('strict-PII automation mandates sandbox + gateway + residency + dual control', sp.arch.gov.sandbox === true && sp.arch.gov.gateway === true && sp.arch.gov.residencyPin === true && sp.arch.gov.hitlApproval === 'dual');
+      assert('the sandbox is dispatched by the Orchestrator, not the Generator', /Orchestrator --> Sand/.test(sp.dg) && !/Generator --> Sand/.test(sp.dg));
     }
 
     /* ---- 4. domain invariants on the diagram and BoM ---- */
@@ -128,8 +129,9 @@
       assert('regulated tier draws the perimeter and lists VPC Service Controls', /subgraph PERIM/.test(x.dg) && x.comps.includes('VPC Service Controls'));
       assert('CMEK edges reach managed stores only', /KMS -\. encrypts \.-> GCS/.test(x.dg) && /KMS -\. encrypts \.-> StateDur/.test(x.dg) && !/KMS -\. encrypts \.-> Cache/.test(x.dg));
       assert('Data Access audit edges mirror the CMEK target set', x.arch.security.auditTargets.join() === x.arch.security.kmsTargets.join() && /-\. data access \.-> Audit/.test(x.dg));
-      assert('multi-agent draws the Orchestrator/Generator/Validator triad', /Orchestrator --> Generator/.test(x.dg) && /Generator --> Validator/.test(x.dg) && /Validator -\. revise \.-> Generator/.test(x.dg));
-      assert('managed Agent Search folds retrieval into the store', !/Retrieval funnel/.test(x.dg) && /Generator --> Store/.test(x.dg) && /Idx -\. crawl \+ parse \+ embed \.-> Store/.test(x.dg));
+      assert('multi-agent routes every hand-off through the Orchestrator (no point-to-point links)', /Orchestrator --> Generator/.test(x.dg) && /Generator -- draft --> Orchestrator/.test(x.dg) && /Orchestrator --> Validator/.test(x.dg) && /Validator -\. revise \.-> Orchestrator/.test(x.dg) && !/Generator --> Validator/.test(x.dg) && !/Validator -\. revise \.-> Generator/.test(x.dg));
+      assert('multi-agent data tools hang off the Retrieval agent, never the Generator', /Orchestrator --> Retriever/.test(x.dg) && /Retriever -- context --> Orchestrator/.test(x.dg) && /Retriever --> Live/.test(x.dg) && !/Generator --> Store/.test(x.dg) && !/Generator --> Live/.test(x.dg) && !/Generator --> WebG/.test(x.dg));
+      assert('managed Agent Search folds retrieval into the store', !/Retrieval funnel/.test(x.dg) && /Retriever --> Store/.test(x.dg) && /Idx -\. crawl \+ parse \+ embed \.-> Store/.test(x.dg));
       assert('no HNSW or Elastic anywhere in diagram or BoM', !/HNSW|Elastic/i.test(x.dg) && !x.comps.some(c => /HNSW|Elastic/i.test(c)));
     }
     {
@@ -137,6 +139,7 @@
       const vb = vpcBlock(x.dg);
       assert('self-managed: GKE agent box and Redis tier inside the VPC', /subgraph AE/.test(vb) && /State\[\(/.test(vb) && /Cache\[\(/.test(vb));
       assert('self-managed: managed ScaNN store and durable tier outside the VPC over PSC', !/Store\[\(/.test(vb) && !/StateDur/.test(vb) && /Retr -- PSC --> Store/.test(x.dg) && /State -\. durable · PSC \.-> StateDur/.test(x.dg));
+      assert('self-managed: the Retrieval agent fronts the in-VPC funnel', /Retriever --> Retr/.test(x.dg) && !/Generator --> Retr/.test(x.dg));
       assert('self-managed: SecretMgr drawn for the Redis AUTH and listed in the BoM', /AE -\. Redis AUTH \.-> SecretMgr/.test(x.dg) && x.comps.includes('Secret Manager'));
       assert('self-managed: CMEK covers the managed store but never in-VPC Redis', /KMS -\. encrypts \.-> Store/.test(x.dg) && !/KMS -\. encrypts \.-> State\b/.test(x.dg) && !/KMS -\. encrypts \.-> Cache/.test(x.dg));
       assert('self-managed: no Memorystore line (Redis rides the GKE line)', !x.comps.includes('Memorystore Cluster') && x.comps.includes('GKE Autopilot (agent)'));
@@ -146,6 +149,7 @@
       const x = pipe('assistant', hy);
       assert('hybrid: private-only ingress (no Client UI / EdgeGW / Apigee / API Gateway)', !/Client UI/.test(x.dg) && !/EdgeGW/.test(x.dg) && !x.comps.includes('Apigee') && !x.comps.includes('Cloud API Gateway'));
       assert('hybrid: IAP / mTLS hop on the interconnect into the agent', /OnpremUsers == Cloud Interconnect ==> CloudRouter/.test(x.dg) && /CloudRouter -- IAP \/ mTLS --> Orchestrator/.test(x.dg));
+      assert('hybrid: the Retrieval agent reads on-prem systems over the interconnect', /Retriever == over interconnect ==> OnpremDB/.test(x.dg) && !/Generator == over interconnect/.test(x.dg));
       assert('hybrid: dedicated VPC derives on for the Cloud Router', x.dv('dedicatedVpc') === true && /subgraph VPC\[/.test(x.dg));
       assert('hybrid: latency swaps the gateway hop for a 3ms IAP check', x.m.latParts.some(p => p.label === 'IAP / mTLS' && p.ms === 3) && !x.m.latParts.some(p => p.label === 'API Gateway'));
       assert('hybrid: BoM keeps Cloud IAP', x.comps.includes('Cloud IAP'));
@@ -154,7 +158,7 @@
     }
     {
       const x = pipe('assistant', P.assistant.enterprise_search.inputs);
-      assert('single-agent box holds the Generator only', /Generator\[/.test(x.dg) && !/Orchestrator/.test(x.dg) && !/Validator/.test(x.dg));
+      assert('single-agent box holds the Generator only, tools stay on the Generator', /Generator\[/.test(x.dg) && !/Orchestrator/.test(x.dg) && !/Validator/.test(x.dg) && !/Retriever/.test(x.dg) && /Generator --> Store/.test(x.dg));
     }
 
     /* ---- 5. pins conflict via lint, never via silent rewrite ---- */
