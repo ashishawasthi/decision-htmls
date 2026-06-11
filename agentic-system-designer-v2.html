@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agentic System Designer v2 - GCP</title>
+  <script>
+    /* Resolve the theme before first paint to avoid a flash. 'theme' is set only
+       when the user has explicitly chosen; absent means follow the OS setting. */
+    (function () {
+      var saved = localStorage.getItem('theme');
+      var theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <link rel="stylesheet" href="asd2-style.css">
+</head>
+
+<body>
+  <header>
+    <a class="backlink" href="index.html" aria-label="Back to all tools" title="Back to all tools"><svg
+        viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M19 12H5" />
+        <path d="M12 19l-7-7 7-7" />
+      </svg></a>
+    <h1>Agentic System Designer v2 <span style="color:var(--muted);font-weight:400;font-size:13px">- inputs derive the
+        design; pin a decision to override it</span></h1>
+    <div class="legend">
+      <span><i style="background:var(--client)"></i>client</span>
+      <span><i style="background:var(--gateway)"></i>gateway</span>
+      <span><i style="background:var(--orch)"></i>orchestration</span>
+      <span><i style="background:var(--retr)"></i>retrieval</span>
+      <span><i style="background:var(--data)"></i>data</span>
+      <span><i style="background:var(--obs)"></i>observability</span>
+      <span><i style="background:var(--gov)"></i>governance</span>
+      <span><i class="ln"></i>request path</span>
+      <span><i class="ln dotted"></i>async / off-path</span>
+      <span><i class="ln thick"></i>Cloud Interconnect</span>
+    </div>
+    <div class="header-actions">
+      <button class="mini icon" id="themeBtn" title="Toggle light / dark theme"
+        aria-label="Toggle light / dark theme"><svg class="ic-sun" viewBox="0 0 24 24" width="14" height="14"
+          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4" />
+          <path
+            d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+        </svg><svg class="ic-moon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg></button>
+      <button class="mini" id="permalinkBtn" title="Copy permalink"><svg viewBox="0 0 24 24" width="13" height="13"
+          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg><span>Permalink</span></button>
+    </div>
+  </header>
+  <div id="testbar"></div>
+
+  <main>
+    <!-- LEFT: purpose + preset drive the inputs; inputs drive everything right -->
+    <section class="config">
+      <h3 class="config-head">Design inputs</h3>
+      <div class="selector">
+        <div class="row">
+          <label for="purpose">Purpose</label>
+          <select id="purpose">
+            <option value="assistant">Interactive assistant</option>
+            <option value="automation">Task automation</option>
+          </select>
+        </div>
+        <div class="chips" id="presetChips"></div>
+      </div>
+
+      <div class="actions">
+        <button class="mini" id="resetBtn" title="Reload the preset inputs and clear every pinned decision"><svg
+            viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg><span>Reset</span></button>
+      </div>
+
+      <fieldset>
+        <legend>Workload &amp; SLO</legend>
+        <div class="ctl" data-vis="latencySlo"><label>Latency SLO</label>
+          <select data-bind="latencyPreset">
+            <option value="subsecond">Sub-second (deterministic)</option>
+            <option value="agentic">&lt;2s start / &lt;6s full (agentic)</option>
+            <option value="batch">5-10s batch</option>
+          </select>
+        </div>
+        <div class="ctl"><label>Actors (<span id="actorLabel">seats</span>)</label>
+          <input type="number" min="1" step="1" data-bind="actors">
+        </div>
+        <div class="ctl"><label>Actions / actor / day</label>
+          <input type="number" min="1" step="1" data-bind="actionsPerDay">
+        </div>
+        <div class="ctl"><label>Burst x</label>
+          <input type="range" min="1.5" max="8" step="0.5" data-bind="burst"><output class="val"
+            data-out="burst"></output>
+        </div>
+        <div class="ctl"><label>Active hrs / week</label>
+          <input type="range" min="20" max="168" step="2" data-bind="activeHoursPerWeek"><output class="val"
+            data-out="activeHoursPerWeek"></output>
+        </div>
+        <div class="ctl"><label>Tokens in / out / query</label>
+          <input type="number" min="0" step="100" data-bind="tokensIn"><input type="number" min="0" step="50"
+            data-bind="tokensOut">
+        </div>
+        <div class="ctl"><label>Audience &amp; sensitivity</label>
+          <select data-bind="audienceSensitivity">
+            <option value="internal_low">Internal · low</option>
+            <option value="internal_regulated">Internal · regulated</option>
+            <option value="internal_strictpii">Internal · strict-PII</option>
+            <option value="external_enterprise">External · enterprise</option>
+            <option value="external_regulated">External · regulated</option>
+            <option value="public_strictpii">Public · strict-PII</option>
+          </select>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Grounding data</legend>
+        <div class="ctl"><label>Data sources</label></div>
+        <div class="ctl">
+          <div class="checks" id="dataSources">
+            <label><input type="checkbox" name="dataSources" value="bigquery">BigQuery</label>
+            <label><input type="checkbox" name="dataSources" value="onprem">On-prem DB</label>
+            <label><input type="checkbox" name="dataSources" value="stream">Streaming</label>
+            <label><input type="checkbox" name="dataSources" value="kg">Knowledge graph</label>
+            <label><input type="checkbox" name="dataSources" value="web">Web grounding</label>
+            <label><input type="checkbox" name="dataSources" value="website">Company website</label>
+            <label><input type="checkbox" name="dataSources" value="doc_corpus">Doc corpus</label>
+          </div>
+        </div>
+        <div class="ctl" data-vis="corpus"><label>Corpus size (docs)</label>
+          <input type="number" min="0" step="100000" data-bind="corpusSize">
+        </div>
+        <div class="ctl" data-vis="freshness"><label>Data freshness</label>
+          <select data-bind="freshness">
+            <option value="realtime">Real-time / streaming</option>
+            <option value="minutes">Minutes lag</option>
+            <option value="eod">End-of-day</option>
+            <option value="static">Static archive</option>
+          </select>
+        </div>
+        <div class="ctl" data-vis="languages"><label>Languages</label>
+          <div class="checks" id="languages">
+            <label><input type="checkbox" name="languages" value="en">EN</label>
+            <label><input type="checkbox" name="languages" value="zh">ZH</label>
+            <label><input type="checkbox" name="languages" value="ja">JA</label>
+            <label><input type="checkbox" name="languages" value="hi">HI</label>
+            <label><input type="checkbox" name="languages" value="ms">MS</label>
+            <label><input type="checkbox" name="languages" value="ta">TA</label>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Platform stance</legend>
+        <div class="ctl"><label>Deployment (connectivity)</label>
+          <select data-bind="deployment">
+            <option value="gcp">GCP</option>
+            <option value="hybrid">Hybrid (on-prem link)</option>
+          </select>
+        </div>
+        <div class="ctl"><label>Operating model</label>
+          <select data-bind="opsModel">
+            <option value="managed">Managed GCP services</option>
+            <option value="self_managed">Self-managed on GKE</option>
+          </select>
+        </div>
+        <div class="ctl"><label>Model strategy</label>
+          <select data-bind="modelStrategy">
+            <option value="api">Managed APIs (Gemini / Claude)</option>
+            <option value="self_host">Self-hosted open weights</option>
+          </select>
+        </div>
+      </fieldset>
+
+      <h3 class="config-head" style="margin-top:6px"
+        title="Every decision below is derived from the inputs above. Auto shows the derived value; pick a value to pin it (the pin survives input changes and shows a conflict warning if the inputs contradict it). Reset clears all pins.">
+        Derived decisions <span class="vis-count" id="pinCount"></span></h3>
+      <div id="decisions"></div>
+    </section>
+
+    <!-- RIGHT: outputs, all pure functions of the derived design -->
+    <section class="output">
+      <div class="arch-wrap">
+        <div class="diagram-head">
+          <h3>Architecture</h3>
+          <button class="mini icon" id="copyMermaid" title="Copy Mermaid source" aria-label="Copy Mermaid source"><svg
+              viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg></button>
+        </div>
+        <div id="diagram"></div>
+      </div>
+      <div class="panel">
+        <h3>Issues &amp; levers <span id="issueCount" class="vis-count"></span></h3>
+        <div id="issues"></div>
+      </div>
+      <div class="panel">
+        <h3>Metrics</h3>
+        <div class="metrics" id="metrics"></div>
+      </div>
+      <div class="panel">
+        <h3>Cost <span id="costHead" class="vis-count"></span></h3>
+        <div id="cost"></div>
+      </div>
+      <div class="panel">
+        <h3>Bill of materials</h3>
+        <div class="bomlist" id="bom"></div>
+      </div>
+    </section>
+  </main>
+
+  <details class="sources">
+    <summary>Sources and references</summary>
+    <p><b>Naming.</b> Vertex AI was renamed Agent Platform on 2026-05-02 (Agent Engine is now Agent Runtime; Vertex AI
+      Search is now Agent Search; Vector Search dropped the Vertex AI prefix). Product APIs, SDKs, and existing
+      cloud.google.com URLs are unchanged.</p>
+    <p><b>Pricing (about May 2026).</b> The token, accelerator, managed-service, and storage rates behind the Cost and
+      Bill of materials panels:</p>
+    <ul>
+      <li><a href="https://cloud.google.com/vertex-ai/generative-ai/pricing">Agent Platform generative AI pricing</a>:
+        Gemini and partner model tokens, context caching, grounding and web search.</li>
+      <li><a href="https://docs.anthropic.com/en/docs/about-claude/pricing">Claude pricing</a> and
+        <a href="https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude">Claude on Agent
+          Platform</a>.</li>
+      <li><a href="https://cloud.google.com/products/compute/pricing/accelerator-optimized">GCP accelerator-optimized
+          VM pricing</a> and <a href="https://cloud.google.com/tpu/pricing">Cloud TPU pricing</a>: self-host node $/hr
+        by on-demand, CUD, and spot.</li>
+      <li><a href="https://cloud.google.com/bigquery/pricing">BigQuery pricing</a>: on-demand scan ($/TiB) and storage.
+      </li>
+      <li><a href="https://cloud.google.com/generative-ai-app-builder/pricing">Agent Search pricing</a>: search queries
+        and index storage.</li>
+      <li><a href="https://cloud.google.com/storage/pricing">Cloud Storage pricing</a>: vector index and object
+        storage.</li>
+    </ul>
+    <p><b>Vector search is a managed ScaNN service here.</b> Both vector store options (Vertex AI Vector Search, the
+      AlloyDB ScaNN index) and managed Agent Search run Google's ScaNN approximate-nearest-neighbour index, so there
+      are no HNSW tuning knobs in this tool: recall and latency tuning is the service's job, and the design decisions
+      that remain are the engine (managed vs self-built pipeline) and the store.</p>
+    <p><b>Workload and derivation assumptions.</b> Every right-panel number derives from the inputs with these
+      constants:</p>
+    <ul>
+      <li>Requests / month = actors x actions per actor per day x 30.4 days.</li>
+      <li>Average QPS spreads the daily actions across the active window (active hours/week x 3600 / 7); peak applies
+        the burst multiplier on top.</li>
+      <li>Vector index = corpus docs x 5 chunks/doc x 768-dim x 4 bytes, then sharded.</li>
+      <li>Latency p95 sums the critical-path line items; parallel grounding takes the slowest source, not the sum.</li>
+      <li>Model-call fan-out = agents x a damped ReAct loop (1 + (iterations - 1) x 0.5).</li>
+    </ul>
+    <p><b>Reference links.</b> Canonical docs for the products this design recommends:</p>
+    <ul>
+      <li><a href="https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview">Agent Runtime</a>
+        and the <a href="https://google.github.io/adk-docs/">Agent Development Kit (ADK)</a>.</li>
+      <li><a href="https://cloud.google.com/security-command-center/docs/model-armor-overview">Model Armor</a> and
+        <a href="https://cloud.google.com/vpc-service-controls/docs/overview">VPC Service Controls</a>.</li>
+      <li><a href="https://cloud.google.com/alloydb/docs/overview">AlloyDB</a> vs
+        <a href="https://cloud.google.com/spanner/docs">Spanner</a> for the state store.</li>
+      <li><a href="https://cloud.google.com/generative-ai-app-builder/docs/introduction">Agent Search</a> for managed
+        retrieval.</li>
+    </ul>
+  </details>
+
+  <div class="foot">A personal project, provided as is and not affiliated with or endorsed by any
+    vendor. See the <a href="DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</div>
+
+  <script src="asd2-catalog.js"></script>
+  <script src="asd2-presets.js"></script>
+  <script src="asd2-derive.js"></script>
+  <script src="asd2-metrics.js"></script>
+  <script src="asd2-diagram.js"></script>
+  <script src="asd2-selftest.js"></script>
+  <script src="asd2-render.js"></script>
+  <script src="asd2-app.js"></script>
+</body>
+
+</html>

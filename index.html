@@ -265,6 +265,31 @@
       --accent-color: var(--serving);
     }
 
+    /* Wrapper so the small v1 link can sit on the card without nesting anchors. */
+    .card-wrap {
+      position: relative;
+      display: flex;
+    }
+
+    .card-wrap .card {
+      flex: 1;
+    }
+
+    .v1-link {
+      position: absolute;
+      left: 24px;
+      bottom: 20px;
+      font-size: 11px;
+      color: var(--muted);
+      text-decoration: none;
+      z-index: 1;
+    }
+
+    .v1-link:hover {
+      color: var(--text);
+      text-decoration: underline;
+    }
+
     .deferred {
       margin-top: 32px;
       padding-top: 22px;
@@ -353,22 +378,27 @@
   <main>
     <div class="card-grid">
 
-      <a class="card design" href="agentic-system-designer.html">
-        <div class="label">Design &middot; How to build it</div>
-        <h2>Agentic System Designer</h2>
-        <p class="description">Toggle the decisions (purpose, scale, latency SLO, retrieval, governance) and watch a
-          reference <b style="color:var(--design)">GenAI architecture on Google Cloud</b> recompute live: component
-          diagram, GPU/service sizing, cost &amp; latency metrics, and what breaks at scale. Deterministic, no LLM.</p>
-        <div class="meta">
-          <span class="tag">RAG / Multi-agent</span>
-          <span class="tag">Agent Platform / GKE / Spanner</span>
-          <span class="tag">Vector Search / HNSW</span>
-          <span class="tag">Architecture &amp; scale risks</span>
-        </div>
-        <div class="footer">
-          <span class="open">Open <span class="arrow">&rarr;</span></span>
-        </div>
-      </a>
+      <div class="card-wrap">
+        <a class="card design" href="agentic-system-designer-v2.html">
+          <div class="label">Design &middot; How to build it</div>
+          <h2>Agentic System Designer v2</h2>
+          <p class="description">Purpose and preset set the inputs, the inputs derive every decision, and the decisions
+            drive a reference <b style="color:var(--design)">GenAI architecture on Google Cloud</b>: component diagram,
+            cost, and bill of materials. Pin any derived decision to override it; reverting an input always reverts the
+            outputs. Deterministic, no LLM.</p>
+          <div class="meta">
+            <span class="tag">Inputs &rarr; derived decisions</span>
+            <span class="tag">Pinnable overrides</span>
+            <span class="tag">Agent Search / AlloyDB ScaNN</span>
+            <span class="tag">Cost &amp; BoM</span>
+          </div>
+          <div class="footer">
+            <span class="open">Open <span class="arrow">&rarr;</span></span>
+          </div>
+        </a>
+        <a class="v1-link" href="agentic-system-designer.html"
+          title="Previous version, with latency, observability, risk, governance, and Terraform export">v1</a>
+      </div>
 
       <a class="card serving" href="llm-serving-performance-calculator.html">
         <div class="label">Serve &middot; How fast, how many</div>
