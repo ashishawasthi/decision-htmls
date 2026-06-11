@@ -124,12 +124,12 @@
     /* ---- 4. domain invariants on the diagram and BoM ---- */
     {
       const x = pipe('assistant', P.assistant.expert_copilot.inputs);
-      assert('fully managed design draws no VPC box, state over PSC', !/subgraph VPC\[/.test(x.dg) && /AE -\. state · PSC \.-> State/.test(x.dg));
+      assert('fully managed design draws no VPC box, state over PSC', !/subgraph VPC\[/.test(x.dg) && /AE -- state · PSC --> State/.test(x.dg));
       assert('fully managed design has no Secret Manager (diagram or BoM)', !/SecretMgr/.test(x.dg) && !x.comps.includes('Secret Manager'));
       assert('regulated tier draws the perimeter and lists VPC Service Controls', /subgraph PERIM/.test(x.dg) && x.comps.includes('VPC Service Controls'));
       assert('CMEK edges reach managed stores only', /KMS -\. encrypts \.-> GCS/.test(x.dg) && /KMS -\. encrypts \.-> StateDur/.test(x.dg) && !/KMS -\. encrypts \.-> Cache/.test(x.dg));
       assert('Data Access audit edges mirror the CMEK target set', x.arch.security.auditTargets.join() === x.arch.security.kmsTargets.join() && /-\. data access \.-> Audit/.test(x.dg));
-      assert('multi-agent routes every hand-off through the Orchestrator (no point-to-point links)', /Orchestrator --> Generator/.test(x.dg) && /Orchestrator --> Validator/.test(x.dg) && /Validator -\. revise \.-> Orchestrator/.test(x.dg) && !/Generator --> Validator/.test(x.dg) && !/Validator -\. revise \.-> Generator/.test(x.dg) && !/Generator --> Orchestrator/.test(x.dg) && !/Retriever --> Orchestrator/.test(x.dg));
+      assert('multi-agent routes every hand-off through the Orchestrator (no point-to-point links, no drawn responses)', /Orchestrator --> Generator/.test(x.dg) && /Orchestrator --> Validator/.test(x.dg) && !/Generator --> Validator/.test(x.dg) && !/revise/.test(x.dg) && !/Generator --> Orchestrator/.test(x.dg) && !/Retriever --> Orchestrator/.test(x.dg));
       assert('multi-agent data tools hang off the Retrieval agent, never the Generator', /Orchestrator --> Retriever/.test(x.dg) && /Retriever --> Live/.test(x.dg) && !/Generator --> Store/.test(x.dg) && !/Generator --> Live/.test(x.dg) && !/Generator --> WebG/.test(x.dg));
       assert('managed Agent Search folds retrieval into the store', !/Retrieval funnel/.test(x.dg) && /Retriever --> Store/.test(x.dg) && /Idx -\. crawl \+ parse \+ embed \.-> Store/.test(x.dg));
       assert('no HNSW or Elastic anywhere in diagram or BoM', !/HNSW|Elastic/i.test(x.dg) && !x.comps.some(c => /HNSW|Elastic/i.test(c)));
@@ -270,7 +270,7 @@
     {
       const man = pipe('assistant', P.assistant.expert_copilot.inputs);
       const slf = pipe('assistant', P.assistant.self_managed.inputs);
-      assert('below the line reconciles and never enters the run-rate', Math.abs(man.cs.allInMo - (man.cs.totalMo + man.cs.btlMo)) < 1e-6 && Math.abs(man.cs.totalMo - (man.cs.genai + man.cs.platMo)) < 1e-6);
+      assert('below the line reconciles and never enters the run-rate', Math.abs(man.cs.btlMo - man.cs.btl.reduce((s, x) => s + x.mo, 0)) < 1e-6 && Math.abs(man.cs.totalMo - (man.cs.genai + man.cs.platMo)) < 1e-6);
       assert('fully managed design carries support but no ops labor below the line', man.cs.btl.length === 1 && man.cs.btl[0].name === 'Enterprise support (Enhanced)' && NS.metrics.laborLines(man.arch, man.m).length === 0);
       assert('self-managed design adds an ops labor line below the line', slf.cs.btl.some(b => b.name.indexOf('Ops & on-call labor') === 0) && slf.cs.btlMo > man.cs.btlMo);
       const lr = NS.catalog.PRICE['Ops & on-call labor (build vs buy)'].rates;

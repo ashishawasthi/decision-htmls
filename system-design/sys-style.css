@@ -568,6 +568,19 @@ fieldset,
 
 .cost-row.tot .cn { font-weight: 700 }
 
+.cost-row.gap {
+  margin-top: 9px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border)
+}
+
+.cost-row.gap .cn,
+.cost-row.btl .cn,
+.cost-row.dim .cn {
+  color: var(--muted);
+  font-weight: 400
+}
+
 .cost-grp {
   font-size: 10.5px;
   margin-top: 9px;

@@ -461,7 +461,6 @@
     gpu: { ref: 'https://cloud.google.com/products/compute/pricing/accelerator-optimized', why: 'Self-host fleet at the per-node $/hr for the chosen accelerator and pricing tier, 730 hr/mo, sized on peak output tokens/s at the configured utilization.' },
     plat: { why: 'Sum of the priced platform lines; unpriced lines are flagged and excluded.' },
     total: { why: 'GenAI (managed tokens + GPU fleet) plus the priced platform lines: the monthly GCP invoice estimate.' },
-    allin: { why: 'Total run-rate plus the below-the-line people and support estimates. The below-the-line items are not on the GCP invoice.' },
     perK: { why: 'Total run-rate divided by monthly requests, per 1k requests. Below-the-line items are excluded.' },
   };
 

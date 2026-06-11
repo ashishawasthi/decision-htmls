@@ -45,9 +45,10 @@
        Generator drafts, the Validator critiques, and every hand-off returns to
        the Orchestrator, which enforces the loop cap and keeps run state in the
        state store consistent. No agent talks point-to-point to another. Each
-       dispatch is one solid arrow with the response implied, like every other
-       sync call in the diagram; only the conditional revise re-dispatch is
-       drawn, as the dotted loop edge. */
+       dispatch is one solid arrow with the sync response implied, like every
+       other sync call in the diagram - the Validator's pass-or-revise verdict
+       included, so no revise edge is drawn; the loop lives in the tooltips,
+       the reactMaxIter decision, and the latency trace's ReAct loop item. */
     const agentBox = () => {
       L.push(`subgraph AE["${aeLabel}"]`);
       if (a.agent.multiAgent) {
@@ -58,7 +59,6 @@
         }
         L.push('Orchestrator --> Generator');
         L.push('Orchestrator --> Validator');
-        L.push('Validator -. revise .-> Orchestrator');
       } else {
         L.push(node('Generator', 'Generator', 'orch'));
       }
@@ -97,7 +97,7 @@
     /* ---- managed residents (perimeter, outside the VPC) ---- */
     if (!a.agent.gke) agentBox();
     if (cacheOn && !a.caching.cacheInVpc) L.push(node('Cache', cacheLabel, 'data', 'cyl'));
-    if (cacheOn && !privateOnly) { L.push(`${head} --> Cache`); L.push(`Cache -. hit .-> ${ingressId}`); }
+    if (cacheOn && !privateOnly) { L.push(`${head} --> Cache`); L.push(`Cache -- hit --> ${head}`); }
     if (showFunnel) L.push(`${a.agent.dataAgent} --> Retr`);
     if (a.gov.sandbox) { L.push(node('Sand', 'Transient sandbox', 'gov')); L.push(`${a.agent.execAgent} --> Sand`); }
 
@@ -147,7 +147,7 @@
 
     /* ---- state: hot tier (in-VPC Redis or managed over PSC) + durable tier ---- */
     if (!a.state.stateInVpc) L.push(node('State', a.state.stateLabel, 'data', 'cyl'));
-    L.push(`AE -. state${a.state.stateConn ? ` · ${a.state.stateConn}` : ''} .-> State`);
+    L.push(`AE -- state${a.state.stateConn ? ` · ${a.state.stateConn}` : ''} --> State`);
     if (a.state.durTier) {
       L.push(node('StateDur', a.state.durTier.label, 'data', 'cyl'));
       L.push(`State -. durable · ${a.state.durTier.conn} .-> StateDur`);
@@ -197,7 +197,7 @@
       const edge = a.models.inboundChips.length ? `-- ${C().LIGHT_AUTH} -->` : '-->';
       if (cacheOn) {
         L.push(`CloudRouter ${edge} Cache`);
-        L.push('Cache -. hit .-> OnpremUsers');
+        L.push('Cache -- hit --> OnpremUsers');
         L.push(`Cache -- miss --> ${a.agent.agentEntry}`);
       } else {
         L.push(`CloudRouter ${edge} ${a.agent.agentEntry}`);

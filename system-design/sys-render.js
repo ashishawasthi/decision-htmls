@@ -137,12 +137,13 @@
        Open state is browser presentation state; a re-render collapses it, which
        is correct because the expanded math belonged to the old numbers. */
     const row = (label, val, o = {}) => {
+      const cls = `cost-row${o.tot ? ' tot' : ''}${o.gap ? ' gap' : ''}${o.btl ? ' btl' : ''}${o.dim ? ' dim' : ''}`;
       const core = `<span class="cl"${o.why ? ` title="${esc(o.why)}"` : ''}>${label}${o.sub ? ` <small>${o.sub}</small>` : ''}</span><span class="cn">${val}</span>`;
-      if (!o.calc && !o.why && !o.ref) return `<div class="cost-row${o.tot ? ' tot' : ''}">${core}</div>`;
+      if (!o.calc && !o.why && !o.ref) return `<div class="${cls}">${core}</div>`;
       const detail = (o.calc ? `<div class="calc">${o.calc}</div>` : '') +
         (o.why ? `<div class="why">${o.why}</div>` : '') +
         (o.ref ? `<a href="${o.ref}" target="_blank" rel="noopener">pricing -&gt;</a>` : '');
-      return `<details class="cost-line"><summary class="cost-row${o.tot ? ' tot' : ''}">${core}</summary><div class="cost-detail">${detail}</div></details>`;
+      return `<details class="cost-line"><summary class="${cls}">${core}</summary><div class="cost-detail">${detail}</div></details>`;
     };
     const grp = t => `<div class="cost-grp">${t}</div>`;
     const rows = [];
@@ -156,8 +157,8 @@
       rows.push(row('GenAI', money(m.costOpt), { tot: true, why: GP.genai.why }));
       if (m.costNaive > 0 && m.costNaive > m.costOpt) {
         const savedPct = Math.round((1 - m.costOpt / m.costNaive) * 100);
-        rows.push(row('Naive baseline', money(m.costNaive), { sub: 'reasoning model, no cache/routing', calc: cc.naive, why: GP.naive.why }));
-        rows.push(row('Optimizations save', money(m.costNaive - m.costOpt) + ` (${savedPct}%)`, { sub: 'vs naive', calc: cc.saved, why: GP.saved.why }));
+        rows.push(row('Naive baseline', money(m.costNaive), { sub: 'reasoning model, no cache/routing', dim: true, calc: cc.naive, why: GP.naive.why }));
+        rows.push(row('Optimizations save', money(m.costNaive - m.costOpt) + ` (${savedPct}%)`, { sub: 'vs naive', dim: true, calc: cc.saved, why: GP.saved.why }));
       }
     }
     if (m.gpuMo) {
@@ -175,14 +176,13 @@
     if (cs.free.length) rows.push(`<div class="cost-row"><span class="cl">Included at no charge <small>${cs.free.join(' · ')}</small></span><span class="cn">$0</span></div>`);
     rows.push(row('Platform', money(cs.platMo) + (cs.red.length ? ` <span class="cred">+${cs.red.length} unpriced</span>` : ''), { sub: cs.priced.length + ' priced', tot: true, calc: cs.calc && cs.calc.plat, why: GP.plat.why }));
     rows.push(row('Total run-rate', money(cs.totalMo), { sub: `GenAI + platform${cs.red.length ? ' · excludes unpriced' : ''}`, tot: true, calc: cs.calc && cs.calc.total, why: GP.total.why }));
-    if (m.reqMo > 0) rows.push(row('Cost / 1k requests', '$' + cs.perK.toFixed(2), { sub: 'total run-rate / monthly requests', tot: true, calc: cs.calc && cs.calc.perK, why: GP.perK.why }));
+    if (m.reqMo > 0) rows.push(row('Cost / 1k requests', '$' + cs.perK.toFixed(2), { sub: 'total run-rate / monthly requests', gap: true, calc: cs.calc && cs.calc.perK, why: GP.perK.why }));
     if (cs.btl && cs.btl.length) {
       rows.push(grp('Below the line <small>(people &amp; support · excluded from run-rate)</small>'));
       cs.btl.forEach(x => {
         const en = PRICE[x.name] || {};
-        rows.push(row(x.name, money(x.mo), { sub: 'est.' + (en.note ? ' · ' + en.note : ''), calc: x.calc, why: en.why, ref: en.ref }));
+        rows.push(row(x.name, money(x.mo), { sub: 'est.' + (en.note ? ' · ' + en.note : ''), btl: true, calc: x.calc, why: en.why, ref: en.ref }));
       });
-      rows.push(row('All-in', money(cs.allInMo), { sub: 'run-rate + below-the-line', tot: true, calc: cs.calc && cs.calc.allin, why: GP.allin.why }));
     }
     return `<div class="costbox">${rows.join('')}</div>`;
   }

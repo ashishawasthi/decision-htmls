@@ -376,10 +376,9 @@
     const calc = {
       plat: `sum of ${priced.length} priced platform lines${red.length ? ` (${red.length} unpriced excluded)` : ''}`,
       total: `GenAI $${nf(genai)} + platform $${nf(platMo)}`,
-      allin: `run-rate $${nf(totalMo)} + below-the-line $${nf(btlMo)}`,
       perK: `$${nf(totalMo)} / ${nf(reqMo)} req x 1k`,
     };
-    return { genai, priced, red, free, platMo, totalMo, perK, calc, btl, btlMo, allInMo: totalMo + btlMo };
+    return { genai, priced, red, free, platMo, totalMo, perK, calc, btl, btlMo };
   }
 
   NS.metrics = { compute, lint, components, priceComponent, laborLines, costSummary };
