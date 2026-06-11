@@ -44,7 +44,10 @@
        team (hub-and-spoke). The Retrieval agent owns the data tools, the
        Generator drafts, the Validator critiques, and every hand-off returns to
        the Orchestrator, which enforces the loop cap and keeps run state in the
-       state store consistent. No agent talks point-to-point to another. */
+       state store consistent. No agent talks point-to-point to another. Each
+       dispatch is one solid arrow with the response implied, like every other
+       sync call in the diagram; only the conditional revise re-dispatch is
+       drawn, as the dotted loop edge. */
     const agentBox = () => {
       L.push(`subgraph AE["${aeLabel}"]`);
       if (a.agent.multiAgent) {
@@ -52,10 +55,8 @@
         if (a.agent.retrieverDrawn) {
           L.push(node('Retriever', 'Retrieval agent', 'retr'));
           L.push('Orchestrator --> Retriever');
-          L.push('Retriever -- context --> Orchestrator');
         }
         L.push('Orchestrator --> Generator');
-        L.push('Generator -- draft --> Orchestrator');
         L.push('Orchestrator --> Validator');
         L.push('Validator -. revise .-> Orchestrator');
       } else {

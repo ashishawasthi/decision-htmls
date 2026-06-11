@@ -67,7 +67,7 @@
   }
   async function loadMermaid() {
     try {
-      const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
+      const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@latest/dist/mermaid.esm.min.mjs');
       mermaid = mod.default;
       mermaidOK = true;
       applyDiagramTheme();
