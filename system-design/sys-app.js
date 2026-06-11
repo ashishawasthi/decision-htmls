@@ -113,6 +113,29 @@
     schedulePermalink();
   }
 
+  /* ---- Terraform export: derive -> tfgen -> checklist modal -> zip ----
+     No deploy form (a v2 invariant): the bundle is a pure function of the design,
+     and every deployment-specific value is a placeholder the modal lists from
+     tfgen's structured data. */
+  function closeModal() { $('#modal-root').classList.remove('open'); }
+  function downloadBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function openTfModal() {
+    if (!lastArch || !NS.tfgen) return;
+    const gen = NS.tfgen.generate(lastArch, state.inputs);
+    $('#modal').innerHTML = NS.render.tfChecklistHtml(gen);
+    $('#modal-root').classList.add('open');
+    $('#modalClose').onclick = closeModal;
+    $('#tfDownload').onclick = () => {
+      downloadBlob(new Blob([NS.tfgen.zip(gen.files)], { type: 'application/zip' }),
+        `system-design-${state.purpose}-terraform.zip`);
+    };
+  }
+
   /* ---- permalink: base64 JSON {v:2, p, pr, c, i, o} in the hash ---- */
   let plTimer = null;
   function encodeState(snap) {
@@ -175,6 +198,9 @@
       const btn = $('#copyMermaid'); const orig = btn.innerHTML;
       btn.textContent = '✓'; setTimeout(() => btn.innerHTML = orig, 1200);
     });
+    $('#tfBtn').addEventListener('click', openTfModal);
+    $('#modal-root').addEventListener('click', e => { if (e.target.id === 'modal-root') closeModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
     $('#permalinkBtn').addEventListener('click', () => {
       if (navigator.clipboard) navigator.clipboard.writeText(currentPermalink());
       const s = $('#permalinkBtn span'); s.textContent = 'Copied'; setTimeout(() => s.textContent = 'Permalink', 1200);

@@ -743,3 +743,85 @@ details.cost-line summary.cost-row:hover .cl { color: var(--text) }
 
   section.output>.arch-wrap { column-span: all }
 }
+
+/* ---- Terraform export modal ---- */
+#modal-root {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  z-index: 50;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 6vh 16px 16px;
+}
+
+#modal-root.open { display: flex }
+
+#modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 20px;
+  width: min(660px, 100%);
+  max-height: 84vh;
+  overflow: auto;
+  font-size: 13px;
+}
+
+#modal h2 { margin: 0 0 4px; font-size: 16px }
+
+#modal .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px }
+
+#modal .close {
+  float: right;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+
+#modal .close:hover { color: var(--text) }
+
+.tf-group { margin: 12px 0 6px; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted) }
+
+.tf-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tf-item:last-of-type { border-bottom: none }
+
+.tf-item code {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.tf-item .tf-why { color: var(--muted); font-size: 12px }
+
+.tf-tag {
+  flex: none;
+  font-size: 10px;
+  border-radius: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.tf-tag.req { color: var(--err); border-color: var(--err); background: var(--err-tint) }
+.tf-tag.gate { color: var(--warn); border-color: var(--warn); background: var(--warn-tint) }
+.tf-tag.before { color: var(--accent); border-color: var(--accent); background: var(--accent-tint) }
+.tf-tag.after { color: var(--ok); border-color: var(--ok); background: var(--ok-tint) }
+
+#modal .tf-actions { margin-top: 14px; display: flex; gap: 10px; align-items: center }
+
+#modal .tf-foot { color: var(--muted); font-size: 11.5px; margin-top: 8px }

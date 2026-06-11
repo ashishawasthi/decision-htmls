@@ -55,6 +55,13 @@
           <rect x="9" y="9" width="13" height="13" rx="2" />
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
         </svg><span>Permalink</span></button>
+      <button class="mini" id="tfBtn" title="Generate a Terraform bundle for this design"><svg viewBox="0 0 24 24"
+          width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg><span>Terraform</span></button>
     </div>
   </header>
   <div id="testbar"></div>
@@ -315,11 +322,16 @@
   <div class="foot">A personal project, provided as is and not affiliated with or endorsed by any
     vendor. See the <a href="DISCLAIMER.md" style="color:inherit;text-decoration:underline">full disclaimer</a>.</div>
 
+  <div id="modal-root" aria-hidden="true">
+    <div id="modal" role="dialog" aria-modal="true" aria-label="Generate Terraform"></div>
+  </div>
+
   <script src="system-design/sys-catalog.js"></script>
   <script src="system-design/sys-presets.js"></script>
   <script src="system-design/sys-derive.js"></script>
   <script src="system-design/sys-metrics.js"></script>
   <script src="system-design/sys-diagram.js"></script>
+  <script src="system-design/sys-tfgen.js"></script>
   <script src="system-design/sys-selftest.js"></script>
   <script src="system-design/sys-render.js"></script>
   <script src="system-design/sys-app.js"></script>

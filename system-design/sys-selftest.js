@@ -291,6 +291,35 @@
       assert('cost per 1k requests reconciles with the run-rate', Math.abs(man.cs.perK - man.cs.totalMo / man.m.reqMo * 1000) < 1e-9);
     }
 
+    /* ---- 6c. Terraform generator: emission gates mirror the design, and the
+       placeholder/steps data covers the bundle (no form, no drift) ---- */
+    if (NS.tfgen) {
+      const tg = (pur, inputs, ov) => {
+        const r = NS.derive(pur, inputs, ov || {});
+        return { g: NS.tfgen.generate(r.arch, inputs), arch: r.arch };
+      };
+      const all = g => Object.values(g.files).join('\n');
+      const man = tg('assistant', P.assistant.expert_copilot.inputs);
+      assert('tfgen emits the core files and the ADK skeleton', ['versions.tf', 'variables.tf', 'terraform.tfvars', 'main.tf', 'outputs.tf', 'README.md', 'agent/agent.py'].every(k => k in man.g.files));
+      assert('tfgen: project_id is a required placeholder and its variable has no default', man.g.placeholders.some(p => p.var === 'project_id' && p.kind === 'required') && !/\n {2}default/.test(man.g.files['variables.tf'].match(/variable "project_id" \{[\s\S]*?\n\}/)[0]));
+      assert('tfgen: README carries every step title and placeholder var', man.g.steps.every(s => man.g.files['README.md'].includes(s.title)) && man.g.placeholders.every(p => man.g.files['README.md'].includes('`' + p.var + '`')));
+      assert('tfgen: managed design = Agent Runtime via adk deploy, Memorystore, KMS, no Secret Manager', man.g.steps.some(s => s.id === 'adk-deploy') && /google_redis_cluster/.test(man.g.files['main.tf']) && /google_kms_crypto_key/.test(man.g.files['main.tf']) && !/google_secret_manager_secret/.test(man.g.files['main.tf']));
+      const hyIn = clone(P.assistant.expert_copilot.inputs); hyIn.deployment = 'hybrid';
+      const hy = tg('assistant', hyIn);
+      assert('tfgen hybrid: no public gateway, internal-only ingress, gated interconnect bridge + onprem tfvars', !/google_api_gateway/.test(hy.g.files['main.tf']) && /INGRESS_TRAFFIC_INTERNAL_ONLY/.test(hy.g.files['main.tf']) && /google_compute_interconnect_attachment/.test(hy.g.files['main.tf']) && hy.g.placeholders.some(p => p.var === 'onprem_interconnect' && p.kind === 'gated'));
+      const slf = tg('assistant', P.assistant.self_managed.inputs);
+      assert('tfgen self-managed: GKE two-phase step, Redis-on-GKE Secret Manager, ScaNN SQL step, no Elastic ever', slf.g.steps.some(s => s.id === 'two-phase-apply') && /google_secret_manager_secret/.test(slf.g.files['main.tf']) && slf.g.steps.some(s => s.id === 'scann-extension') && !/elastic/i.test(all(slf.g)) && !/elastic/i.test(all(man.g)));
+      const shIn = clone(P.assistant.expert_copilot.inputs); shIn.modelStrategy = 'self_host';
+      const sh = tg('assistant', shIn);
+      assert('tfgen self-host: GPU pool + vLLM deploy step + gated vllm_endpoint wiring', /google_container_node_pool" "gpu/.test(sh.g.files['main.tf']) && sh.g.steps.some(s => s.id === 'vllm-deploy') && sh.g.placeholders.some(p => p.var === 'vllm_endpoint') && /VLLM_ENDPOINT/.test(sh.g.files['main.tf']));
+      const low = tg('automation', P.automation.internal_lowstakes.inputs);
+      assert('tfgen automation: Pub/Sub + DLQ emitted; internal-low has no KMS or perimeter', /google_pubsub_topic/.test(low.g.files['main.tf']) && /dead_letter_policy/.test(low.g.files['main.tf']) && !/google_kms/.test(low.g.files['main.tf']) && !/service_perimeter/.test(low.g.files['main.tf']) && !/google_pubsub_topic/.test(man.g.files['main.tf']));
+      const es = tg('assistant', P.assistant.enterprise_search.inputs);
+      assert('tfgen: site crawl target is gated on site_url and carries the verify-ownership inline note', /var\.site_url == "" \? 0 : 1/.test(es.g.files['main.tf']) && /site ownership is verified/.test(es.g.files['main.tf']) && es.g.steps.some(s => s.id === 'site-verify'));
+      const z = NS.tfgen.zip(man.g.files);
+      assert('tfgen: zip output has the PK magic and real size', z.constructor.name === 'Uint8Array' && z.length > 1000 && z[0] === 0x50 && z[1] === 0x4b);
+    }
+
     /* ---- 7. decisions registry covers every derived decision ---- */
     {
       const r = NS.derive('assistant', P.assistant.expert_copilot.inputs, {});

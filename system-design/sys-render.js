@@ -239,8 +239,39 @@
     $('#presetChips').innerHTML = pills + custom;
   }
 
+  /* Terraform export checklist: the modal body shown before download. Three
+     compact groups rendered from tfgen's structured placeholders/steps data
+     (the same source as the tfvars comments and README sections, so the modal
+     can never disagree with the bundle). Review-grade placeholders and notes
+     stay README-only to keep this short; every line here is actionable. */
+  function tfChecklistHtml(gen) {
+    const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const required = gen.placeholders.filter(p => p.kind === 'required');
+    const gated = gen.placeholders.filter(p => p.kind === 'gated');
+    const manual = gen.steps.filter(s => s.kind === 'step');
+    const item = (tag, tagCls, code, why) =>
+      `<div class="tf-item"><span class="tf-tag ${tagCls}">${tag}</span>${code ? `<code>${esc(code)}</code>` : ''}<span class="tf-why">${esc(why)}</span></div>`;
+    let h = `<span class="close" id="modalClose" title="Close" aria-label="Close">&times;</span><h2>Generate Terraform</h2>`;
+    h += `<div class="sub">The bundle is generated from the design as shown; nothing to fill in here. ` +
+      `The values and steps below are placeholders in the bundle - terraform.tfvars and the README carry the same list.</div>`;
+    h += `<div class="tf-group">Required before apply (plan stops until set)</div>`;
+    h += required.map(p => item('required', 'req', p.var, p.why)).join('');
+    if (gated.length) {
+      h += `<div class="tf-group">Optional feature gates (empty = skipped, plan stays clean)</div>`;
+      h += gated.map(p => item('gates ' + p.gatesWhat, 'gate', p.var, p.why)).join('');
+    }
+    if (manual.length) {
+      h += `<div class="tf-group">Manual steps (not Terraform - details in the README)</div>`;
+      h += manual.map(s => item(s.when === 'before-apply' ? 'before apply' : 'after apply', s.when === 'before-apply' ? 'before' : 'after', '', s.title)).join('');
+    }
+    h += `<div class="tf-actions"><button class="mini" id="tfDownload">Download Terraform .zip</button>` +
+      `<span class="tf-foot">${Object.keys(gen.files).length} files · README.md has the full instructions</span></div>`;
+    return h;
+  }
+
   NS.render = {
     buildDecisionsPanel, updateDecisions, updateInputMarks, decodeValue,
     issuesHtml, metricCards, costPanelHtml, bomHtml, bindTooltips, applyInputHelp, renderChips,
+    tfChecklistHtml,
   };
 })(typeof window !== 'undefined' ? (window.ASD2 = window.ASD2 || {}) : (globalThis.ASD2 = globalThis.ASD2 || {}));
