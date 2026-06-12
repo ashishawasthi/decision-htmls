@@ -105,6 +105,7 @@
       c.bigquerySrc = false; c.onpremSrc = false; c.streamSrc = false;
     }
     c.docai = c.selfbuilt && (c.docCorpus || c.website);
+    c.dlpDeid = !!(a.retrieval && a.retrieval.dlpDeidIngest);
     c.pscStores = c.alloyAny || c.stateCloudSql || c.redisManaged;
     c.networkUser = c.pscStores || c.gke || c.selfHost || c.hybrid;
     /* Sizing defaults, derived the same way the metrics panel does (documented in
@@ -166,6 +167,11 @@
     'adk-deploy': {
       title: 'Push the agent to Agent Runtime with the ADK CLI',
       detail: 'Agent Runtime packages the agent code at build time, which Terraform cannot do, so no reasoning-engine resource is emitted here. After apply, push the agent object with:\n\n```\nadk deploy agent_engine --agent agent/\n```',
+      inline: ''
+    },
+    'note-dlp-deid': {
+      title: 'De-identify the corpus before import (DLP)',
+      detail: 'This design de-identifies documents BEFORE they are embedded or indexed, and neither Agent Search nor the ingestion pipeline redacts for you. Run a Sensitive Data Protection de-identification pass over the corpus bucket (for example the Dataflow "De-identify GCS data" template with an inspect + de-identify template pair) and point the import/backfill at the de-identified output, not the raw bucket.',
       inline: ''
     },
     'answer-api': {
@@ -276,6 +282,7 @@
     if (c.gateway) add('iap-brand', 'after-apply');
     /* notes */
     add('note-model-map', 'after-apply', 'note');
+    if (c.dlpDeid) add('note-dlp-deid', 'after-apply', 'note');
     if (c.publicGateway) add('note-apigee', 'after-apply', 'note');
     if (c.selfbuilt && (c.ingestionSep || c.website)) add('note-dataflow', 'after-apply', 'note');
     if (c.auditLog) add('note-worm', 'after-apply', 'note');

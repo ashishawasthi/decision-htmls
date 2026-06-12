@@ -133,19 +133,40 @@
       L.push(node('GCS', 'Cloud Storage<br/>docs + artifacts', 'data', 'cyl'));
       L.push(node('Idx', `Index sources<br/>${a.retrieval.idxSel.map(s => cat.INDEXED_LABEL[s]).join(' / ')}`, 'data'));
       L.push('GCS -. source docs .-> Idx');
+      /* De-identify BEFORE anything is embedded or indexed. Agent Search has no
+         built-in de-identification, so the managed path pre-processes the corpus
+         before import; the self-built path de-identifies between parse and embed. */
+      const deid = a.retrieval.dlpDeidIngest;
+      if (deid) L.push(node('DLPDeid', 'DLP de-identify', 'gov'));
       if (a.retrieval.ragEngine === 'vais') {
-        L.push('Idx -. crawl + parse + embed .-> Store');
+        if (deid) {
+          L.push('Idx -. de-identify .-> DLPDeid');
+          L.push('DLPDeid -. import + parse + embed .-> Store');
+        } else {
+          L.push('Idx -. crawl + parse + embed .-> Store');
+        }
       } else {
         L.push(node('DocAI', 'Document AI', 'data'));
         L.push(node('Emb', 'Chunk + embed', 'data'));
         L.push('Idx -.-> DocAI');
-        L.push('DocAI -.-> Emb');
+        if (deid) { L.push('DocAI -.-> DLPDeid'); L.push('DLPDeid -.-> Emb'); }
+        else L.push('DocAI -.-> Emb');
         L.push('Emb -. write · PSC .-> Store');
       }
     }
     if (a.retrieval.liveSel.length && !answerOnly) {
       L.push(node('Live', `Live data<br/>${a.retrieval.liveSel.map(s => cat.SRC_LABEL[s]).join(' · ')}`, 'data'));
-      L.push(`${a.agent.dataAgent} --> Live`);
+      /* Generated SQL never executes raw: catalog check, dry-run, partition
+         filter + maximum-bytes-billed cap gate the text-to-SQL leg. */
+      L.push(a.retrieval.liveSel.includes('bigquery')
+        ? `${a.agent.dataAgent} -- SQL gates · dry-run + bytes cap --> Live`
+        : `${a.agent.dataAgent} --> Live`);
+      /* Text-to-SQL accuracy lives in the semantic layer (schema + descriptions
+         + canonical metric definitions), supplied as a cached prompt prefix. */
+      if (a.retrieval.liveSel.includes('bigquery')) {
+        L.push(node('SemLayer', 'Semantic layer<br/>schema + metric defs', 'data'));
+        L.push(`SemLayer -. cached prefix .-> ${a.agent.dataAgent}`);
+      }
     }
     if (a.retrieval.hasWebGrounding && !answerOnly) {
       L.push(node('WebG', 'Web grounding<br/>Google Search', 'data'));
@@ -194,6 +215,12 @@
       } else {
         L.push(`${a.agent.agentReview} -. review .-> Appr`);
       }
+    }
+    /* Customer-facing assistants escalate to a human with the conversation
+       context attached - never trap the user. */
+    if (!auto && a.gov.humanHandoff) {
+      L.push(node('Handoff', 'Human handoff', 'gov'));
+      L.push(`${a.agent.agentEntry} -. escalate - 2 failed turns / user asks / low confidence .-> Handoff`);
     }
     if (!auto && a.gov.feedbackLoop) {
       L.push(node('Fb', 'Feedback → Agent Platform evals', 'gov'));

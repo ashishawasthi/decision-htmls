@@ -52,6 +52,8 @@
       key: 'hitlApproval', label: 'Human approval', on: hitl !== 'none', value: hitl, cat: 'ops',
       why: hitl === 'dual' ? 'strict-PII automation' : hitl === 'maker_checker' ? 'automation merge' : 'assistant (no auto-action)'
     });
+    set('humanHandoff', 'Human handoff / escalation', !auto && ext,
+      !auto && ext ? 'customer-facing assistant: never trap the user' : auto ? 'guard hits and failed tools escalate with the trace; planned irreversible writes take the approval gate' : 'internal users have other channels', 'ops');
     set('modelRiskGov', 'Model risk governance', lvl >= 2, lvl >= 2 ? 'regulated+' : 'not required', 'ops');
     set('safeRollout', 'Safe rollout + eval gates', lvl >= 2 || ext || highVol,
       lvl >= 2 ? 'regulated+' : ext ? 'external' : highVol ? 'high volume' : 'low blast radius', 'ops');
@@ -132,6 +134,12 @@
     resolve('metadataPrefilter', true, 'pre-filter keeps ANN recall at scale');
     resolve('ingestionSep', (i.corpusSize || 0) >= 5e6 && i.dataSources.includes('doc_corpus'),
       'separate ingestion from query serving for a 5M+ document corpus');
+    /* De-identify before anything is embedded: PII that reaches the vectors and
+       the index replays in every retrieved chunk. Agent Search has no built-in
+       de-identification, so the managed path pre-processes before import. */
+    const corpusDocs = i.dataSources.includes('doc_corpus');
+    resolve('dlpDeidIngest', corpusDocs && ragOn && sens.lvl >= 2,
+      !corpusDocs ? 'no document corpus to de-identify' : !ragOn ? 'nothing is indexed' : sens.lvl >= 2 ? 'regulated tier: de-identify before anything is embedded or indexed' : 'low-sensitivity corpus skips the de-identification pass');
 
     /* ---- state ---- */
     resolve('stateStore',
@@ -196,7 +204,10 @@
        private-only ingress: the public gateway collapses to a light IAP / mTLS hop. */
     const inboundFull = [];
     if (gov.gateway) { inboundFull.push('auth'); inboundFull.push('rate-limit'); }
-    if (sens.lvl >= 3) inboundFull.push('PII redact');
+    /* Inbound PII redaction before any model call: regulated and strict tiers
+       (anything touching customer data, fail-closed) and every customer-facing
+       path (external prompts are untrusted and carry PII). */
+    if (sens.lvl >= 2 || sens.aud !== 'internal') inboundFull.push('PII redact');
     if (gov.guardrails) inboundFull.push('injection screen');
     const inboundChips = hybrid ? (inboundFull.length ? [cat.LIGHT_AUTH] : []) : inboundFull;
     const outboundChips = [];
@@ -274,6 +285,7 @@
         idxSel, liveSel, hasIndex: idxSel.length > 0, hasWebGrounding: i.dataSources.includes('web') && !answerOnly,
         ignoredSources, retrInVpc, storeDrawn, gcsDrawn: storeDrawn,
         ingestionSep: !!d('ingestionSep'), metadataPrefilter: !!d('metadataPrefilter'),
+        dlpDeidIngest: !!d('dlpDeidIngest') && storeDrawn && corpusDocs,
       },
       state: {
         store: d('stateStore'), drawn: !answerOnly, redisTier, redisSelf, redisOnGke, stateInVpc: redisSelf,
@@ -315,7 +327,11 @@
     if (i.freshness === 'realtime' && responseCacheOn) add('conflict', 'Caching contradicts real-time freshness - scope to freshness-tolerant intents or shorten TTL.', '', 'exactCache');
     if (i.freshness === 'realtime' && !i.dataSources.includes('stream')) add('freshness', 'Real-time freshness usually implies a live streaming feed - add the Streaming data source, or relax freshness.', '', 'freshness');
     if (sens.lvl >= 3 && d('semanticCache')) add('privacy', 'Semantic cache stores query embeddings - isolate per tenant + short TTL, or disable under strict-PII.', '', 'semanticCache');
-    if (selfbuilt && chunks > 1e8 && !d('metadataPrefilter')) add('scaling', 'Pure ANN recall degrades past ~100M chunks - add a metadata pre-filter + shard.', '', 'metadataPrefilter');
+    else if ((sens.aud !== 'internal' || sens.lvl >= 2) && d('semanticCache')) add('privacy', 'Namespace the semantic cache per tenant or team, never globally - a shared semantic cache can serve one team an answer generated from another team\'s context, a data leak by construction. Per-team namespaces keep most of the hit rate, because repeat questions cluster within a team.', '', 'semanticCache');
+    if (sens.lvl >= 2 && corpusDocs && ragOn && !d('dlpDeidIngest')) add('privacy', 'De-identification at ingest is pinned off at a regulated or strict-PII tier - raw PII flows into the embeddings and the index, and every retrieved chunk can replay it. The index is as sensitive as the rawest document in it.', '', 'dlpDeidIngest');
+    if (i.dataSources.includes('bigquery') && !answerOnly) add('cost', 'The BigQuery cost bomb is the scan, not the model: validate generated SQL against the catalog, dry-run it, and enforce a partition filter plus maximum-bytes-billed on every query - one ungoverned full-table scan can cost more than the model does all day. Row-level security lives in BigQuery with read-only per-user credentials (generated DML/DDL is rejected, custom quotas back-stop the bytes cap), and materialized hot aggregates keep repeat executive questions instant.', 'cost guardrails', 'costKillSwitch');
+    if (auto && d('reactMaxIter') > cat.K.perf.maxAgentSteps) add('scaling', `A step cap of ${d('reactMaxIter')} is fine as the loop GUARD (~1.5x expected), but expected task length must stay 5-8 verifiable steps with deterministic checks between them - at ${Math.round(cat.K.perf.stepSuccess * 100)}% per step, ${d('reactMaxIter')} routine steps compounds to ~${Math.round(Math.pow(cat.K.perf.stepSuccess, d('reactMaxIter')) * 100)}% end-to-end; split agents by verification boundary instead. Hitting the guard escalates the case with its trace attached, and a rising guard-hit rate means the process or tools changed underneath the agent.`, '', 'reactMaxIter');
+    if (selfbuilt && chunks > 1e8 && !d('metadataPrefilter')) add('scaling', 'Pure ANN recall degrades past ~100M chunks - add a metadata pre-filter + shard (the metadata already supports it), and cascade the reranker: a small reranker over ~50 candidates feeding a stronger one over ~10, before it becomes the bottleneck.', '', 'metadataPrefilter');
     if (d('multiRegion') && pinned('stateStore') && !String(d('stateStore')).includes('spanner')) add('conflict', 'Multi-region active-active is on but the state store is pinned to a single-primary store - AlloyDB / Cloud SQL cannot serve active-active writes; unpin to derive Spanner.', '', 'stateStore');
     if (hybrid && pinned('dedicatedVpc') && !d('dedicatedVpc')) add('conflict', 'Hybrid terminates its Cloud Router + VLAN attachment in a dedicated VPC - unpin the VPC to draw the interconnect correctly.', '', 'dedicatedVpc');
     if (pinned('dedicatedVpc') && d('dedicatedVpc') && vpcMembers.length === 0) add('conflict', 'The dedicated VPC is pinned on but nothing self-hosted lives in it - the box is only drawn around self-hosted compute; managed services connect over PSC instead.', '', 'dedicatedVpc');

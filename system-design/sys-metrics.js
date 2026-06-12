@@ -168,7 +168,10 @@
     }
 
     /* ---- vector index sizing (drives managed-store cost; ScaNN tuning is the service's job) ---- */
-    const chunks = (i.corpusSize || 0) * K.chunksPerDoc;
+    /* CJK runs ~2-3 tokens/word vs ~1.3 for English: the same content roughly
+       doubles, so all corpus-derived ingestion math scales by the multiplier. */
+    m.ingestMult = (i.languages || []).some(l => K.lang.cjkLangs.includes(l)) ? K.lang.cjkIngestMult : 1;
+    const chunks = (i.corpusSize || 0) * K.chunksPerDoc * m.ingestMult;
     m.indexBytes = chunks * K.dim * K.bytesPerFloat;
     m.indexGB = m.indexBytes / 1e9;
     m.shards = Math.max(1, Math.ceil(chunks / 1e8));
@@ -205,7 +208,10 @@
     m.qpsRetrievalPeak = a.retrieval.ragOn ? m.qpsAgentPeak : 0;
     m.qpsLivePeak = (a.retrieval.liveSel || []).length && !answerOnly ? m.qpsAgentPeak : 0;
     m.qpsWebPeak = a.retrieval.hasWebGrounding && !answerOnly ? m.qpsAgentPeak : 0;
-    m.stateOpsPeak = a.state.drawn ? m.qpsAgentPeak * PF.stateOpsPerReq : 0;
+    /* Automation checkpoints after EACH step (crash = resume, not restart), so
+       its state write rate is steps + read/close, not the assistant's flat 3. */
+    const stateOps = a.purpose === 'automation' ? a.agent.reactMaxIter + 2 : PF.stateOpsPerReq;
+    m.stateOpsPeak = a.state.drawn ? m.qpsAgentPeak * stateOps : 0;
     /* One node per ~100 peak QPS: the same figure the state-store, Cloud SQL,
        Spanner, and GKE burst-pod cost lines bill, so capacity and cost agree. */
     m.dbNodes = Math.max(1, Math.ceil((m.volPeak || 0) / 100));
@@ -216,6 +222,14 @@
     m.tokOutPeakSec = answerOnly ? 0 : m.qpsAgentPeak * i.tokensOut;
     m.tokPerMinPeak = (m.tokInPeakSec + m.tokOutPeakSec) * 60;
     m.needsProvisionedThroughput = !a.models.selfHostAll && m.tokPerMinPeak > PF.ptTokMinThreshold;
+    /* Automation: task success compounds per step (0.99^8 = 92%), the math that
+       keeps agents narrow. Compounds over EXPECTED steps (capped at the narrow
+       5-8 bound); the ReAct cap itself is the loop GUARD, deliberately ~1.5x
+       above expected, so a guard of 12 is not punished as routine length. */
+    if (a.purpose === 'automation') {
+      m.runSuccessSteps = Math.min(a.agent.reactMaxIter, PF.maxAgentSteps);
+      m.runSuccessPct = Math.pow(PF.stepSuccess, m.runSuccessSteps) * 100;
+    }
     /* Managed ScaNN serving nodes: the wider of the size bound and the QPS bound.
        priceComponent reads m.vvsNodes, so the capacity row and the Vector Search
        cost line are the same number by construction. */
@@ -240,7 +254,7 @@
       inflight: `${nf(m.qpsAgentPeak, 2)} agent-side peak/s x ${nf(m.latencyP95 / 1000, 2)} s in system (Little's law: L = lambda x W)`,
       instances: answerOnly ? 'managed answer API - autoscaling is the service side of the contract' : `ceil(${nf(m.inflightPeak, 1)} in-flight / ${PF.instConcurrency} concurrent streams per instance), floor of ${PF.instMin} for HA`,
       tok: answerOnly ? 'no model quota of yours - Agent Search bundles the answer generation' : `${nf(m.qpsAgentPeak, 2)} agent-side peak/s x (${nf(i.tokensIn)} in + ${nf(i.tokensOut)} out) tokens x 60 s = ${nf(m.tokPerMinPeak)} tok/min`,
-      state: a.state.drawn ? `${nf(m.qpsAgentPeak, 2)} agent-side peak/s x ${PF.stateOpsPerReq} state ops/req; ${m.dbNodes} node(s) at ~100 peak QPS each` : '',
+      state: a.state.drawn ? `${nf(m.qpsAgentPeak, 2)} agent-side peak/s x ${stateOps} state ops/${a.purpose === 'automation' ? 'run (checkpoint after each step + read/close)' : 'req'}; ${m.dbNodes} node(s) at ~100 peak QPS each` : '',
       vvs: m.vvsNodes ? `max(size: ${m.vvsNodesSize} node(s) at ~${vvsShardGB} GB each, load: ${m.vvsNodesQps} node(s) at ~${PF.vvsQpsPerNode} QPS each on ${nf(m.qpsRetrievalPeak, 1)} retrieval QPS)` : '',
       link: m.linkMbpsPeak != null ? `${nf(m.volPeak, 2)} peak/s x ${nf(i.tokensIn + i.tokensOut)} tok x ${K.net.bytesPerTok} B x 8 bits vs the ${vlanGbps} Gbps VLAN attachment` : '',
       gpu: m.gpuFleetTPS ? `${m.gpuNodes} node(s) x ${nf(m.gpuNodeTPS)} tok/s x ${m.gpuUtilPct}% util = ${nf(m.gpuFleetTPS)} tok/s vs ${nf(m.gpuPeakOutTPS)} required at peak` : '',
@@ -299,6 +313,9 @@
       /* The self-built pipeline pays for the embedding model; Agent Search bundles it. */
       if ((i.corpusSize || 0) > 0) b.add('Embeddings (ingestion)');
     }
+    /* De-identification before embedding/indexing applies to both engines:
+       Agent Search has no built-in de-id, so the managed path pre-processes. */
+    if (a.retrieval.dlpDeidIngest) b.add('Cloud DLP (ingest de-identify)');
     if (i.dataSources.includes('bigquery') && !a.agent.answerOnly) b.add('BigQuery');
     if (a.state.drawn) b.add(a.state.store.includes('spanner') ? 'Spanner' : a.state.store.includes('alloydb') ? 'AlloyDB (state)' : a.state.store === 'redis' ? 'Memorystore Cluster' : 'Cloud SQL');
     /* Managed Memorystore: the Redis hot tier when it is not self-hosted on GKE,
@@ -385,8 +402,9 @@
         ? { mo: r.baseMo + docsDay * r.perDoc, calc: `$${r.baseMo} daily-batch floor + ${nf(docsDay)} changed docs/day x $${r.perDoc}` }
         : { mo: 0, calc: '' },
       'Document AI': r => {
-        const mo = docsDay * pages * 30.4 * r.perPage;
-        return { mo, calc: mo > 0 ? `${nf(docsDay)} docs/day x ${pages} pages x 30.4 days x $${r.perPage}/page` : '' };
+        const blended = (1 - r.complexShare) * r.perPageOcr + r.complexShare * r.perPageLayout;
+        const mo = docsDay * pages * 30.4 * blended;
+        return { mo, calc: mo > 0 ? `${nf(docsDay)} docs/day x ${pages} pages x 30.4 days, classify-first blend: ${Math.round((1 - r.complexShare) * 100)}% OCR x $${r.perPageOcr * 1000}/1k + ${Math.round(r.complexShare * 100)}% complex layout x $${r.perPageLayout * 1000}/1k` : '' };
       },
       'BigQuery': r => {
         const tib = (R * K.bqScanMB) / 1048576;
@@ -441,10 +459,18 @@
         return { mo: over * r.perGB, calc: `${nf(R)} resp x ${nf(i.tokensOut)} tok x ${K.net.bytesPerTok} B = ${nf(m.egressGB || 0, 1)} GB; ${nf(over, 1)} GB past the ${r.freeGB} GiB free x $${r.perGB}/GB (Premium tier)` };
       },
       'Embeddings (ingestion)': r => {
-        const tokMo = (i.corpusSize || 0) * K.ingestion.docsPerDayFactor * 30.4 * K.chunksPerDoc * K.ingestion.tokensPerChunk;
-        const back = (i.corpusSize || 0) * K.chunksPerDoc * K.ingestion.tokensPerChunk;
+        const mult = m.ingestMult || 1;
+        const tokMo = (i.corpusSize || 0) * K.ingestion.docsPerDayFactor * 30.4 * K.chunksPerDoc * K.ingestion.tokensPerChunk * mult;
+        const back = (i.corpusSize || 0) * K.chunksPerDoc * K.ingestion.tokensPerChunk * mult;
         const mo = tokMo / 1e6 * r.perMTok;
-        return { mo, calc: mo > 0 ? `refresh ${nf(tokMo / 1e6)}M tok/mo x $${r.perMTok}/M; one-time backfill ${nf(back / 1e9, 1)}B tok = $${nf(back / 1e6 * r.perMTok)} (not in the total)` : '' };
+        return { mo, calc: mo > 0 ? `refresh ${nf(tokMo / 1e6)}M tok/mo x $${r.perMTok}/M${mult > 1 ? ` (x${mult} CJK)` : ''}; one-time backfill ${nf(back / 1e9, 1)}B tok at the $${r.batchPerMTok}/M batch tier = $${nf(back / 1e6 * r.batchPerMTok)} (not in the total; an embedding model swap re-runs it in full)` : '' };
+      },
+      'Cloud DLP (ingest de-identify)': r => {
+        const mult = m.ingestMult || 1;
+        const gbMo = (i.corpusSize || 0) * K.ingestion.docsPerDayFactor * 30.4 * K.chunksPerDoc * K.ingestion.tokensPerChunk * K.net.bytesPerTok * mult / 1e9;
+        const backGB = (i.corpusSize || 0) * K.chunksPerDoc * K.ingestion.tokensPerChunk * K.net.bytesPerTok * mult / 1e9;
+        const mo = Math.max(0, gbMo - r.freeGB) * r.perGB;
+        return { mo, calc: gbMo > 0 ? `refresh ${nf(gbMo, 1)} GB/mo past the ${r.freeGB} GB free x $${r.perGB}/GB de-identified before embedding (SDP storage de-id job); one-time backfill ${nf(backGB, 1)} GB = $${nf(backGB * r.perGB)} (not in the total)` : '' };
       },
     };
     const fmla = F[name];

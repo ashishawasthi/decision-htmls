@@ -26,7 +26,16 @@
   const modelById = id => MODELS.find(m => m.id === id) || MODELS[0];
 
   const K = {
-    dim: 768, chunksPerDoc: 5, bytesPerFloat: 4,
+    /* chunksPerDoc is derived from the same document the parse line prices:
+       docPages x tokensPerPage / tokensPerChunk = 40 x 600 / 500 = 48, so the
+       index math and the Document AI math can never describe different corpora
+       (the old 5-chunk constant implied a 4-page document while parsing billed 40). */
+    dim: 768, chunksPerDoc: 48, bytesPerFloat: 4,
+    /* CJK runs ~2-3 tokens per word vs ~1.3 for English: the same content costs
+       roughly double the tokens, chunks on character boundaries, and needs
+       native-language golden sets. Applied to corpus-derived ingestion math
+       when ZH or JA is selected. */
+    lang: { cjkIngestMult: 1.8, cjkLangs: ['zh', 'ja'] },
     apigeeRpsPerRegion: 30000, embedTokPerWorkerDay: 2.0e9,
     hoursMo: 730,
     /* Self-host fleet sizing. nodeTokPerSec = decode tok/s for a 70B-active model at
@@ -62,10 +71,13 @@
        vvsQpsPerNode = sustained ScaNN queries per serving node at moderate recall;
        ptTokMinThreshold = peak tokens/min past which dynamic shared quota is a
        p95 risk and Provisioned Throughput is the lever; linkSatPct = utilisation
-       % past which the hybrid VLAN attachment needs a resize. */
-    perf: { instConcurrency: 30, instMin: 2, stateOpsPerReq: 3, vvsQpsPerNode: 800, ptTokMinThreshold: 3e6, linkSatPct: 60 },
+       % past which the hybrid VLAN attachment needs a resize; stepSuccess = the
+       assumed per-step success rate of an automation agent (task success
+       compounds per step: 0.99^8 = 92%, 0.95^8 = 66%, which is why agents stay
+       narrow); maxAgentSteps = the cap past which the compounding lint fires. */
+    perf: { instConcurrency: 30, instMin: 2, stateOpsPerReq: 3, vvsQpsPerNode: 800, ptTokMinThreshold: 3e6, linkSatPct: 60, stepSuccess: 0.99, maxAgentSteps: 8 },
     /* Fixed ingestion assumptions (the original exposed these in a drill-down sub-calculator). */
-    ingestion: { docsPerDayFactor: 0.002, docPages: 40, tokensPerChunk: 500 },
+    ingestion: { docsPerDayFactor: 0.002, docPages: 40, tokensPerPage: 600, tokensPerChunk: 500 },
   };
 
   /* Node colours for the architecture diagram, per theme. Mermaid bakes these into
@@ -146,32 +158,35 @@
   /* One-line purpose per diagram box, keyed by node id. Shown on hover. */
   const NODE_PURPOSE = {
     Client: 'The user-facing app (web or chat) that sends queries and renders grounded, cited answers.',
-    EdgeGW: 'The request-side API gateway at the system edge: authenticates the caller (IAM + mTLS), enforces per-tenant rate limits, redacts inbound PII, and screens for prompt injection and jailbreaks before anything reaches the agent. Implemented by Apigee, Cloud API Gateway, or a third-party gateway. Shows only the controls your inputs require. Sized on inbound user QPS.',
+    EdgeGW: 'The request-side API gateway at the system edge: authenticates the caller (human users via Workforce Identity Federation against the corporate IdP; workloads via IAM + mTLS), enforces token-aware rate limits (tokens per minute, not requests per minute - one million-token request equals a thousand small ones), redacts inbound PII in two stages (fast regex, then Cloud DLP for named entities) before any model call, and screens for prompt injection and jailbreaks. For regulated or customer data the redaction stage fails closed: if it is slow or down, requests queue rather than bypass it. Implemented by Apigee, Cloud API Gateway, or a third-party gateway. Shows only the controls your inputs require. Sized on inbound user QPS.',
     Armor: 'Model Armor screens every model call inline: it filters prompt injection and jailbreaks on the way in and redacts or blocks unsafe or leaking output on the way out. It sees every model call, so it sizes on model-call QPS (user QPS x fan-out), not user QPS.',
-    Orchestrator: 'Inside Agent compute: the dispatcher. It decomposes the request into steps, sends data fetching to the Retrieval agent, routes the draft between the Generator and the Validator, enforces the iteration cap on the revise loop, and composes the final answer. Every hand-off returns here, so run state in the state store stays consistent and the whole flow is traceable.',
-    Retriever: 'Inside Agent compute: the data-tool specialist. It executes the retrieval and live-data calls the Orchestrator dispatches (vector store, live sources, web grounding) and returns the grounded context, keeping tool execution and tool-argument handling out of the Generator prompt.',
+    Orchestrator: 'Inside Agent compute: the dispatcher. It decomposes the request into steps, sends data fetching to the Retrieval agent, routes the draft between the Generator and the Validator, enforces the iteration cap on the revise loop, and composes the final answer. Agent hand-offs ride A2A; tools connect over MCP. Every hand-off returns here, so run state in the state store stays consistent and the whole flow is traceable.',
+    Retriever: 'Inside Agent compute: the data-tool specialist. It executes the retrieval and live-data calls the Orchestrator dispatches (vector store, live sources, web grounding - tools connected over MCP) and returns the grounded context, keeping tool execution and tool-argument handling out of the Generator prompt.',
     Generator: 'Inside Agent compute: the drafting specialist. It calls the models through Model Armor, turns the context the Orchestrator hands it into a draft, and returns the draft to the Orchestrator. When the Validator rejects a draft, the Orchestrator re-invokes it with the critique (the generate-evaluate-revise loop).',
     GeneratorSingle: 'Inside Agent compute: the single agent. It plans the request, calls the models through Model Armor, reads retrieval, and produces the final answer in one pass - there is no separate orchestrator, retrieval agent, or validator critique loop.',
     Validator: 'Inside Agent compute: the automated quality gate. It evaluates the draft against the acceptance criteria and, on a fail, returns a revise verdict to the Orchestrator, which re-invokes the Generator with the critique; on a pass the answer is returned or sent for human review.',
     SecretMgr: 'Secret Manager holds the AUTH credential for the self-hosted Redis-on-GKE tier (the hot state tier and/or the response cache). Every other dependency authenticates through the agent service account via IAM / Workload Identity Federation, so no other secret is stored. Provisioned only when Redis on GKE is in the design.',
     KMS: 'Cloud KMS holds the customer-managed encryption key (CMEK). It encrypts the managed data-at-rest stores - Cloud Storage, the managed state store, the durable tier, the managed Memorystore cache - so data at rest is under a key you own. Self-hosted stores (Redis on GKE) use disk and application encryption instead.',
-    Cache: 'A response cache on the request path: on a hit it returns a stored answer and skips the agent and model entirely. Exact-match keys on the normalized query; semantic match keys on the query embedding. Invalidation is TTL (set from data freshness) plus version busting (key namespaced by model, prompt, and index version).',
-    Retr: 'Narrows candidates in stages (metadata pre-filter, dense + BM25, rerank) so the model is grounded on only the most relevant passages.',
+    Cache: 'A response cache on the request path: on a hit it returns a stored answer and skips the agent and model entirely. Exact-match keys on the normalized query; semantic match keys on the query embedding. Keys are namespaced per tenant, never global - a shared semantic cache can serve one tenant an answer generated from another tenant\'s context, a data leak by construction. Invalidation is TTL (set from data freshness) plus version busting (key namespaced by model, prompt, and index version).',
+    Retr: 'Narrows candidates in stages: metadata pre-filter, then hybrid retrieval (dense + BM25 fused with reciprocal rank fusion, ~50 candidates - the keyword leg catches policy numbers and exact codes embeddings miss), then a cross-encoder reranker keeps the top ~5. The reranker is a named trade: ~80ms at p95 for roughly half the hallucination rate. The metadata pre-filter is also the entitlement gate: access-control principals ride on every chunk and filter BEFORE ranking, so the model never sees a forbidden chunk - it cannot leak what it never saw.',
     Sand: 'Runs PII-sensitive or untrusted tool execution in an ephemeral, isolated instance that is wiped after each use.',
     LLM: 'The reasoning and fast models. Smart routing sends easy lookups to the cheap model and hard queries to the reasoning model.',
-    Store: 'The index that retrieval reads at query time. Managed (Agent Search) or self-built on a managed ScaNN-backed vector store (Vertex AI Vector Search or AlloyDB). Populated offline by the ingestion branch, never at request time.',
+    Store: 'The index that retrieval reads at query time. Managed (Agent Search, with ACL-aware search so per-user entitlements filter in the index, not the prompt) or self-built on a managed ScaNN-backed vector store (Vertex AI Vector Search or AlloyDB). Populated offline by the ingestion branch, never at request time. Answers are gated on a check-grounding score: below threshold, return the documents instead of asserting an answer.',
     Idx: 'The content indexed offline into the store: the document corpus and crawled company website pages. Re-crawled and re-embedded on a schedule, so the index is only as fresh as the last run.',
     GCS: 'Cloud Storage holds the source documents and the packaged agent artifact. It feeds the offline index; it is not read at request time.',
-    Live: 'Sources queried live at request time (BigQuery text-to-SQL, on-prem DB, knowledge graph, streaming), not pre-indexed.',
+    Live: 'Sources queried live at request time (BigQuery text-to-SQL, on-prem DB, knowledge graph, streaming), not pre-indexed. Generated SQL passes three gates before it executes: catalog validation (hallucinated columns die before they run), a dry-run for syntax and bytes scanned, and an enforced partition filter plus maximum-bytes-billed cap; execution gets up to two self-repair retries on error, and every answer returns with the SQL, the row count, and the tables used - the trust architecture, not UX polish. Credentials are read-only and per-user (row-level security lives in the warehouse): the model proposes, the warehouse enforces, and the model only narrates a result set already filtered to the user.',
     WebG: 'Live web grounding via the model web-search tool (Gemini Google Search or Claude web search) for fresh, public, non-owned content. Billed per search; not available on self-hosted Llama.',
     DocAI: 'Parses source documents and pages into clean structured text (layout, tables, OCR) before chunking and embedding, and extracts entities that ride along as searchable metadata.',
-    Emb: 'Splits parsed content into chunks, embeds them, and writes the vectors plus a BM25 index into the managed vector store.',
-    Obs: 'Traces, logs, and evals for every step, so quality, latency, and cost stay measurable and regressions get caught.',
-    Appr: 'A human review step (maker-checker or dual-control) before a high-stakes action is committed. Async: the run pauses here and resumes only when a reviewer approves.',
+    DLPDeid: 'Sensitive Data Protection (Cloud DLP) de-identifies the parsed documents BEFORE anything is embedded or indexed - otherwise raw PII flows into the vectors and the index, and every retrieved chunk can replay it. Agent Search has no built-in de-identification config, so the managed path imports from the de-identified output bucket of the native SDP Cloud Storage de-identify job, never the raw bucket. Scope it to the retrieval index only: an extraction pipeline\'s payload fields are exactly what de-identification strips. Crawled public website pages skip it.',
+    Handoff: 'The human handoff for a customer-facing assistant, with the full conversation context attached so the customer never repeats themselves. The escalation rule: two failed turns, the user asks for a human, or confidence drops - immediate handoff; a conversation-level max-turns cap bounds the session as an absolute backstop. Track escalation correctness with equal weight to containment - containment bought by refusing to escalate is fake and shows up later as churn; never trap the user.',
+    Emb: 'Splits parsed content into ~500-token chunks with heading context carried in (character-boundary chunking for CJK), embeds them, and writes the vectors plus a BM25 index into the managed vector store. The named what-fails-first risk is a re-index storm: an embedding model swap re-embeds the entire corpus because vector spaces do not mix - the separated ingestion plane absorbs that without touching query latency.',
+    Obs: 'Traces, logs, and evals for every step - the audit answer is a replayable trace, end to end. Quality, latency, and cost stay measurable; regressions get caught. Alert on dead-letter-queue depth growth (it usually means an upstream format changed overnight) and on guard-hit rate (a rising rate means the process or the tools changed underneath the agent).',
+    Appr: 'Confidence-gated human review (maker-checker or dual-control): irreversible actions (payments, customer communications, anything legal) and items whose business-critical fields miss their confidence thresholds queue here WITH the agent\'s full reasoning and trace attached; confident, reversible work flows straight through. Async: a queued run resumes on approval. Review staffing is the real cost - flag rate x volume x minutes per review - so the confidence threshold is a staffing-and-risk decision the business signs off, tuned per field, not an ML knob.',
     Fb: 'Captures thumbs and reasons from users and feeds them into the eval set, so quality does not silently decay.',
     Trig: 'The event that starts a run: a ticket, a webhook, or a scheduled job.',
-    State: 'Transactional run and session state, so long workflows and conversations can resume after a failure. Default is AlloyDB: PostgreSQL-compatible, HA, with pgvector/ScaNN for agent memory, and cheaper than Spanner for a single region. Use Spanner for active-active multi-region writes. Durable audit and long-term event history belong in BigQuery.',
+    State: 'Transactional run and session state: automation checkpoints after EACH step, so a crashed case resumes instead of restarting. Default is AlloyDB: PostgreSQL-compatible, HA, with pgvector/ScaNN for agent memory, and cheaper than Spanner for a single region. Use Spanner for active-active multi-region writes. Per-case session memory is fine; cross-case long-term memory goes through human review before it becomes standing behavior, because a poisoned memory contaminates every future case. Durable audit and long-term event history belong in BigQuery.',
     StateDur: 'Durable tier paired with the hot Redis cache: AlloyDB (regional HA) by default, or Spanner (active-active multi-region writes) when the design needs them. Both are managed services reached over a Private Service Connect endpoint, so they live outside the dedicated VPC.',
+    SemLayer: 'The semantic layer for text-to-SQL: schema, column descriptions, and the canonical metric definitions, supplied to the model as a cached prefix (~90% discount, so the big schema context is nearly free). Schema and column descriptions are the number-one accuracy predictor in this design, ahead of model choice - accuracy goes up when descriptions improve, with no model change. The metric dictionary is a readiness gate: agree the definitions with finance before launch, or the copilot industrializes the ambiguity.',
     CloudRouter: 'Terminates the on-prem Cloud Interconnect inside the dedicated VPC (Cloud Router + VLAN attachment). The sole ingress in a hybrid deployment.',
     OnpremUsers: 'The on-premise network: users and callers reach the system over the private interconnect, not the public internet.',
     OnpremDB: 'On-premise systems of record the agent reads back over the same private link.',
@@ -202,6 +217,7 @@
     'Apigee': 'components/apigee.html',
     'Model Armor': 'components/model-armor.html',
     'Cloud DLP': 'components/cloud-dlp.html',
+    'Cloud DLP (ingest de-identify)': 'components/cloud-dlp.html',
     'VPC Service Controls': 'components/vpc-service-controls.html',
     'Document AI': 'components/document-ai.html',
     'Dataflow': 'components/dataflow.html',
@@ -248,7 +264,9 @@
     vais: { per1kQueries: 4.0, std1kQueries: 1.5, storageGiB: 5, freeGiB: 10, websiteBase: 30 },
     alloy: { vcpuHr: 0.06608, gibHr: 0.0112, baseVcpu: 2, baseGiB: 16, poolVcpu: 1, poolGiB: 8, storagePerGB: 0.30 },
     dataflow: { baseMo: 30, perDoc: 0.02 },
-    docai: { perPage: 0.0015 },
+    /* Classify-first parser routing: born-digital text is nearly free, only the
+       complex-layout share pays the Layout Parser rate, the rest rides OCR. */
+    docai: { perPageOcr: 0.0015, perPageLayout: 0.01, complexShare: 0.1 },
     bq: { scanPerTiB: 6.25, scanFreeTiB: 1, storedGB: 200, storeFreeGB: 10, storePerGB: 0.02 },
     spanner: { nodeHr: 0.72, storagePerGB: 0.30 },
     cloudsql: { baseMo: 202, replicaMo: 101 },
@@ -262,9 +280,10 @@
     evals: { samplePct: 5, perEval: 0.0012 },
     armor: { perMTok: 0.10, freeMTok: 2, screenMult: 2 },
     dlp: { perGB: 3.0, freeGB: 1 },
+    dlpDeid: { perGB: 1.0, freeGB: 1 },
     egress: { perGB: 0.12, freeGB: 1 },
     icx: { vlanHr: 0.2778, vlanGbps: 1, perGB: 0.02 },
-    embed: { perMTok: 0.15 },
+    embed: { perMTok: 0.15, batchPerMTok: 0.10 },
     labor: { ftePerMo: 18000, gkeFte: 0.5, gpuNodesPerFte: 8, gpuMinFte: 0.5, langgraphFte: 0.5 },
     support: { minMo: 100, tiers: [[10000, 0.10], [80000, 0.07], [250000, 0.05], [Infinity, 0.03]] },
   };
@@ -317,7 +336,7 @@
     'Cloud Logging (WORM)': {
       rates: PB.logging, ref: 'https://cloud.google.com/stackdriver/pricing',
       note: 'app + model logs, WORM hold',
-      why: `Logging ingestion at $${PB.logging.ingestPerGiB}/GiB past the ${PB.logging.freeGiB} GiB/project/mo free tier, assuming ~${PB.logging.logBytesPerTok} logged bytes per token (structured request, model-call, and response records). The WORM compliance hold keeps each GiB ${PB.logging.retainMo} months at $${PB.logging.retainPerGiBMo}/GiB-mo past the included 30 days, plus $${PB.logging.baseMo}/mo of system logs.`,
+      why: `Logging ingestion at $${PB.logging.ingestPerGiB}/GiB past the ${PB.logging.freeGiB} GiB/project/mo free tier, assuming ~${PB.logging.logBytesPerTok} logged bytes per token (structured request, model-call, and response records). The WORM compliance hold keeps each GiB ${PB.logging.retainMo} months at $${PB.logging.retainPerGiBMo}/GiB-mo past the included 30 days, plus $${PB.logging.baseMo}/mo of system logs. The log bucket sits under CMEK at regulated tiers, and when the edge redacts prompts, the pre-redaction originals are retained here encrypted under a separate key from the application data.`,
     },
     'Cloud Audit Logs (Data Access)': {
       rates: PB.audit, ref: 'https://cloud.google.com/stackdriver/pricing',
@@ -356,8 +375,8 @@
     },
     'Document AI': {
       rates: PB.docai, ref: 'https://cloud.google.com/document-ai/pricing',
-      note: 'Enterprise Document OCR',
-      why: `Enterprise Document OCR at $1.50 per 1k pages ($${PB.docai.perPage}/page), ~${K.ingestion.docPages} pages per changed document. Layout Parser, the chunk-aware alternative, costs more ($10/1k pages).`,
+      note: 'classify first, pay per class',
+      why: `Classify-first parser routing: a cheap classifier stage routes born-digital documents to near-free text extraction, only the complex-layout share (~${PB.docai.complexShare * 100}%) pays Layout Parser at $${PB.docai.perPageLayout * 1000}/1k pages, and the rest rides Enterprise Document OCR at $${PB.docai.perPageOcr * 1000}/1k pages - never pay the layout rate for documents that do not need it. Hopeless scans are quality-gated on OCR confidence and route to a human rather than letting the model hallucinate a blurry number. ~${K.ingestion.docPages} pages per changed document.`,
     },
     'BigQuery': {
       rates: PB.bq, ref: 'https://cloud.google.com/bigquery/pricing',
@@ -387,7 +406,7 @@
     'Cloud Storage': {
       rates: PB.gcs, ref: 'https://cloud.google.com/storage/pricing',
       note: 'docs + artifacts + index',
-      why: `Standard storage at $${PB.gcs.perGB}/GB-mo: ~${PB.gcs.baseGB} GB of source documents and agent artifacts plus the serialized index.`,
+      why: `Standard storage at $${PB.gcs.perGB}/GB-mo: ~${PB.gcs.baseGB} GB of source documents and agent artifacts plus the serialized index. Regulated documents usually pin the region and start a deletion clock - set bucket retention and lifecycle policies to match (for example seven-year retention on medical records, then deletion).`,
     },
     'Secret Manager': {
       rates: PB.secrets, ref: 'https://cloud.google.com/secret-manager/pricing',
@@ -402,7 +421,7 @@
     'Pub/Sub': {
       rates: PB.pubsub, ref: 'https://cloud.google.com/pubsub/pricing',
       note: `~${PB.pubsub.msgKB} KiB / message`,
-      why: `Throughput at $${PB.pubsub.perTiB}/TiB (publish + subscribe), assuming one ~${PB.pubsub.msgKB} KiB trigger message per run, plus a $${PB.pubsub.baseMo}/mo floor for topics and dead-letter handling.`,
+      why: `Throughput at $${PB.pubsub.perTiB}/TiB (publish + subscribe), assuming one ~${PB.pubsub.msgKB} KiB trigger message per run, plus a $${PB.pubsub.baseMo}/mo floor for topics and dead-letter handling. Pub/Sub is the shock absorber for volume spikes; delivery is at-least-once, so side effects key on the work-item hash (a replay can never double-process), and DLQ depth growth is an alert, because it usually means an upstream format changed overnight.`,
     },
     'Cloud Trace': {
       rates: PB.trace, ref: 'https://cloud.google.com/stackdriver/pricing',
@@ -412,7 +431,7 @@
     'Agent Platform Evals': {
       rates: PB.evals, ref: 'https://cloud.google.com/vertex-ai/pricing',
       note: `${PB.evals.samplePct}% sampled`,
-      why: `Continuous evals on a ${PB.evals.samplePct}% sample at ~$${PB.evals.perEval} per evaluated response: model-based metrics bill the autorater judge tokens (a Flash-Lite-class judge reading ~3k tokens and writing ~300 per eval).`,
+      why: `Continuous evals on a ${PB.evals.samplePct}% sample at ~$${PB.evals.perEval} per evaluated response: model-based metrics bill the autorater judge tokens (a Flash-Lite-class judge reading ~3k tokens and writing ~300 per eval). What the sample checks: faithfulness with a version-pinned judge, citation validity when a corpus is indexed (the link resolves AND supports the sentence), per-class slices (an aggregate score hides the one class that is failing), and confidence calibration when review is confidence-gated (when the model says 90%, is it right 90% of the time). Safety stages get their own gates: redaction recall on a seeded synthetic-PII corpus, an injection suite on every Model Armor config change, cache-isolation tests, and tool-schema contract tests that rerun the suite on every schema change.`,
     },
     'Model Armor': {
       rates: PB.armor, ref: 'https://cloud.google.com/security-command-center/pricing',
@@ -422,7 +441,7 @@
     'Workload Identity': {
       free: true,
       note: 'no charge',
-      why: 'Workload Identity Federation has no charge; tool authorization rides IAM.',
+      why: 'Workload Identity Federation has no charge; tool authorization rides IAM. Tool calls are classified read vs write: reads are free, writes carry idempotency keys so a retried call can never double-commit. Live account-data tools execute with the END-USER\'s authenticated identity flowing through (a customer can only ever read their own records), not a service account that sees everything; human callers authenticate via Workforce Identity Federation against the corporate IdP.',
     },
     'Model Registry': {
       free: true,
@@ -438,6 +457,11 @@
       rates: PB.dlp, ref: 'https://cloud.google.com/sensitive-data-protection/pricing',
       note: 'content inspection $/GB',
       why: `Sensitive Data Protection content inspection at $${PB.dlp.perGB}/GB past the ${PB.dlp.freeGB} GB/mo free tier ($2/GB beyond 1 TB), on prompt + response bytes at ~${K.net.bytesPerTok} bytes/token. Inspection templates and sampling cut this further; the 1 KB per-request billing minimum is negligible at these payload sizes.`,
+    },
+    'Cloud DLP (ingest de-identify)': {
+      rates: PB.dlpDeid, ref: 'https://cloud.google.com/sensitive-data-protection/pricing',
+      note: 'de-identify before embedding',
+      why: `Sensitive Data Protection storage de-identification (the native Cloud Storage de-identify job: an inspection job with a Deidentify action writing de-identified copies to an output bucket) at $${PB.dlpDeid.perGB}/GB up to 50 TB/mo, run on documents BEFORE chunking and embedding, so PII never enters the vectors or the index. Agent Search has no built-in de-identification configuration, so the managed path imports from the de-identified bucket, never the raw one. The content-method alternative (the Dataflow pipeline) bills inspection ($3/GB) plus transformation ($2/GB) separately. Sized on the daily refresh share; the one-time backfill is shown in the detail and kept out of the monthly total.`,
     },
     'IAM': {
       free: true,
@@ -462,7 +486,7 @@
     'Embeddings (ingestion)': {
       rates: PB.embed, ref: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
       note: 'gemini-embedding refresh',
-      why: `gemini-embedding at $${PB.embed.perMTok}/M input tokens on the re-embedded share of the corpus (${K.ingestion.docsPerDayFactor * 100}% of docs change per day, ${K.chunksPerDoc} chunks x ${K.ingestion.tokensPerChunk} tokens each). The one-time full backfill is shown in the detail but not added to the monthly total. Agent Search bundles embedding, so this line appears only on the self-built pipeline.`,
+      why: `gemini-embedding at $${PB.embed.perMTok}/M input tokens on the re-embedded share of the corpus (${K.ingestion.docsPerDayFactor * 100}% of docs change per day, ${K.chunksPerDoc} chunks x ${K.ingestion.tokensPerChunk} tokens each). The one-time full backfill is priced at the $${PB.embed.batchPerMTok}/M batch tier (latency-tolerant by definition), shown in the detail but not added to the monthly total - quote it up front, because an embedding model swap re-runs it in full: vector spaces do not mix, so a model change is a whole-corpus re-index. Agent Search bundles embedding, so this line appears only on the self-built pipeline.`,
     },
     'Ops & on-call labor (build vs buy)': {
       rates: PB.labor,

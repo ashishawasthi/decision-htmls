@@ -140,8 +140,8 @@
       assert('CMEK edges reach managed stores only', /KMS -\. encrypts \.-> GCS/.test(x.dg) && /KMS -\. encrypts \.-> StateDur/.test(x.dg) && !/KMS -\. encrypts \.-> Cache/.test(x.dg));
       assert('Data Access audit edges mirror the CMEK target set', x.arch.security.auditTargets.join() === x.arch.security.kmsTargets.join() && /-\. data access \.-> Audit/.test(x.dg));
       assert('multi-agent routes every hand-off through the Orchestrator (no point-to-point links, no drawn responses)', /Orchestrator --> Generator/.test(x.dg) && /Orchestrator --> Validator/.test(x.dg) && !/Generator --> Validator/.test(x.dg) && !/revise/.test(x.dg) && !/Generator --> Orchestrator/.test(x.dg) && !/Retriever --> Orchestrator/.test(x.dg));
-      assert('multi-agent data tools hang off the Retrieval agent, never the Generator', /Orchestrator --> Retriever/.test(x.dg) && /Retriever --> Live/.test(x.dg) && !/Generator --> Store/.test(x.dg) && !/Generator --> Live/.test(x.dg) && !/Generator --> WebG/.test(x.dg));
-      assert('managed Agent Search folds retrieval into the store', !/Retrieval funnel/.test(x.dg) && /Retriever --> Store/.test(x.dg) && /Idx -\. crawl \+ parse \+ embed \.-> Store/.test(x.dg));
+      assert('multi-agent data tools hang off the Retrieval agent, never the Generator', /Orchestrator --> Retriever/.test(x.dg) && /Retriever -- SQL gates · dry-run \+ bytes cap --> Live/.test(x.dg) && !/Generator --> Store/.test(x.dg) && !/Generator --> Live/.test(x.dg) && !/Generator --> WebG/.test(x.dg));
+      assert('managed Agent Search folds retrieval into the store (de-identify before import at this tier)', !/Retrieval funnel/.test(x.dg) && /Retriever --> Store/.test(x.dg) && /Idx -\. de-identify \.-> DLPDeid/.test(x.dg) && /DLPDeid -\. import \+ parse \+ embed \.-> Store/.test(x.dg));
       assert('no HNSW or Elastic anywhere in diagram or BoM', !/HNSW|Elastic/i.test(x.dg) && !x.comps.some(c => /HNSW|Elastic/i.test(c)));
     }
     {
@@ -396,6 +396,50 @@
       const x = pipe('automation', big);
       assert('self-host fleet capacity covers the peak it was sized for', x.m.gpuFleetTPS >= x.m.gpuPeakOutTPS && x.m.gpuHeadroomPct >= 0 && /\d.*tok\/s/.test(x.m.perfCalc.gpu));
       assert('automation has no first-token metric (async runs)', x.m.latencyStartP95 === null && x.m.latencyStartOverBudget === false);
+    }
+
+    /* ---- 6e. practices from the interview scripts (08-13) ---- */
+    {
+      const ec = pipe('assistant', P.assistant.expert_copilot.inputs);
+      assert('regulated corpus derives DLP de-identification before import (managed path)', ec.dv('dlpDeidIngest') === true && ec.arch.retrieval.dlpDeidIngest === true && ec.comps.includes('Cloud DLP (ingest de-identify)') && ec.cs.priced.some(c => c.name === 'Cloud DLP (ingest de-identify)' && /backfill/.test(c.calc)));
+      const low = clone(P.assistant.expert_copilot.inputs); low.audienceSensitivity = 'internal_low';
+      const lo = pipe('assistant', low);
+      assert('internal-low corpus skips de-identification, plain import edge preserved', lo.dv('dlpDeidIngest') === false && /Idx -\. crawl \+ parse \+ embed \.-> Store/.test(lo.dg) && !/DLPDeid/.test(lo.dg) && !lo.comps.includes('Cloud DLP (ingest de-identify)'));
+      const slf = pipe('assistant', P.assistant.self_managed.inputs);
+      assert('self-built pipeline de-identifies between parse and embed', /DocAI -\.-> DLPDeid/.test(slf.dg) && /DLPDeid -\.-> Emb/.test(slf.dg) && !/DocAI -\.-> Emb/.test(slf.dg));
+      assert('de-identification pinned off at a regulated tier lints privacy', pipe('assistant', P.assistant.expert_copilot.inputs, { dlpDeidIngest: false }).lint.some(l => l.sev === 'privacy' && l.src === 'dlpDeidIngest'));
+    }
+    {
+      const cs = pipe('assistant', P.assistant.customer_support.inputs);
+      assert('customer-facing path redacts inbound PII at the gateway before any model call', cs.arch.models.inboundChips.includes('PII redact'));
+      assert('customer-facing assistant draws the human handoff (never trap the user)', cs.arch.gov.humanHandoff === true && /Handoff/.test(cs.dg) && /escalate/.test(cs.dg));
+      assert('external semantic cache lints per-tenant namespacing', cs.lint.some(l => l.src === 'semanticCache' && /tenant/.test(l.msg)));
+      const ec = pipe('assistant', P.assistant.expert_copilot.inputs);
+      const il = clone(P.assistant.expert_copilot.inputs); il.audienceSensitivity = 'internal_low';
+      assert('regulated tiers redact inbound PII too; internal-low keeps the light edge; no internal handoff', ec.arch.models.inboundChips.includes('PII redact') && !pipe('assistant', il).arch.models.inboundChips.includes('PII redact') && ec.arch.gov.humanHandoff === false && !/Handoff/.test(ec.dg));
+    }
+    {
+      const ca = pipe('assistant', P.assistant.conversational_analytics.inputs);
+      assert('text-to-SQL leg carries the SQL gates and the scan-cost lever', /SQL gates · dry-run \+ bytes cap --> Live/.test(ca.dg) && ca.lint.some(l => /maximum-bytes-billed/.test(l.msg)));
+      const lo = pipe('automation', P.automation.internal_lowstakes.inputs);
+      assert('automation surfaces compounded task success and the narrow-agent guard lint', Math.abs(lo.m.runSuccessPct - Math.pow(0.99, Math.min(lo.arch.agent.reactMaxIter, 8)) * 100) < 0.1 && pipe('automation', P.automation.internal_lowstakes.inputs, { reactMaxIter: 12 }).lint.some(l => l.src === 'reactMaxIter' && /compounds/.test(l.msg)));
+      assert('the guard never lowers the expected-step metric (12-step guard still compounds over 8)', pipe('automation', P.automation.internal_lowstakes.inputs, { reactMaxIter: 12 }).m.runSuccessSteps === 8);
+      assert('assistants carry no compounded-success metric', pipe('assistant', P.assistant.expert_copilot.inputs).m.runSuccessPct == null);
+      assert('semantic layer feeds the text-to-SQL leg as a cached prefix', /SemLayer/.test(ca.dg) && /cached prefix/.test(ca.dg));
+      assert('automation state writes checkpoint per step (cap + 2); assistants stay at 3', Math.abs(lo.m.stateOpsPeak - lo.m.qpsAgentPeak * (lo.arch.agent.reactMaxIter + 2)) < 1e-9 && (() => { const e = pipe('assistant', P.assistant.expert_copilot.inputs); return Math.abs(e.m.stateOpsPeak - e.m.qpsAgentPeak * 3) < 1e-9; })());
+      assert('chunk math matches the parsed document (48 chunks/doc) and CJK scales ingestion ~1.8x', (() => {
+        const base = pipe('assistant', P.assistant.self_managed.inputs);
+        const zhIn = clone(P.assistant.self_managed.inputs); zhIn.languages = ['en', 'zh'];
+        const zh = pipe('assistant', zhIn);
+        const expect = 2e6 * 48 * 768 * 4 / 1e9;
+        return Math.abs(base.m.indexGB - expect) < 1 && Math.abs(zh.m.indexGB - expect * 1.8) < 1 && zh.cs.priced.some(c => c.name === 'Embeddings (ingestion)' && /CJK/.test(c.calc));
+      })());
+      assert('Document AI prices the classify-first blend; the embedding backfill prices the batch tier', (() => {
+        const slf = pipe('assistant', P.assistant.self_managed.inputs);
+        const dai = slf.cs.priced.find(c => c.name === 'Document AI');
+        const emb = slf.cs.priced.find(c => c.name === 'Embeddings (ingestion)');
+        return !!dai && /classify-first/.test(dai.calc) && !!emb && /batch tier/.test(emb.calc);
+      })());
     }
 
     /* ---- 7. decisions registry covers every derived decision ---- */

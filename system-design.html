@@ -295,7 +295,9 @@
       <li>Requests / month = actors x actions per actor per day x 30.4 days.</li>
       <li>Average QPS spreads the daily actions across the active window (active hours/week x 3600 / 7); peak applies
         the burst multiplier on top.</li>
-      <li>Vector index = corpus docs x 5 chunks/doc x 768-dim x 4 bytes, then sharded.</li>
+      <li>Vector index = corpus docs x 48 chunks/doc (the same 40-page, 600-tokens-per-page document the parse line
+        prices, in 500-token chunks) x 768-dim x 4 bytes, then sharded. ZH/JA corpora scale all ingestion math
+        (index size, embedding and de-identification volume) by ~1.8x for CJK token density.</li>
       <li>Latency p95 sums the critical-path line items; parallel grounding takes the slowest source, not the sum.
         Per-stream decode rates are realistic API streaming speeds, not server aggregate throughput: roughly 140
         tok/s Gemini 3 Pro, 250 tok/s Gemini 3.5 Flash, 360 tok/s Flash-Lite, 70 tok/s Claude Opus, 85 tok/s
@@ -328,6 +330,20 @@
         GCP; hybrid designs bill a Partner Interconnect VLAN instead (private-only ingress).</li>
       <li>Embedding refresh re-embeds 0.2% of the corpus per day at 5 chunks x 500 tokens per document; the one-time
         backfill is shown in the row detail but kept out of the monthly total.</li>
+      <li>De-identification at ingest: regulated and strict-PII tiers run Sensitive Data Protection de-identification
+        on documents before anything is chunked, embedded, or indexed ($1/GB via the native SDP Cloud Storage
+        de-identify job, on the daily refresh share; the one-time backfill rides the row detail). Agent Search has
+        no built-in de-identification configuration, so the managed path imports from the de-identified bucket;
+        crawled public website pages skip the pass. The embedding backfill itself prices at the $0.10/M batch tier.</li>
+      <li>Regulated tiers and customer-facing paths redact inbound PII at the gateway before any model call
+        (fail-closed); external assistants also derive a human handoff with the conversation context attached
+        (escalate on two failed turns, a user request, or low confidence). Generated SQL against BigQuery passes
+        catalog validation, a dry-run, and a partition filter plus maximum-bytes-billed cap before it executes,
+        with a semantic layer (schema + metric definitions) as a cached prefix; row-level security stays in the
+        warehouse with read-only per-user credentials.</li>
+      <li>Automation end-to-end success compounds per step at an assumed 99% per step over the expected task length
+        (capped at 8: 0.99^8 = 92%, 0.95^8 = 66%); the ReAct cap is the loop guard, set ~1.5x above expected, and
+        automation state writes checkpoint after each step (cap + 2 ops per run vs 3 per request for assistants).</li>
       <li>Logging assumes ~12 logged bytes per token with a 36-month WORM hold; Cloud Trace assumes ~30 spans per
         request; DLP inspects prompt + response bytes; Model Armor screens ~2x the billed tokens.</li>
       <li>Below the line: ops labor at illustrative loaded-FTE fractions (0.5 for GKE ops, 1 per 8 GPU nodes with a
