@@ -96,10 +96,20 @@
     }
     {
       const x = pipe('assistant', P.assistant.enterprise_search.inputs);
-      assert('sub-second derives single-agent, hybrid retrieval, 85% fast routing', x.dv('pattern') === 'single' && x.dv('retrieval') === 'hybrid' && x.dv('routingSplit') === 85);
+      assert('sub-second derives the no-agent path: Agent Search answers directly', x.dv('pattern') === 'none' && x.arch.agent.answerOnly === true && x.dv('ragEngine') === 'vais');
       assert('enterprise search derives response caching on', x.arch.caching.responseCacheOn);
-      assert('enterprise search stays within the sub-second budget', x.m.latencyOverBudget === false);
-      assert('enterprise search derives Agent Search + separated ingestion over the drawn store', x.dv('ragEngine') === 'vais' && x.dv('ingestionSep') === true && x.arch.retrieval.storeDrawn === true);
+      assert('enterprise search stays within the sub-second budget', x.m.latencyOverBudget === false && x.m.latencyP95 < 1000);
+      assert('enterprise search derives Agent Search + separated ingestion over the drawn store', x.dv('ingestionSep') === true && x.arch.retrieval.storeDrawn === true);
+      assert('no-agent diagram: no agent box, model leg, or state store; the request lands on the store', !/subgraph AE/.test(x.dg) && !/Generator/.test(x.dg) && !/LLM\[/.test(x.dg) && !/Armor/.test(x.dg) && !/State\[\(/.test(x.dg) && /Cache -- miss --> Store/.test(x.dg) && x.dg.includes('Store -. query logs + traces .-> Obs'));
+      assert('no-agent BoM: no runtime, models, state store, or Model Armor; Agent Search present', !x.comps.includes('ADK + Agent Runtime') && !x.comps.some(n => /Gemini|Claude|Llama/.test(n)) && !x.comps.includes('AlloyDB (state)') && !x.comps.includes('Model Armor') && x.comps.includes('Agent Search'));
+      assert('no-agent GenAI cost zeroes out; Agent Search queries carry the spend', x.m.costOpt === 0 && x.cs.genai === 0 && x.cs.priced.some(c => c.name === 'Agent Search' && c.mo > 0));
+      assert('no-agent capacity: zero model calls, no instance sizing, no PT need', x.arch.agent.modelCallsPerReq === 0 && x.m.qpsModelPeak === 0 && x.m.agentInstances === null && x.m.needsProvisionedThroughput === false);
+      assert('the bundled answer streams: first token = full minus the answer tail, not the request tokensOut', x.m.latParts.some(p => /Agent Search answer/.test(p.label) && p.stream > 0) && x.m.latencyStartP95 > 0 && Math.abs(x.m.latencyP95 - x.m.latencyStartP95 - NS.catalog.K.lat.vaisAnswerTok * NS.catalog.modelById('gemini-31-flash-lite').msPerOutTok) < 0.5);
+      const ss = clone(P.assistant.expert_copilot.inputs); ss.latencyPreset = 'subsecond';
+      const nx = pipe('assistant', ss);
+      assert('no-agent path flags selected live sources as ignored, keeps the indexed corpus', nx.arch.retrieval.ignoredSources.includes('bigquery') && !nx.arch.retrieval.ignoredSources.includes('doc_corpus') && !/Live data/.test(nx.dg));
+      assert('every other tier uses all selected sources (nothing flagged ignored)', pipe('assistant', P.assistant.expert_copilot.inputs).arch.retrieval.ignoredSources.length === 0 && pipe('assistant', Object.assign(clone(P.assistant.expert_copilot.inputs), { latencyPreset: 'interactive' })).arch.retrieval.ignoredSources.length === 0);
+      assert('retrieval pinned off flags the indexed source as ignored too', pipe('assistant', P.assistant.expert_copilot.inputs, { retrieval: 'none' }).arch.retrieval.ignoredSources.includes('doc_corpus'));
     }
     {
       const x = pipe('assistant', P.assistant.conversational_analytics.inputs);
@@ -157,8 +167,12 @@
       assert('gcp keeps the public door and gateway SKUs (no regression)', /Client UI/.test(gcp.dg) && gcp.comps.includes('Apigee') && gcp.comps.includes('Cloud API Gateway') && !/ONPREM/.test(gcp.dg));
     }
     {
-      const x = pipe('assistant', P.assistant.enterprise_search.inputs);
+      const it = clone(P.assistant.expert_copilot.inputs); it.latencyPreset = 'interactive';
+      const x = pipe('assistant', it);
+      assert('interactive SLO derives the single streaming agent (not the team, not no-agent)', x.dv('pattern') === 'single' && x.arch.agent.answerOnly === false);
       assert('single-agent box holds the Generator only, tools stay on the Generator', /Generator\[/.test(x.dg) && !/Orchestrator/.test(x.dg) && !/Validator/.test(x.dg) && !/Retriever/.test(x.dg) && /Generator --> Store/.test(x.dg));
+      assert('interactive budgets (2s start / 5s full) fit the single agent with grounding', x.m.latencyStartBudget === 2000 && x.m.latencyBudget === 5000 && !x.m.latencyStartOverBudget && !x.m.latencyOverBudget);
+      assert('multi-agent pinned at interactive busts the 5s budget', pipe('assistant', it, { pattern: 'multi' }).m.latencyOverBudget === true);
     }
 
     /* ---- 5. pins conflict via lint, never via silent rewrite ---- */
@@ -190,7 +204,13 @@
     {
       const sub = clone(P.assistant.enterprise_search.inputs); sub.dataSources = ['doc_corpus', 'bigquery'];
       const x = pipe('assistant', sub);
-      assert('a slow source forced onto sub-second flags the latency metric', x.m.latencyOverBudget === true && x.lint.some(l => l.src === 'latencyPreset'));
+      assert('a live source at sub-second conflicts (no agent to query it); latency stays in budget', x.m.latencyOverBudget === false && x.lint.some(l => l.sev === 'conflict' && /answers only from its index/.test(l.msg)) && !/Live data/.test(x.dg));
+      const noIdx = clone(P.assistant.enterprise_search.inputs); noIdx.dataSources = ['bigquery']; noIdx.corpusSize = 0;
+      assert('sub-second with no indexed source conflicts (nothing to answer from)', pipe('assistant', noIdx).lint.some(l => l.sev === 'conflict' && /no indexed source/.test(l.msg)));
+      assert('a self-built pipeline pinned at sub-second conflicts', pipe('assistant', P.assistant.enterprise_search.inputs, { ragEngine: 'selfbuilt' }).lint.some(l => l.src === 'ragEngine' && l.sev === 'conflict'));
+      const sh = clone(P.assistant.enterprise_search.inputs); sh.modelStrategy = 'self_host';
+      const shx = pipe('assistant', sh);
+      assert('self-host models at sub-second conflict and provision no fleet', shx.lint.some(l => l.src === 'modelStrategy' && l.sev === 'conflict') && !shx.arch.models.selfHostAny && !shx.m.gpuNodes && !shx.comps.includes('vLLM on GKE'));
     }
 
     /* ---- 6. metrics and cost sanity (ported from the original self-test) ---- */
@@ -316,8 +336,66 @@
       assert('tfgen automation: Pub/Sub + DLQ emitted; internal-low has no KMS or perimeter', /google_pubsub_topic/.test(low.g.files['main.tf']) && /dead_letter_policy/.test(low.g.files['main.tf']) && !/google_kms/.test(low.g.files['main.tf']) && !/service_perimeter/.test(low.g.files['main.tf']) && !/google_pubsub_topic/.test(man.g.files['main.tf']));
       const es = tg('assistant', P.assistant.enterprise_search.inputs);
       assert('tfgen: site crawl target is gated on site_url and carries the verify-ownership inline note', /var\.site_url == "" \? 0 : 1/.test(es.g.files['main.tf']) && /site ownership is verified/.test(es.g.files['main.tf']) && es.g.steps.some(s => s.id === 'site-verify'));
+      const ans = tg('assistant', P.assistant.enterprise_search.inputs);
+      assert('tfgen no-agent: no agent code, SA, or Cloud Run; search engine + answer-api step instead', !('agent/agent.py' in ans.g.files) && !/google_service_account" "agent"/.test(ans.g.files['main.tf']) && !/google_cloud_run_v2_service" "api"/.test(ans.g.files['main.tf']) && /google_discovery_engine_search_engine/.test(ans.g.files['main.tf']) && ans.g.steps.some(s => s.id === 'answer-api') && !ans.g.placeholders.some(p => p.var === 'agent_image') && !/var\.generation_model/.test(ans.g.files['main.tf']));
       const z = NS.tfgen.zip(man.g.files);
       assert('tfgen: zip output has the PK magic and real size', z.constructor.name === 'Uint8Array' && z.length > 1000 && z[0] === 0x50 && z[1] === 0x4b);
+    }
+
+    /* ---- 6d. performance & capacity: the QPS funnel, Little's law, ceilings ---- */
+    {
+      const x = pipe('assistant', P.assistant.expert_copilot.inputs);
+      const dft = x.m.latParts.find(p => /Generator draft/.test(p.label));
+      const vd = x.m.latParts.find(p => /Validator verdict/.test(p.label));
+      const rv = x.m.latParts.find(p => /Revise loop/.test(p.label));
+      const pl = x.m.latParts.find(p => /Orchestrator plan/.test(p.label));
+      assert('multi-agent is validator-gated: first token p95 equals the full answer, nothing streams', x.m.latencyStartIsGated === true && x.m.latencyStartP95 === x.m.latencyP95 && !x.m.latParts.some(p => p.stream > 0));
+      assert('multi-agent latency = plan + full draft + verdict + p95 revise cycles', !!pl && !!dft && !!vd && !!rv && x.m.reviseCyclesP95 === 1 && Math.abs(rv.ms - x.m.reviseCyclesP95 * (dft.ms + vd.ms)) < 0.5);
+      assert('revise rate 0 removes the loop; a higher rate adds p95 cycles', !pipe('assistant', P.assistant.expert_copilot.inputs, { reviseRate: 0 }).m.latParts.some(p => /Revise loop/.test(p.label)) && pipe('assistant', P.assistant.expert_copilot.inputs, { reviseRate: 30 }).m.reviseCyclesP95 === 2);
+      const s = pipe('assistant', P.assistant.expert_copilot.inputs, { pattern: 'single' });
+      const fmDef = NS.catalog.modelById(s.arch.models.fastModel), rmDef = NS.catalog.modelById(s.arch.models.reasoningModel);
+      const f = s.arch.models.smartRouting ? s.arch.models.routingSplit / 100 : 0;
+      const stream = P.assistant.expert_copilot.inputs.tokensOut * (f * fmDef.msPerOutTok + (1 - f) * rmDef.msPerOutTok);
+      assert('a single agent streams: first token = full minus the streaming tail', s.m.latencyStartIsGated === false && Math.abs(s.m.latencyP95 - s.m.latencyStartP95 - stream) < 0.5 && s.m.latParts.some(p => p.stream > 0 && p.stream < p.ms));
+      assert('agent QPS, model-call QPS, and the fan-out reconcile', Math.abs(x.m.qpsModelPeak - x.m.qpsAgentPeak * x.arch.agent.modelCallsPerReq) < 1e-9 && x.m.qpsAgentPeak <= x.m.volPeak);
+      assert("in-flight at peak follows Little's law and instances respect the HA floor", Math.abs(x.m.inflightPeak - x.m.qpsAgentPeak * x.m.latencyP95 / 1000) < 1e-9 && x.m.agentInstances >= NS.catalog.K.perf.instMin);
+      assert('state sizing is single-sourced into the state-store cost line', x.cs.priced.some(c => c.name === 'AlloyDB (state)' && c.calc.includes(`${x.m.dbNodes} read-pool`)));
+      assert('every perf calc string carries substituted numbers', ['ingress', 'agentQps', 'modelQps', 'inflight', 'instances', 'tok', 'state'].every(k => typeof x.m.perfCalc[k] === 'string' && /\d/.test(x.m.perfCalc[k])));
+    }
+    {
+      const longIn = clone(P.assistant.expert_copilot.inputs); longIn.tokensOut = 1000;
+      const x = pipe('assistant', longIn);
+      assert('long answers blow the 10s start budget before the 12s full budget and lint first-token', x.m.latencyStartOverBudget === true && x.m.latencyOverBudget === false && x.lint.some(l => /First token/.test(l.msg)));
+      const es = pipe('assistant', P.assistant.enterprise_search.inputs);
+      assert('sub-second carries no start budget; interactive and agentic do', es.m.latencyStartBudget === Infinity && x.m.latencyStartBudget === 10000);
+      const esi = clone(P.assistant.enterprise_search.inputs); esi.latencyPreset = 'interactive';
+      const esix = pipe('assistant', esi);
+      assert('high peak token throughput recommends Provisioned Throughput', esix.m.needsProvisionedThroughput === true && esix.lint.some(l => /Provisioned Throughput/.test(l.msg)));
+      const ec = pipe('assistant', P.assistant.expert_copilot.inputs);
+      assert('low-volume designs stay on shared quota (no PT lint)', ec.m.needsProvisionedThroughput === false && !ec.lint.some(l => /Provisioned Throughput/.test(l.msg)));
+      assert('a cache-on design sends only the misses to the agent', es.m.qpsAgentPeak < es.m.volPeak && es.arch.caching.responseCacheOn);
+      assert('agentic budgets exceed what the default architecture achieves', ec.m.latencyBudget === 12000 && ec.m.latencyStartBudget === 10000 && !ec.m.latencyOverBudget && !ec.m.latencyStartOverBudget);
+      assert('the three assistant SLO tiers each derive their own pattern', pipe('assistant', Object.assign(clone(P.assistant.expert_copilot.inputs), { latencyPreset: 'subsecond' })).dv('pattern') === 'none' && pipe('assistant', Object.assign(clone(P.assistant.expert_copilot.inputs), { latencyPreset: 'interactive' })).dv('pattern') === 'single' && ec.dv('pattern') === 'multi');
+    }
+    {
+      const hv = Object.assign(clone(P.assistant.expert_copilot.inputs), { actors: 1e6, actionsPerDay: 50, burst: 8, activeHoursPerWeek: 168, corpusSize: 1e5 });
+      const x = pipe('assistant', hv, { ragEngine: 'selfbuilt', vectorDB: 'vertex' });
+      assert('vector serving nodes take the wider of the size and QPS bounds', x.m.vvsNodesQps > x.m.vvsNodesSize && x.m.vvsNodes === x.m.vvsNodesQps);
+      assert('the QPS-sized vector fleet flows into the Vector Search cost line', x.cs.priced.some(c => c.name === 'Vector Search' && c.calc.indexOf(`${x.m.vvsNodes} x `) === 0));
+    }
+    {
+      const hy = clone(P.assistant.expert_copilot.inputs); hy.deployment = 'hybrid';
+      const x = pipe('assistant', hy);
+      assert('hybrid computes link utilisation and stays far from saturation', x.m.linkMbpsPeak > 0 && x.m.linkUtilPct < NS.catalog.K.perf.linkSatPct && !x.lint.some(l => /saturates/.test(l.msg)));
+      assert('gcp deployment carries no link metrics', pipe('assistant', P.assistant.expert_copilot.inputs).m.linkMbpsPeak == null);
+      const sat = Object.assign(clone(P.assistant.expert_copilot.inputs), { deployment: 'hybrid', actors: 1e6, actionsPerDay: 50, burst: 8, activeHoursPerWeek: 168 });
+      assert('a hot hybrid link lints before it saturates', pipe('assistant', sat).lint.some(l => /saturates/.test(l.msg)));
+    }
+    {
+      const big = Object.assign(clone(P.automation.internal_lowstakes.inputs), { actors: 50000, actionsPerDay: 60, tokensOut: 2000, modelStrategy: 'self_host' });
+      const x = pipe('automation', big);
+      assert('self-host fleet capacity covers the peak it was sized for', x.m.gpuFleetTPS >= x.m.gpuPeakOutTPS && x.m.gpuHeadroomPct >= 0 && /\d.*tok\/s/.test(x.m.perfCalc.gpu));
+      assert('automation has no first-token metric (async runs)', x.m.latencyStartP95 === null && x.m.latencyStartOverBudget === false);
     }
 
     /* ---- 7. decisions registry covers every derived decision ---- */

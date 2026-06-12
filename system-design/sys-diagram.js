@@ -32,13 +32,17 @@
 
     const privateOnly = a.topology.privateOnly;
     const cacheOn = a.caching.responseCacheOn;
+    /* No-agent path: the request lands on Agent Search itself (arch.agent.agentEntry
+       is 'Store'); no agent box, no model leg, no tools, no state store. */
+    const answerOnly = !!a.agent.answerOnly;
     const cacheLabel = `Response cache<br/>${[a.caching.exactCache && 'exact', a.caching.semanticCache && 'semantic'].filter(Boolean).join(' + ')}`;
-    const showFunnel = a.retrieval.retrInVpc;
+    const showFunnel = a.retrieval.retrInVpc && !answerOnly;
     const ingressId = auto ? 'Trig' : 'Client';
     const ingressLabel = auto ? 'Trigger (ticket/event)' : 'Client UI';
     const aeLabel = `Agent compute (${a.agent.gke ? 'GKE Autopilot' : 'Agent Runtime'})`;
-    const storeLabel = a.retrieval.ragEngine === 'vais' ? 'Agent Search'
-      : a.retrieval.vectorDB === 'vertex' ? 'Vector Search (ScaNN)' : 'AlloyDB vector (ScaNN)';
+    const storeLabel = answerOnly ? 'Agent Search<br/>grounded answers (bundled LLM)'
+      : a.retrieval.ragEngine === 'vais' ? 'Agent Search'
+        : a.retrieval.vectorDB === 'vertex' ? 'Vector Search (ScaNN)' : 'AlloyDB vector (ScaNN)';
 
     /* Agent compute box: single = Generator only; multi = an Orchestrator-routed
        team (hub-and-spoke). The Retrieval agent owns the data tools, the
@@ -95,28 +99,37 @@
     }
 
     /* ---- managed residents (perimeter, outside the VPC) ---- */
-    if (!a.agent.gke) agentBox();
+    if (!a.agent.gke && !answerOnly) agentBox();
     if (cacheOn && !a.caching.cacheInVpc) L.push(node('Cache', cacheLabel, 'data', 'cyl'));
     if (cacheOn && !privateOnly) { L.push(`${head} --> Cache`); L.push(`Cache -- hit --> ${head}`); }
     if (showFunnel) L.push(`${a.agent.dataAgent} --> Retr`);
-    if (a.gov.sandbox) { L.push(node('Sand', 'Transient sandbox', 'gov')); L.push(`${a.agent.execAgent} --> Sand`); }
+    if (a.gov.sandbox && !answerOnly) { L.push(node('Sand', 'Transient sandbox', 'gov')); L.push(`${a.agent.execAgent} --> Sand`); }
 
-    /* ---- model leg: Model Armor inline when derived on ---- */
-    if (!a.models.selfHostAny) L.push(node('LLM', 'Model(s)', 'orch'));
-    if (a.models.armorOn) {
-      L.push(node('Armor', 'Model Armor<br/>injection, redaction', 'gateway'));
-      L.push('AE --> Armor');
-      L.push('Armor --> LLM');
-    } else {
-      L.push('AE --> LLM');
+    /* ---- model leg: Model Armor inline when derived on (no leg on the
+       no-agent path: the answer model is bundled inside Agent Search) ---- */
+    if (!answerOnly) {
+      if (!a.models.selfHostAny) L.push(node('LLM', 'Model(s)', 'orch'));
+      if (a.models.armorOn) {
+        L.push(node('Armor', 'Model Armor<br/>injection, redaction', 'gateway'));
+        L.push('AE --> Armor');
+        L.push('Armor --> LLM');
+      } else {
+        L.push('AE --> LLM');
+      }
     }
 
     /* ---- data plane: offline index + live sources + web grounding ---- */
     const cat = C();
-    if (a.retrieval.storeDrawn) {
+    if (a.retrieval.storeDrawn || answerOnly) {
       L.push(node('Store', storeLabel, 'data', 'cyl'));
-      const storeReader = showFunnel ? 'Retr' : a.agent.dataAgent;
-      L.push(a.retrieval.selfbuilt ? `${storeReader} -- PSC --> Store` : `${storeReader} --> Store`);
+      /* The no-agent path needs no reader edge: the request path itself lands
+         on the store (agentEntry = Store). */
+      if (!answerOnly) {
+        const storeReader = showFunnel ? 'Retr' : a.agent.dataAgent;
+        L.push(a.retrieval.selfbuilt ? `${storeReader} -- PSC --> Store` : `${storeReader} --> Store`);
+      }
+    }
+    if (a.retrieval.storeDrawn) {
       L.push(node('GCS', 'Cloud Storage<br/>docs + artifacts', 'data', 'cyl'));
       L.push(node('Idx', `Index sources<br/>${a.retrieval.idxSel.map(s => cat.INDEXED_LABEL[s]).join(' / ')}`, 'data'));
       L.push('GCS -. source docs .-> Idx');
@@ -130,11 +143,11 @@
         L.push('Emb -. write · PSC .-> Store');
       }
     }
-    if (a.retrieval.liveSel.length) {
+    if (a.retrieval.liveSel.length && !answerOnly) {
       L.push(node('Live', `Live data<br/>${a.retrieval.liveSel.map(s => cat.SRC_LABEL[s]).join(' · ')}`, 'data'));
       L.push(`${a.agent.dataAgent} --> Live`);
     }
-    if (a.retrieval.hasWebGrounding) {
+    if (a.retrieval.hasWebGrounding && !answerOnly) {
       L.push(node('WebG', 'Web grounding<br/>Google Search', 'data'));
       L.push(`${a.agent.dataAgent} --> WebG`);
     }
@@ -145,12 +158,15 @@
       L.push('AE -. Redis AUTH .-> SecretMgr');
     }
 
-    /* ---- state: hot tier (in-VPC Redis or managed over PSC) + durable tier ---- */
-    if (!a.state.stateInVpc) L.push(node('State', a.state.stateLabel, 'data', 'cyl'));
-    L.push(`AE -- state${a.state.stateConn ? ` · ${a.state.stateConn}` : ''} --> State`);
-    if (a.state.durTier) {
-      L.push(node('StateDur', a.state.durTier.label, 'data', 'cyl'));
-      L.push(`State -. durable · ${a.state.durTier.conn} .-> StateDur`);
+    /* ---- state: hot tier (in-VPC Redis or managed over PSC) + durable tier.
+       The no-agent path keeps no run state (Agent Search manages sessions). ---- */
+    if (a.state.drawn) {
+      if (!a.state.stateInVpc) L.push(node('State', a.state.stateLabel, 'data', 'cyl'));
+      L.push(`AE -- state${a.state.stateConn ? ` · ${a.state.stateConn}` : ''} --> State`);
+      if (a.state.durTier) {
+        L.push(node('StateDur', a.state.durTier.label, 'data', 'cyl'));
+        L.push(`State -. durable · ${a.state.durTier.conn} .-> StateDur`);
+      }
     }
 
     /* ---- CMEK and Data Access audit, over the managed stores only ---- */
@@ -164,7 +180,7 @@
     }
 
     L.push(node('Obs', 'Observability', 'obs'));
-    L.push('AE -. traces .-> Obs');
+    L.push(answerOnly ? 'Store -. query logs + traces .-> Obs' : 'AE -. traces .-> Obs');
 
     if (a.topology.perimeterOn) L.push('end');
 
@@ -188,7 +204,7 @@
     let onpremDrawn = false;
     if (a.topology.hybridLink) {
       onpremDrawn = true;
-      const hasOnpremData = a.retrieval.liveSel.includes('onprem');
+      const hasOnpremData = a.retrieval.liveSel.includes('onprem') && !answerOnly;
       L.push('subgraph ONPREM["On-premise"]');
       L.push(node('OnpremUsers', 'On-prem users / network', 'client'));
       if (hasOnpremData) L.push(node('OnpremDB', 'On-prem systems / DB', 'data', 'cyl'));

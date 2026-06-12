@@ -11,14 +11,17 @@
   'use strict';
 
   /* $/1M tokens for in/out/cacheRead; webSearch = $ per 1k web-search/grounding calls
-     (0 = the model has no web search tool). ttftMs = time to first token;
-     msPerOutTok = generation ms per output token. Illustrative ~May 2026. */
+     (0 = the model has no web search tool). ttftMs = time to first token at a
+     few-k-token prompt (prefill included). msPerOutTok = PER-STREAM decode ms per
+     output token (1000 / tok-per-sec as one request sees it, NOT server aggregate
+     throughput): ~140 tok/s Pro-class, ~250 Flash, ~360 Flash-Lite, ~70 Opus-class,
+     ~85 a self-hosted 70B-active on one node. Illustrative ~May 2026. */
   const MODELS = [
-    { id: 'gemini-3-pro', name: 'Gemini 3 Pro', in: 2.0, out: 12.0, cacheRead: 0.20, webSearch: 14.0, ttftMs: 550, msPerOutTok: 0.75 },
-    { id: 'gemini-35-flash', name: 'Gemini 3.5 Flash', in: 1.5, out: 9.0, cacheRead: 0.15, webSearch: 14.0, ttftMs: 400, msPerOutTok: 0.5 },
-    { id: 'gemini-31-flash-lite', name: 'Gemini 3.1 Flash-Lite', in: 0.25, out: 1.5, cacheRead: 0.025, webSearch: 14.0, ttftMs: 180, msPerOutTok: 0.3 },
-    { id: 'claude-opus-48', name: 'Claude Opus 4.8', in: 5.0, out: 25.0, cacheRead: 0.50, webSearch: 10.0, ttftMs: 600, msPerOutTok: 0.9 },
-    { id: 'llama4-selfhost', name: 'Llama 4 (self-host)', in: 0, out: 0, cacheRead: 0, webSearch: 0, ttftMs: 500, msPerOutTok: 0.7 },
+    { id: 'gemini-3-pro', name: 'Gemini 3 Pro', in: 2.0, out: 12.0, cacheRead: 0.20, webSearch: 14.0, ttftMs: 550, msPerOutTok: 7 },
+    { id: 'gemini-35-flash', name: 'Gemini 3.5 Flash', in: 1.5, out: 9.0, cacheRead: 0.15, webSearch: 14.0, ttftMs: 400, msPerOutTok: 4 },
+    { id: 'gemini-31-flash-lite', name: 'Gemini 3.1 Flash-Lite', in: 0.25, out: 1.5, cacheRead: 0.025, webSearch: 14.0, ttftMs: 180, msPerOutTok: 2.8 },
+    { id: 'claude-opus-48', name: 'Claude Opus 4.8', in: 5.0, out: 25.0, cacheRead: 0.50, webSearch: 10.0, ttftMs: 600, msPerOutTok: 14 },
+    { id: 'llama4-selfhost', name: 'Llama 4 (self-host)', in: 0, out: 0, cacheRead: 0, webSearch: 0, ttftMs: 500, msPerOutTok: 12 },
   ];
   const modelById = id => MODELS.find(m => m.id === id) || MODELS[0];
 
@@ -45,7 +48,22 @@
     bqScanMB: 50,
     /* Wire bytes per token, for egress, DLP inspection, and log-volume estimates. */
     net: { bytesPerTok: 4 },
-    lat: { retrieval: 70, rerank: 80, bigqueryScan: 1200, webGround: 600, onpremCall: 400, qualityGate: 80, cacheExact: 5, cacheSem: 30 },
+    lat: { retrieval: 70, rerank: 80, bigqueryScan: 1200, webGround: 600, onpremCall: 400, qualityGate: 80, cacheExact: 5, cacheSem: 30,
+      /* Multi-agent line items: the Orchestrator plans once (~planTok tokens, later
+         hand-offs are function calls); the Validator reads the COMPLETE draft and
+         writes a ~verdictTok-token critique (draft prefill rides inside its TTFT).
+         vaisAnswerTok = the concise grounded answer Agent Search's bundled
+         Flash-Lite-class answerer generates on the no-agent sub-second path. */
+      planTok: 100, verdictTok: 150, vaisAnswerTok: 200 },
+    /* Performance and capacity assumptions (illustrative, documented on the page):
+       instConcurrency = concurrent streamed requests one agent instance holds open
+       (agentic requests are I/O-bound on model calls); instMin = HA floor;
+       stateOpsPerReq = session read + turn write + run-state write;
+       vvsQpsPerNode = sustained ScaNN queries per serving node at moderate recall;
+       ptTokMinThreshold = peak tokens/min past which dynamic shared quota is a
+       p95 risk and Provisioned Throughput is the lever; linkSatPct = utilisation
+       % past which the hybrid VLAN attachment needs a resize. */
+    perf: { instConcurrency: 30, instMin: 2, stateOpsPerReq: 3, vvsQpsPerNode: 800, ptTokMinThreshold: 3e6, linkSatPct: 60 },
     /* Fixed ingestion assumptions (the original exposed these in a drill-down sub-calculator). */
     ingestion: { docsPerDayFactor: 0.002, docPages: 40, tokensPerChunk: 500 },
   };
@@ -85,8 +103,19 @@
   const INDEXED_LABEL = { doc_corpus: 'Docs', website: 'Site' };
   /* Sources with a slow query-time call: BigQuery scan, on-prem fetch, live web search. */
   const LATENCY_HEAVY = ['bigquery', 'onprem', 'web'];
-  /* p95 budget (ms) per latency preset on the assistant path. */
-  const LATENCY_BUDGET = { subsecond: 1000, agentic: 6000, minutes: Infinity };
+  /* p95 budget (ms) per latency preset on the assistant path. LATENCY_BUDGET
+     checks the full answer, LATENCY_BUDGET_START the first token of the final
+     answer. Each tier's budget fits the architecture it derives:
+     - subsecond (1s): the no-agent path - Agent Search's bundled grounded
+       answer, no external agent, LLM call, or tool use (~0.85s worst path).
+     - interactive (2s start / 5s full): one streaming single agent with
+       grounding and tools (~1.5s start / ~4.1s full at the default workload).
+     - agentic (10s start / 12s full): the validator-gated multi-agent team,
+       which releases nothing until the validated draft clears the loop
+       (start = full, ~9s at the default preset on realistic decode rates).
+     Automation runs async (minutes), so it carries no interactive budget. */
+  const LATENCY_BUDGET = { subsecond: 1000, interactive: 5000, agentic: 12000, minutes: Infinity };
+  const LATENCY_BUDGET_START = { interactive: 2000, agentic: 10000 };
 
   const STATE_STORE_LABEL = {
     redis: 'State store (Memorystore)',
@@ -472,7 +501,7 @@
 
   NS.catalog = {
     MODELS, modelById, K, DIAGRAM_PALETTE,
-    SRC_LABEL, INDEXED_SRC, LIVE_SRC, INDEXED_LABEL, LATENCY_HEAVY, LATENCY_BUDGET,
+    SRC_LABEL, INDEXED_SRC, LIVE_SRC, INDEXED_LABEL, LATENCY_HEAVY, LATENCY_BUDGET, LATENCY_BUDGET_START,
     STATE_STORE_LABEL, IN_LAT, OUT_LAT, LIGHT_AUTH, SENS,
     NODE_PURPOSE, DATA_SOURCE_ROLE,
     COMPONENT_DOC, MODEL_DOC, DS_COMPONENT, docFor, PRICE, GENAI_PRICE,

@@ -102,11 +102,13 @@
     syncInputs();
     NS.render.updateDecisions(decisions, state.inputs, state.purpose, issues);
     NS.render.updateInputMarks(issues);
+    NS.render.updateDataSourceMarks(arch);
     $('#issueCount').textContent = issues.length ? `(${issues.length})` : '';
     $('#issues').innerHTML = NS.render.issuesHtml(issues);
     $('#metrics').innerHTML = NS.render.metricCards(m, arch);
+    $('#perf').innerHTML = NS.render.perfPanelHtml(m, arch);
     $('#cost').innerHTML = NS.render.costPanelHtml(m, cs, arch, state.inputs);
-    const depTag = arch.models.selfHostAll ? 'self-host' : (arch.models.selfHostAny ? 'API + self-host' : 'managed API');
+    const depTag = arch.agent.answerOnly ? 'no model calls · Agent Search bundled' : arch.models.selfHostAll ? 'self-host' : (arch.models.selfHostAny ? 'API + self-host' : 'managed API');
     $('#costHead').textContent = `(${depTag}) · all values $ / month`;
     $('#bom').innerHTML = NS.render.bomHtml(NS.metrics.components(arch, state.inputs));
     renderDiagram(arch);

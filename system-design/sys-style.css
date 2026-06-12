@@ -333,6 +333,22 @@ output.val {
   font-size: 12.5px
 }
 
+/* A selected data source the current design ignores (e.g. a live source on the
+   no-agent sub-second path): dimmed and struck through, but left checked - the
+   input is unchanged, so raising the SLO restores it. */
+.checks label.inactive {
+  opacity: .55;
+  text-decoration: line-through;
+  text-decoration-color: var(--muted)
+}
+
+.checks label.inactive .warnmark {
+  color: var(--warn);
+  font-weight: 700;
+  text-decoration: none;
+  cursor: help
+}
+
 a.info-i {
   color: var(--muted);
   display: inline-flex;
@@ -652,6 +668,90 @@ details.cost-line summary.cost-row:hover .cl { color: var(--text) }
   font-size: 10.5px;
   color: var(--accent)
 }
+
+/* Performance & capacity panel: the latency waterfall rows. The funnel and
+   ceiling rows reuse the cost-row / cost-line classes above. */
+.lat-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 38%) 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  padding: 1px 0
+}
+
+.lat-row .lat-l {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+.lat-row.sub .lat-l {
+  padding-left: 14px;
+  font-size: 11px
+}
+
+.lat-row .lat-bar {
+  display: flex;
+  align-items: center;
+  height: 9px;
+  background: var(--panel2);
+  border-radius: 2px;
+  overflow: hidden
+}
+
+.lat-row .lat-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent)
+}
+
+.lat-row .lat-bar i.stream {
+  background: repeating-linear-gradient(135deg, var(--accent) 0 3px, transparent 3px 6px);
+  opacity: .75
+}
+
+.lat-row.sub .lat-bar { height: 5px }
+
+.lat-row .lat-bar i.par {
+  background: var(--retr);
+  opacity: .65
+}
+
+.lat-row .lat-ms {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums
+}
+
+.lat-row.tot {
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+  padding-top: 3px
+}
+
+.lat-row.tot .lat-l {
+  color: var(--text);
+  font-weight: 600
+}
+
+.lat-row.tot .lat-bar { background: transparent }
+
+.lat-row.tot .lat-bar i.mark {
+  background: var(--ok);
+  border-radius: 2px
+}
+
+.lat-row.tot .lat-bar i.mark.full { opacity: .8 }
+
+.lat-row.tot.over .lat-bar i.mark { background: var(--err) }
+
+.lat-row.tot.over .lat-ms { color: var(--err) }
+
+.cost-row.warn .cl small { color: var(--warn) }
 
 .bomlist {
   display: flex;

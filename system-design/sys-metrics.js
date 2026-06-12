@@ -18,6 +18,7 @@
   function compute(arch, inputs) {
     const cat = C(), K = cat.K, i = inputs, m = {};
     const a = arch;
+    const answerOnly = !!a.agent.answerOnly;
     const activeSecPerDay = i.activeHoursPerWeek * 3600 / 7;
     const dailyActions = i.actors * i.actionsPerDay;
     m.volAvg = dailyActions / activeSecPerDay;
@@ -74,11 +75,22 @@
       saved: `naive ${cat.money(m.costNaive)} - optimized ${cat.money(m.costOpt)}`,
       gpu: '',
     };
+    if (answerOnly) {
+      /* No model calls of ours: the grounded answer is generated inside Agent
+         Search and billed in its per-query price, so the GenAI lines zero out. */
+      m.costNaive = 0; m.costOpt = 0;
+      m.costParts = { fresh: 0, cached: 0, output: 0, grounding: 0 };
+      m.costCalc = { fresh: '', cached: '', output: '', grounding: '', naive: '', saved: '', gpu: '' };
+    }
 
     /* ---- latency p95: critical-path line items; grounding fans out in parallel ---- */
     const L = K.lat;
     const genOf = mm => mm.ttftMs + i.tokensOut * mm.msPerOutTok;
     const gen = f * genOf(fm) + (1 - f) * genOf(rm);
+    /* Output-streaming share of generation, blended across the routing split.
+       Tagged onto the generation line item for the waterfall, and subtracted
+       from the full p95 to get the first-token latency. */
+    const streamMs = i.tokensOut * (f * fm.msPerOutTok + (1 - f) * rm.msPerOutTok);
     const genNote = a.models.smartRouting ? `${a.models.routingSplit}% ${fm.name} / ${100 - a.models.routingSplit}% ${rm.name}` : rm.name;
     const groundSubs = [];
     if (a.retrieval.ragOn) groundSubs.push({ label: 'Vector / hybrid retrieval', ms: L.retrieval });
@@ -93,21 +105,67 @@
     const genGw = gen + outMs;
     if (inbChips.length) parts.push({ label: a.topology.privateOnly ? 'IAP / mTLS' : 'API Gateway', ms: inMs, note: a.topology.privateOnly ? 'private-path identity check (no public gateway)' : inbChips.join(' · ') });
     if (a.caching.responseCacheOn) parts.push({ label: 'Response cache lookup', ms: a.caching.semanticCache ? L.cacheSem : L.cacheExact, note: a.caching.semanticCache ? 'embed + ANN on miss' : 'key lookup on miss' });
+    m.reviseCyclesP95 = 0;
+    /* The streaming tail of whatever the user actually receives last: the
+       user-facing generation for a single agent, the bundled answer on the
+       no-agent path, nothing for a validator-gated team or async automation. */
+    let finalStreamMs = 0;
     if (a.purpose === 'automation') {
       parts.push({ label: 'Orchestrator', ms: rm.ttftMs + i.tokensOut * rm.msPerOutTok / 2 + outMs, note: rm.name });
       if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
       parts.push({ label: `Executor pool (x${a.agent.numAgents}, parallel)`, ms: genGw, note: 'agents concurrent, slowest wins' });
       parts.push({ label: 'Quality gate', ms: L.qualityGate });
+    } else if (answerOnly) {
+      /* No agent: Agent Search retrieves and generates the grounded answer
+         inside the service. No external model call, no tools, no orchestration;
+         the ~200-token answer rides a bundled Flash-Lite-class answerer. */
+      const lite = cat.modelById('gemini-31-flash-lite');
+      const ansStream = L.vaisAnswerTok * lite.msPerOutTok;
+      finalStreamMs = ansStream;
+      parts.push({ label: 'Agent Search answer (retrieve + generate)', ms: L.retrieval + lite.ttftMs + ansStream, stream: ansStream, note: `bundled Flash-Lite-class answerer, ~${L.vaisAnswerTok}-token grounded answer; no external agent, model call, or tool use` });
+    } else if (a.agent.multiAgent) {
+      /* Validated team: the Orchestrator plans once, the draft must COMPLETE
+         before the Validator can read it (so no user-visible streaming), the
+         Validator writes a short critique, and the p95 request pays every
+         revise cycle that is still likelier than 5% (P(>=k cycles) = rate^k). */
+      const shortCall = tok => f * (fm.ttftMs + tok * fm.msPerOutTok) + (1 - f) * (rm.ttftMs + tok * rm.msPerOutTok) + outMs;
+      const planMs = shortCall(L.planTok), verdictMs = shortCall(L.verdictTok);
+      const r = Math.min(0.95, Math.max(0, (a.agent.reviseRate || 0) / 100));
+      const k95 = r > 0 ? Math.min(Math.max(0, a.agent.reactMaxIter - 1), Math.floor(Math.log(0.05) / Math.log(r))) : 0;
+      m.reviseCyclesP95 = k95;
+      parts.push({ label: 'Orchestrator plan & dispatch', ms: planMs, note: `~${L.planTok}-token plan, ${genNote}; later hand-offs are function calls` });
+      if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
+      if (a.retrieval.mode === 'rerank') parts.push({ label: 'Rerank', ms: L.rerank });
+      parts.push({ label: 'Generator draft (full output)', ms: genGw, note: 'the Validator reads the complete draft, so nothing streams to the user yet' });
+      parts.push({ label: 'Validator verdict', ms: verdictMs, note: `~${L.verdictTok}-token critique, ${genNote}; draft prefill rides in the TTFT` });
+      if (k95 > 0) parts.push({ label: `Revise loop (p95: ${k95} cycle${k95 > 1 ? 's' : ''}, cap ${Math.max(0, a.agent.reactMaxIter - 1)})`, ms: k95 * (genGw + verdictMs), note: `${a.agent.reviseRate}% of drafts fail validation; the p95 request pays every extra draft + verdict cycle still likelier than 5%` });
     } else {
       if (groundSubs.length) parts.push({ label: 'Grounding', ms: grounding, parallel: groundSubs, note: 'parallel fan-out, slowest wins' });
       if (a.retrieval.mode === 'rerank') parts.push({ label: 'Rerank', ms: L.rerank });
-      parts.push({ label: 'Generation (TTFT + output)', ms: genGw, note: outMs ? `${genNote} · +${Math.round(outMs)}ms model leg` : genNote });
-      if (a.agent.multiAgent) parts.push({ label: `ReAct loop (x${a.agent.reactMaxIter} iter)`, ms: ((a.retrieval.mode === 'rerank' ? L.rerank : 0) + genGw) * a.agent.reactMaxIter * 0.12, note: 'sequential iterations' });
+      finalStreamMs = streamMs;
+      parts.push({ label: 'Generation (TTFT + output)', ms: genGw, stream: streamMs, note: outMs ? `${genNote} · +${Math.round(outMs)}ms model leg` : genNote });
     }
     m.latParts = parts;
     m.latencyP95 = parts.reduce((s, p) => s + p.ms, 0);
     m.latencyBudget = a.purpose === 'assistant' ? (cat.LATENCY_BUDGET[arch.effLatency] ?? Infinity) : Infinity;
     m.latencyOverBudget = m.latencyP95 > m.latencyBudget;
+    /* First token of the final answer. A single agent streams as it generates,
+       so start = full minus the output-streaming tail. A multi-agent team is
+       validator-gated - the Validator only scores a complete draft - so the
+       first answer token waits for the validated draft: start = full. The
+       agentic SLO budgets start and full separately; automation runs async,
+       so the start metric does not apply there. */
+    if (a.purpose === 'assistant') {
+      m.latencyStartIsGated = a.agent.multiAgent;
+      m.latencyStartP95 = m.latencyStartIsGated ? m.latencyP95 : m.latencyP95 - finalStreamMs;
+      m.latencyStartBudget = cat.LATENCY_BUDGET_START[arch.effLatency] ?? Infinity;
+      m.latencyStartOverBudget = m.latencyStartP95 > m.latencyStartBudget;
+    } else {
+      m.latencyStartIsGated = false;
+      m.latencyStartP95 = null;
+      m.latencyStartBudget = Infinity;
+      m.latencyStartOverBudget = false;
+    }
 
     /* ---- vector index sizing (drives managed-store cost; ScaNN tuning is the service's job) ---- */
     const chunks = (i.corpusSize || 0) * K.chunksPerDoc;
@@ -128,7 +186,65 @@
       m.gpuUtilPct = Math.round(util * 100);
       m.gpuMo = m.gpuNodes * hourly * K.hoursMo;
       m.costCalc.gpu = `${m.gpuNodes} node(s) x $${hourly}/node-hr (${m.gpuTierLabel}) x ${K.hoursMo} hr; sized for ${nf(peakOutTPS)} peak out-tok/s at ${nf(nodeTPS)} tok/s per node x ${m.gpuUtilPct}% util`;
+      /* Fleet capacity vs the peak it was sized for, for the capacity panel. */
+      m.gpuNodeTPS = nodeTPS;
+      m.gpuPeakOutTPS = peakOutTPS;
+      m.gpuFleetTPS = m.gpuNodes * nodeTPS * util;
+      m.gpuHeadroomPct = peakOutTPS > 0 ? (m.gpuFleetTPS / peakOutTPS - 1) * 100 : null;
     }
+
+    /* ---- performance & capacity: the peak QPS funnel, concurrency, and ceilings ----
+       Peak-hour basis throughout. The response cache serves its hit share, the
+       agent sees the misses, model calls multiply by the agent fan-out, and every
+       number carries the substituted formula it was computed from (m.perfCalc),
+       so the panel can never drift from the math. */
+    const PF = K.perf;
+    const fan = answerOnly ? 0 : (a.agent.modelCallsPerReq || 1);
+    m.qpsAgentPeak = m.volPeak * (1 - m.cacheHitEff);
+    m.qpsModelPeak = m.qpsAgentPeak * fan;
+    m.qpsRetrievalPeak = a.retrieval.ragOn ? m.qpsAgentPeak : 0;
+    m.qpsLivePeak = (a.retrieval.liveSel || []).length && !answerOnly ? m.qpsAgentPeak : 0;
+    m.qpsWebPeak = a.retrieval.hasWebGrounding && !answerOnly ? m.qpsAgentPeak : 0;
+    m.stateOpsPeak = a.state.drawn ? m.qpsAgentPeak * PF.stateOpsPerReq : 0;
+    /* One node per ~100 peak QPS: the same figure the state-store, Cloud SQL,
+       Spanner, and GKE burst-pod cost lines bill, so capacity and cost agree. */
+    m.dbNodes = Math.max(1, Math.ceil((m.volPeak || 0) / 100));
+    /* Little's law: requests in flight = arrival rate x time in system. */
+    m.inflightPeak = m.qpsAgentPeak * m.latencyP95 / 1000;
+    m.agentInstances = answerOnly ? null : Math.max(PF.instMin, Math.ceil(m.inflightPeak / PF.instConcurrency));
+    m.tokInPeakSec = answerOnly ? 0 : m.qpsAgentPeak * i.tokensIn;
+    m.tokOutPeakSec = answerOnly ? 0 : m.qpsAgentPeak * i.tokensOut;
+    m.tokPerMinPeak = (m.tokInPeakSec + m.tokOutPeakSec) * 60;
+    m.needsProvisionedThroughput = !a.models.selfHostAll && m.tokPerMinPeak > PF.ptTokMinThreshold;
+    /* Managed ScaNN serving nodes: the wider of the size bound and the QPS bound.
+       priceComponent reads m.vvsNodes, so the capacity row and the Vector Search
+       cost line are the same number by construction. */
+    const vvsShardGB = cat.PRICE['Vector Search'].rates.shardGB;
+    if (m.indexGB > 0) {
+      m.vvsNodesSize = Math.max(1, Math.ceil(m.indexGB / vvsShardGB));
+      m.vvsNodesQps = Math.ceil(m.qpsRetrievalPeak / PF.vvsQpsPerNode);
+      m.vvsNodes = Math.max(m.vvsNodesSize, m.vvsNodesQps);
+    }
+    /* Hybrid link load: every response rides the VLAN attachment (private-only
+       ingress), so peak Mbps checks against the provisioned link, not the internet. */
+    const vlanGbps = cat.PRICE['Cloud Interconnect + VLAN'].rates.vlanGbps;
+    if (a.topology.hybridLink) {
+      m.linkMbpsPeak = m.volPeak * (i.tokensIn + i.tokensOut) * K.net.bytesPerTok * 8 / 1e6;
+      m.linkUtilPct = m.linkMbpsPeak / (vlanGbps * 1000) * 100;
+    }
+    m.perfCalc = {
+      ingress: `${nf(m.volAvg, 2)} avg ${m.volLabel} x ${i.burst} burst`,
+      cache: m.cacheHitEff > 0 ? `${nf(m.volPeak, 2)} peak x ${Math.round(m.cacheHitEff * 100)}% effective hit rate served from the cache` : '',
+      agentQps: m.cacheHitEff > 0 ? `${nf(m.volPeak, 2)} peak x ${Math.round((1 - m.cacheHitEff) * 100)}% cache miss` : `${nf(m.volPeak, 2)} peak ${m.volLabel} passes straight through (no response cache in this design)`,
+      modelQps: answerOnly ? 'no model calls of yours - the grounded answer is generated inside Agent Search' : `${nf(m.qpsAgentPeak, 2)} agent-side peak x ${fan} model calls/req (agents x damped ReAct loop)`,
+      inflight: `${nf(m.qpsAgentPeak, 2)} agent-side peak/s x ${nf(m.latencyP95 / 1000, 2)} s in system (Little's law: L = lambda x W)`,
+      instances: answerOnly ? 'managed answer API - autoscaling is the service side of the contract' : `ceil(${nf(m.inflightPeak, 1)} in-flight / ${PF.instConcurrency} concurrent streams per instance), floor of ${PF.instMin} for HA`,
+      tok: answerOnly ? 'no model quota of yours - Agent Search bundles the answer generation' : `${nf(m.qpsAgentPeak, 2)} agent-side peak/s x (${nf(i.tokensIn)} in + ${nf(i.tokensOut)} out) tokens x 60 s = ${nf(m.tokPerMinPeak)} tok/min`,
+      state: a.state.drawn ? `${nf(m.qpsAgentPeak, 2)} agent-side peak/s x ${PF.stateOpsPerReq} state ops/req; ${m.dbNodes} node(s) at ~100 peak QPS each` : '',
+      vvs: m.vvsNodes ? `max(size: ${m.vvsNodesSize} node(s) at ~${vvsShardGB} GB each, load: ${m.vvsNodesQps} node(s) at ~${PF.vvsQpsPerNode} QPS each on ${nf(m.qpsRetrievalPeak, 1)} retrieval QPS)` : '',
+      link: m.linkMbpsPeak != null ? `${nf(m.volPeak, 2)} peak/s x ${nf(i.tokensIn + i.tokensOut)} tok x ${K.net.bytesPerTok} B x 8 bits vs the ${vlanGbps} Gbps VLAN attachment` : '',
+      gpu: m.gpuFleetTPS ? `${m.gpuNodes} node(s) x ${nf(m.gpuNodeTPS)} tok/s x ${m.gpuUtilPct}% util = ${nf(m.gpuFleetTPS)} tok/s vs ${nf(m.gpuPeakOutTPS)} required at peak` : '',
+    };
     return m;
   }
 
@@ -147,6 +263,15 @@
       const budget = m.latencyBudget >= 1000 ? (m.latencyBudget / 1000) + 's' : m.latencyBudget + 'ms';
       add('conflict', `Latency p95 (${Math.round(m.latencyP95)}ms) exceeds the ${arch.effLatency === 'subsecond' ? 'sub-second' : arch.effLatency} SLO (${budget})${slow.length ? ', driven by ' + slow.join(', ') + ' on the hot path' : ''}. Remove the slow source or raise the SLO.`, 'latency down', 'latencyPreset');
     }
+    if (m.latencyStartOverBudget) {
+      const sb = m.latencyStartBudget >= 1000 ? (m.latencyStartBudget / 1000) + 's' : m.latencyStartBudget + 'ms';
+      const why = m.latencyStartIsGated
+        ? 'the team is validator-gated, so the user sees nothing until the validated draft clears the loop. Cut the revise rate or answer length, drop to a single streaming agent'
+        : 'everything before streaming starts (grounding, model TTFT) must fit it. Remove the slow source, bias routing to the fast model';
+      add('conflict', `First token p95 (${Math.round(m.latencyStartP95)}ms) exceeds the ${sb} start budget of the agentic SLO - ${why}, or raise the SLO.`, 'latency down', 'latencyPreset');
+    }
+    if (m.needsProvisionedThroughput) add('scaling', `Peak model throughput (~${cat.fmt(m.tokPerMinPeak, 1)} tok/min) rides dynamic shared quota, which does not guarantee capacity - reserve Provisioned Throughput for the steady share so p95 holds at peak.`, '', 'modelStrategy');
+    if (m.linkUtilPct != null && m.linkUtilPct > cat.K.perf.linkSatPct) add('scaling', `Peak traffic uses ~${Math.round(m.linkUtilPct)}% of the interconnect VLAN attachment - add a second VLAN or resize the link before it saturates.`, '', 'deployment');
     if (arch.purpose === 'assistant' && arch.effLatency === 'subsecond' && !arch.caching.autocomplete && (m.cacheHitEff || 0) < 0.3) add('caching', 'Sub-second p95 depends on cache hits - enable query autocomplete plus exact or semantic cache so the popular head returns without full inference.', 'latency down', 'autocomplete');
     return out;
   }
@@ -155,12 +280,16 @@
      Both the BoM chip list and the priced cost lines consume this. */
   function components(arch, inputs) {
     const a = arch, i = inputs, b = new Set();
-    if (a.agent.gke) b.add('GKE Autopilot (agent)');
-    else b.add(a.agent.platform === 'adk' ? 'ADK + Agent Runtime' : a.agent.platform === 'studio' ? 'Agent Studio' : 'LangGraph');
-    if (a.agent.platform === 'langgraph') { b.add('LangGraph'); b.add('Self-managed infra + ops (LangGraph)'); b.add('LangGraph Platform Enterprise (self-host license)'); }
+    /* The no-agent path provisions no agent platform, models, state store, or
+       Model Armor: Agent Search answers directly and bundles its answerer. */
+    if (!a.agent.answerOnly) {
+      if (a.agent.gke) b.add('GKE Autopilot (agent)');
+      else b.add(a.agent.platform === 'adk' ? 'ADK + Agent Runtime' : a.agent.platform === 'studio' ? 'Agent Studio' : 'LangGraph');
+      if (a.agent.platform === 'langgraph') { b.add('LangGraph'); b.add('Self-managed infra + ops (LangGraph)'); b.add('LangGraph Platform Enterprise (self-host license)'); }
+    }
     if (a.gov.gateway) { b.add('Cloud IAP'); if (!a.topology.privateOnly) { b.add('Cloud API Gateway'); b.add('Apigee'); } }
     if (a.gov.auditLog) b.add('Cloud Logging (WORM)');
-    if (a.retrieval.storeDrawn && a.retrieval.ragEngine === 'vais') {
+    if ((a.retrieval.storeDrawn || a.agent.answerOnly) && a.retrieval.ragEngine === 'vais') {
       b.add('Agent Search');
     } else if (a.retrieval.storeDrawn) {
       b.add(a.retrieval.vectorDB === 'vertex' ? 'Vector Search' : 'AlloyDB');
@@ -170,13 +299,13 @@
       /* The self-built pipeline pays for the embedding model; Agent Search bundles it. */
       if ((i.corpusSize || 0) > 0) b.add('Embeddings (ingestion)');
     }
-    if (i.dataSources.includes('bigquery')) b.add('BigQuery');
-    b.add(a.state.store.includes('spanner') ? 'Spanner' : a.state.store.includes('alloydb') ? 'AlloyDB (state)' : a.state.store === 'redis' ? 'Memorystore Cluster' : 'Cloud SQL');
+    if (i.dataSources.includes('bigquery') && !a.agent.answerOnly) b.add('BigQuery');
+    if (a.state.drawn) b.add(a.state.store.includes('spanner') ? 'Spanner' : a.state.store.includes('alloydb') ? 'AlloyDB (state)' : a.state.store === 'redis' ? 'Memorystore Cluster' : 'Cloud SQL');
     /* Managed Memorystore: the Redis hot tier when it is not self-hosted on GKE,
        and the managed response cache. Self-hosted Redis rides the GKE line. */
-    if ((a.state.redisTier && !a.state.redisSelf) || (a.caching.responseCacheOn && !a.agent.gke)) b.add('Memorystore Cluster');
+    if ((a.state.drawn && a.state.redisTier && !a.state.redisSelf) || (a.caching.responseCacheOn && !a.agent.gke)) b.add('Memorystore Cluster');
     b.add('Cloud Trace'); b.add('Agent Platform Evals');
-    if (a.gov.guardrails) b.add('Model Armor');
+    if (a.gov.guardrails && !a.agent.answerOnly) b.add('Model Armor');
     if (a.gov.toolAuthz) b.add('Workload Identity');
     if (a.gov.modelRiskGov) b.add('Model Registry');
     if (a.security.enforceVpcSc) b.add('VPC Service Controls');
@@ -188,7 +317,7 @@
     if (a.purpose === 'automation') b.add('Pub/Sub');
     if (a.models.selfHostAny) b.add('vLLM on GKE');
     if (a.topology.hybridLink) b.add('Cloud Interconnect + VLAN');
-    [a.models.reasoningModel, a.models.fastModel].forEach(id => b.add(C().modelById(id).name));
+    if (!a.agent.answerOnly) [a.models.reasoningModel, a.models.fastModel].forEach(id => b.add(C().modelById(id).name));
     return [...b];
   }
 
@@ -203,7 +332,7 @@
     if (e.free) return { mo: 0, calc: '' };
     const R = m.reqMo != null ? m.reqMo : i.actors * i.actionsPerDay * 30.4;
     const Tk = m.tokensDay * 30.4;
-    const dbNodes = Math.max(1, Math.ceil((m.volPeak || 0) / 100));
+    const dbNodes = m.dbNodes != null ? m.dbNodes : Math.max(1, Math.ceil((m.volPeak || 0) / 100));
     const docsDay = Math.round((i.corpusSize || 0) * K.ingestion.docsPerDayFactor);
     const pages = K.ingestion.docPages;
     const H = K.hoursMo;
@@ -233,8 +362,9 @@
         return { mo: r.baseMo + gib * r.perGiB, calc: `${nf(R)} req x ${r.entriesPerReq} entries x ${r.kibPerEntry} KiB = ${nf(gib, 1)} GiB x $${r.perGiB}/GiB + $${r.baseMo} base` };
       },
       'Vector Search': r => {
-        const nodes = m.indexGB > 0 ? Math.max(1, Math.ceil(m.indexGB / r.shardGB)) : 0;
-        return { mo: nodes * r.nodeHr * H, calc: nodes ? `${nodes} x ${r.nodeType} x $${r.nodeHr}/hr x ${H} hr (1 node per ~${r.shardGB} GB; index ${nf(m.indexGB, 1)} GB)` : '' };
+        const nodes = m.indexGB > 0 ? (m.vvsNodes || Math.max(1, Math.ceil(m.indexGB / r.shardGB))) : 0;
+        const bound = m.vvsNodesQps > m.vvsNodesSize ? `QPS-bound: ${m.vvsNodesQps} node(s) for peak retrieval load vs ${m.vvsNodesSize} for the ${nf(m.indexGB, 1)} GB index` : `size-bound: 1 node per ~${r.shardGB} GB on a ${nf(m.indexGB, 1)} GB index`;
+        return { mo: nodes * r.nodeHr * H, calc: nodes ? `${nodes} x ${r.nodeType} x $${r.nodeHr}/hr x ${H} hr (${bound})` : '' };
       },
       'Agent Search': r => {
         const q = R * r.per1kQueries / 1000;

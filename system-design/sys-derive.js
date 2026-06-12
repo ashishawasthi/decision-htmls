@@ -70,6 +70,7 @@
        Derived here (the original coerced inputs.latencyPreset in place, line 1758). */
     const effLatency = auto ? 'minutes' : i.latencyPreset;
     const subsecond = !auto && effLatency === 'subsecond';
+    const interactive = !auto && effLatency === 'interactive';
     const hasIndex = i.dataSources.some(s => cat.INDEXED_SRC.includes(s));
     const chunks = (i.corpusSize || 0) * cat.K.chunksPerDoc;
     const dailyActions = (i.actors || 0) * (i.actionsPerDay || 0);
@@ -94,10 +95,17 @@
     /* ---- agent ---- */
     resolve('agentRuntime', (selfManaged || selfHostModels) ? 'gke' : 'agentengine',
       selfManaged ? 'self-managed platform runs the agent on GKE' : selfHostModels ? 'a self-host model needs the agent next to the in-VPC fleet' : 'managed platform uses Agent Runtime');
-    resolve('pattern', auto ? 'multi' : (subsecond ? 'single' : 'multi'),
-      auto ? 'automation runs a parallel executor team' : subsecond ? 'sub-second SLO keeps the single-agent path' : 'assistant quality from a generate-evaluate-revise team');
+    resolve('pattern', auto ? 'multi' : (subsecond ? 'none' : (interactive ? 'single' : 'multi')),
+      auto ? 'automation runs a parallel executor team'
+        : subsecond ? 'no external model call fits 1s - Agent Search answers directly, no agent'
+          : interactive ? 'a 5s budget fits one streaming agent, not a validated team'
+            : 'assistant quality from a generate-evaluate-revise team');
+    /* The no-agent path: Agent Search's bundled question answering IS the system.
+       No agent compute, no external model call, no tools, no run state. */
+    const answerOnly = !auto && d('pattern') === 'none';
     resolve('numAgents', auto ? 5 : 4, 'specialist roles for the purpose');
     resolve('reactMaxIter', 6, 'damped loop default');
+    resolve('reviseRate', 20, 'one in five drafts fails the quality gate and triggers a revise');
     resolve('platform', 'adk', 'ADK on the managed runtime is the default stack');
 
     /* ---- models and routing ---- */
@@ -108,15 +116,16 @@
     resolve('smartRouting', true, 'route lookups to the fast model');
     resolve('routingSplit', subsecond ? 85 : 70, subsecond ? 'sub-second biases to the fast model' : 'typical lookup share');
     resolve('judgeDiversity', false, 'single-vendor judging unless required');
-    const selfHostAny = isSelfHostModel(d('reasoningModel')) || isSelfHostModel(d('fastModel'));
-    const selfHostAll = isSelfHostModel(d('reasoningModel')) && isSelfHostModel(d('fastModel'));
+    /* No agent = no model calls of ours, so no self-host fleet either. */
+    const selfHostAny = (isSelfHostModel(d('reasoningModel')) || isSelfHostModel(d('fastModel'))) && !answerOnly;
+    const selfHostAll = isSelfHostModel(d('reasoningModel')) && isSelfHostModel(d('fastModel')) && !answerOnly;
 
     /* ---- retrieval ---- */
     resolve('retrieval', !hasIndex ? 'none' : (subsecond ? 'hybrid' : 'rerank'),
       !hasIndex ? 'no indexed source to retrieve from' : subsecond ? 'hybrid without the reranker fits the sub-second budget' : 'hybrid + reranker for grounding quality');
     const ragOn = ['hybrid', 'dense', 'rerank'].includes(d('retrieval'));
-    resolve('ragEngine', selfManaged ? 'selfbuilt' : 'vais',
-      selfManaged ? 'self-managed platform owns the pipeline' : 'managed Agent Search bundles parse, index, retrieve, rerank');
+    resolve('ragEngine', answerOnly ? 'vais' : (selfManaged ? 'selfbuilt' : 'vais'),
+      answerOnly ? 'the no-agent path IS Agent Search bundled answering' : selfManaged ? 'self-managed platform owns the pipeline' : 'managed Agent Search bundles parse, index, retrieve, rerank');
     resolve('vectorDB', selfManaged ? 'alloydb' : 'vertex',
       selfManaged ? 'AlloyDB ScaNN index next to the state store' : 'Vertex AI Vector Search (ScaNN)');
     const selfbuilt = ragOn && d('ragEngine') === 'selfbuilt';
@@ -153,7 +162,7 @@
     resolve('gpuUtil', 70, 'realistic steady utilisation');
 
     /* ---- consolidated topology flags (the single source every output reads) ---- */
-    const gke = d('agentRuntime') === 'gke';
+    const gke = d('agentRuntime') === 'gke' && !answerOnly;
     const redisTier = /redis/.test(d('stateStore'));
     const redisSelf = redisTier && gke;
     const redisOnGke = gke && (redisTier || responseCacheOn);
@@ -178,7 +187,10 @@
 
     const governance = deriveGovernance(purpose, i);
     const gov = Object.fromEntries(governance.map(g => [g.key, g.value !== undefined ? g.value : g.on]));
-    const armorOn = !!(gov.guardrails || gov.residencyPin || gov.toolAuthz);
+    /* Model Armor screens model traffic; the no-agent path has none of its own
+       (Agent Search applies its own safety filters; the gateway keeps the
+       inbound injection screen). */
+    const armorOn = !!(gov.guardrails || gov.residencyPin || gov.toolAuthz) && !answerOnly;
 
     /* Inbound (API gateway) and outbound (model leg) control chips. Hybrid is
        private-only ingress: the public gateway collapses to a light IAP / mTLS hop. */
@@ -188,14 +200,27 @@
     if (gov.guardrails) inboundFull.push('injection screen');
     const inboundChips = hybrid ? (inboundFull.length ? [cat.LIGHT_AUTH] : []) : inboundFull;
     const outboundChips = [];
-    if (gov.gateway) { outboundChips.push('route'); outboundChips.push('fan-out'); }
-    if (sens.lvl >= 3) outboundChips.push('PII redact');
-    if (gov.guardrails) outboundChips.push('output filter');
-    if (gov.auditLog) outboundChips.push('audit');
+    if (!answerOnly) {
+      if (gov.gateway) { outboundChips.push('route'); outboundChips.push('fan-out'); }
+      if (sens.lvl >= 3) outboundChips.push('PII redact');
+      if (gov.guardrails) outboundChips.push('output filter');
+      if (gov.auditLog) outboundChips.push('audit');
+    }
 
     const idxSel = i.dataSources.filter(s => cat.INDEXED_SRC.includes(s));
     const liveSel = i.dataSources.filter(s => cat.LIVE_SRC.includes(s));
     const storeDrawn = ragOn && idxSel.length > 0;
+    /* Selected sources the derived design actually consumes. The no-agent path
+       reads only its index (live sources and web grounding need an agent);
+       retrieval pinned off drops the indexed sources too. The difference is the
+       set of inputs the user selected but this design ignores - the right panel
+       reflects this (it never appears in the diagram/cost/BoM), and the input
+       checkboxes dim to match, without ever being unchecked (inputs are never
+       mutated by derivation, so raising the SLO restores them). */
+    const usedSrc = new Set();
+    if (storeDrawn) idxSel.forEach(s => usedSrc.add(s));
+    if (!answerOnly) { liveSel.forEach(s => usedSrc.add(s)); if (i.dataSources.includes('web')) usedSrc.add('web'); }
+    const ignoredSources = i.dataSources.filter(s => !usedSrc.has(s));
 
     /* Tool-call dispatch (ADK style): in a multi-agent team the Orchestrator
        dispatches every hand-off, a dedicated Retrieval agent owns the data
@@ -218,8 +243,8 @@
     const kmsTargets = [];
     if (storeDrawn && selfbuilt) kmsTargets.push('Store');
     if (storeDrawn) kmsTargets.push('GCS');
-    if (stateManaged) kmsTargets.push('State');
-    if (durTier) kmsTargets.push('StateDur');
+    if (stateManaged && !answerOnly) kmsTargets.push('State');
+    if (durTier && !answerOnly) kmsTargets.push('StateDur');
     if (responseCacheOn && !gke) kmsTargets.push('Cache');
 
     const arch = {
@@ -230,14 +255,14 @@
         multiRegion: !!d('multiRegion'), vpcMembers, vpcDrawn, perimeterOn: !!d('enforceVpcSc'),
       },
       agent: {
-        runtime: d('agentRuntime'), gke, pattern: d('pattern'), multiAgent,
-        numAgents: d('numAgents'), reactMaxIter: d('reactMaxIter'), platform: d('platform'),
-        agentEntry: multiAgent ? 'Orchestrator' : 'Generator',
+        runtime: d('agentRuntime'), gke, pattern: d('pattern'), multiAgent, answerOnly,
+        numAgents: d('numAgents'), reactMaxIter: d('reactMaxIter'), reviseRate: d('reviseRate'), platform: d('platform'),
+        agentEntry: answerOnly ? 'Store' : (multiAgent ? 'Orchestrator' : 'Generator'),
         agentReview: multiAgent ? 'Validator' : 'Generator',
         retrieverDrawn,
         dataAgent: retrieverDrawn ? 'Retriever' : 'Generator',
         execAgent: multiAgent ? 'Orchestrator' : 'Generator',
-        modelCallsPerReq: modelCallsPerReq(d('pattern'), d('numAgents'), d('reactMaxIter')),
+        modelCallsPerReq: answerOnly ? 0 : modelCallsPerReq(d('pattern'), d('numAgents'), d('reactMaxIter')),
       },
       models: {
         reasoningModel: d('reasoningModel'), fastModel: d('fastModel'),
@@ -246,18 +271,18 @@
       },
       retrieval: {
         mode: d('retrieval'), ragOn, ragEngine: d('ragEngine'), selfbuilt, vectorDB: d('vectorDB'),
-        idxSel, liveSel, hasIndex: idxSel.length > 0, hasWebGrounding: i.dataSources.includes('web'),
-        retrInVpc, storeDrawn, gcsDrawn: storeDrawn,
+        idxSel, liveSel, hasIndex: idxSel.length > 0, hasWebGrounding: i.dataSources.includes('web') && !answerOnly,
+        ignoredSources, retrInVpc, storeDrawn, gcsDrawn: storeDrawn,
         ingestionSep: !!d('ingestionSep'), metadataPrefilter: !!d('metadataPrefilter'),
       },
       state: {
-        store: d('stateStore'), redisTier, redisSelf, redisOnGke, stateInVpc: redisSelf,
+        store: d('stateStore'), drawn: !answerOnly, redisTier, redisSelf, redisOnGke, stateInVpc: redisSelf,
         stateManaged, stateConn: redisSelf ? null : 'PSC', stateLabel, durTier,
       },
       caching: {
         responseCacheOn, exactCache: !!d('exactCache'), semanticCache: !!d('semanticCache'),
         cacheInVpc, autocomplete: !!d('autocomplete'), warming: !!d('warming'), cacheHitBase: d('cacheHit'),
-        contextCache: !!d('contextCache'), reuseInputPct: d('reuseInputPct'),
+        contextCache: !!d('contextCache') && !answerOnly, reuseInputPct: d('reuseInputPct'),
       },
       security: {
         cmek: !!d('cmek'), enforceVpcSc: !!d('enforceVpcSc'),
@@ -277,7 +302,12 @@
     const qa = !auto && hasIndex;
     if (qa && !d('autocomplete')) add('caching', 'Add query autocomplete - canonicalizes phrasings, lifts cache-hit ~5-15% to ~40-60% at near-zero inference cost.', 'cost down, latency down', 'autocomplete');
     if (d('autocomplete') && !d('warming')) add('caching', 'Precompute the top-N suggested queries offline: near-zero cost and milliseconds of latency on the popular head.', '', 'warming');
-    if (subsecond && (d('pattern') === 'multi' || d('retrieval') === 'rerank')) add('conflict', 'Sub-second SLO + multi-agent/rerank can blow the TTFT budget - unpin to the single-agent cached path, or raise the SLO.', '', 'pattern');
+    if (subsecond && d('pattern') !== 'none') add('conflict', 'Sub-second runs no agent at all - any external model call (TTFT + decode) busts the 1s budget. Unpin Pattern, or raise the SLO to interactive (<5s, one streaming agent).', '', 'pattern');
+    if (answerOnly && !hasIndex) add('conflict', 'The no-agent sub-second path answers from the Agent Search index, but no indexed source (document corpus or company website) is selected - add one, or raise the SLO.', '', 'latencyPreset');
+    const agentNeedy = i.dataSources.filter(s => cat.LIVE_SRC.includes(s) || s === 'web').map(s => cat.SRC_LABEL[s] || s);
+    if (answerOnly && agentNeedy.length) add('conflict', `No agent on the sub-second path - Agent Search answers only from its index, so ${agentNeedy.join(', ')} can never be queried. Remove them, or raise the SLO to interactive (one streaming agent with tools).`, 'latency down', 'latencyPreset');
+    if (answerOnly && d('ragEngine') === 'selfbuilt') add('conflict', 'The no-agent path IS Agent Search bundled answering - a self-built pipeline needs an agent to run retrieval and generation. Unpin the engine, or raise the SLO.', '', 'ragEngine');
+    if (answerOnly && selfHostModels) add('conflict', 'Self-hosted open weights need a serving fleet and an agent to call it - the no-agent sub-second path uses Agent Search bundled answering instead. Raise the SLO, or switch the model strategy to managed APIs.', '', 'modelStrategy');
     if (d('retrieval') === 'none' && hasIndex) add('conflict', 'A document corpus or website is selected but retrieval is pinned off, so it is never indexed or queried - set retrieval back to Auto, or remove the source.', '', 'retrieval');
     if (ragOn && !hasIndex) add('conflict', 'Retrieval is pinned on but there is no document corpus or company website to retrieve from - add an indexed source, or set retrieval back to Auto (live grounding and live data do not need it).', '', 'retrieval');
     if (selfHostAny && d('agentRuntime') === 'agentengine') add('conflict', 'Self-hosted model serves from a vLLM-on-GKE fleet in the VPC, but the agent is pinned to managed Agent Runtime (Cloud Run) - unpin Agent compute, or add a Serverless VPC Access connector.', '', 'agentRuntime');
@@ -291,18 +321,20 @@
     if (pinned('dedicatedVpc') && d('dedicatedVpc') && vpcMembers.length === 0) add('conflict', 'The dedicated VPC is pinned on but nothing self-hosted lives in it - the box is only drawn around self-hosted compute; managed services connect over PSC instead.', '', 'dedicatedVpc');
     if (pinned('cmek') && !d('cmek') && sens.lvl >= 2) add('privacy', 'CMEK is pinned off at a regulated or strict-PII tier - data at rest falls back to Google-managed keys.', '', 'cmek');
     if (pinned('enforceVpcSc') && !d('enforceVpcSc') && sens.lvl >= 2) add('privacy', 'The VPC-SC perimeter is pinned off at a regulated or strict-PII tier - managed-API egress is unbounded.', '', 'enforceVpcSc');
-    if (!d('contextCache') && (i.tokensIn || 0) >= 3000) add('cost', 'Largest cheap win: enable context cache on the reused system prompt - cached input bills at the model cache-read rate (~10% of input).', 'input cost down', 'contextCache');
-    else if (d('contextCache') && (i.tokensIn || 0) < 2048) add('cost', 'Context cache is pinned on but the prompt is below the ~2k-token minimum cacheable size, so prompt caching will not apply.', '', 'contextCache');
-    else if (d('contextCache') && (d('reuseInputPct') || 0) <= 10) add('cost', 'Context cache is on but reusable-input is ~0, so there is no shared prefix to cache and no saving - set reusable-input % to your real shared-prompt fraction, or pin it off.', '', 'reuseInputPct');
-    else if (d('contextCache') && (i.tokensIn || 0) >= 3000 && (d('reuseInputPct') || 0) < 40) add('cost', 'Context cache on but low reuse % - set reusable-input toward your real shared-prompt/retrieved fraction to capture the discount.', 'input cost down', 'reuseInputPct');
+    if (!answerOnly) {
+      if (!d('contextCache') && (i.tokensIn || 0) >= 3000) add('cost', 'Largest cheap win: enable context cache on the reused system prompt - cached input bills at the model cache-read rate (~10% of input).', 'input cost down', 'contextCache');
+      else if (d('contextCache') && (i.tokensIn || 0) < 2048) add('cost', 'Context cache is pinned on but the prompt is below the ~2k-token minimum cacheable size, so prompt caching will not apply.', '', 'contextCache');
+      else if (d('contextCache') && (d('reuseInputPct') || 0) <= 10) add('cost', 'Context cache is on but reusable-input is ~0, so there is no shared prefix to cache and no saving - set reusable-input % to your real shared-prompt fraction, or pin it off.', '', 'reuseInputPct');
+      else if (d('contextCache') && (i.tokensIn || 0) >= 3000 && (d('reuseInputPct') || 0) < 40) add('cost', 'Context cache on but low reuse % - set reusable-input toward your real shared-prompt/retrieved fraction to capture the discount.', 'input cost down', 'reuseInputPct');
+    }
     if (i.dataSources.includes('website')) add('freshness', 'Crawled company-website content is indexed offline, so answers are only as fresh as the last crawl - set a re-crawl cadence that matches how fast the pages change.', '', 'website');
-    if (i.dataSources.includes('web')) {
+    if (i.dataSources.includes('web') && !answerOnly) {
       if ((cat.modelById(d('reasoningModel')).webSearch || 0) === 0) add('conflict', `Web grounding needs a model with a web-search tool (Gemini Google Search or Claude web search). ${cat.modelById(d('reasoningModel')).name} has none, so live web grounding will not run - switch the reasoning model or drop web grounding.`, '', 'reasoningModel');
       else if (!d('autocomplete')) add('cost', 'Live web grounding is billed per search - autocomplete + response cache cut repeat grounded calls on the popular head.', 'grounding down', 'autocomplete');
     }
-    if (!d('smartRouting')) add('cost', 'Route lookups to the fast model; reserve the reasoning model for hard queries.', '', 'smartRouting');
+    if (!d('smartRouting') && !answerOnly) add('cost', 'Route lookups to the fast model; reserve the reasoning model for hard queries.', '', 'smartRouting');
     if (auto) add('data', 'Keep durable audit and long-term event history in BigQuery, not the transactional state store - the state DB holds resumable run state; BigQuery holds the append-only history.', '', 'stateStore');
-    if (subsecond && i.dataSources.some(s => cat.LATENCY_HEAVY.includes(s))) {
+    if (subsecond && !answerOnly && i.dataSources.some(s => cat.LATENCY_HEAVY.includes(s))) {
       const slow = i.dataSources.filter(s => cat.LATENCY_HEAVY.includes(s)).map(s => cat.SRC_LABEL[s] || s);
       add('conflict', `Slow live sources on a sub-second path: ${slow.join(', ')} each add a query-time call that will not fit a 1s p95 - remove them from the hot path or raise the SLO.`, 'latency down', 'latencyPreset');
     }

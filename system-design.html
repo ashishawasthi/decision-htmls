@@ -94,9 +94,9 @@
         <legend>Workload &amp; SLO</legend>
         <div class="ctl" data-vis="latencySlo"><label>Latency SLO</label>
           <select data-bind="latencyPreset">
-            <option value="subsecond">Sub-second (deterministic)</option>
-            <option value="agentic">&lt;2s start / &lt;6s full (agentic)</option>
-            <option value="batch">5-10s batch</option>
+            <option value="subsecond">Sub-second (Agent Search QA, no agent)</option>
+            <option value="interactive">&lt;2s start / &lt;5s full (interactive)</option>
+            <option value="agentic">&lt;10s start / &lt;12s full (agentic)</option>
           </select>
         </div>
         <div class="ctl"><label>Actors (<span id="actorLabel">seats</span>)</label>
@@ -217,6 +217,10 @@
         <div class="metrics" id="metrics"></div>
       </div>
       <div class="panel">
+        <h3>Performance &amp; capacity</h3>
+        <div id="perf"></div>
+      </div>
+      <div class="panel">
         <h3>Cost <span id="costHead" class="vis-count"></span></h3>
         <div id="cost"></div>
       </div>
@@ -292,7 +296,33 @@
       <li>Average QPS spreads the daily actions across the active window (active hours/week x 3600 / 7); peak applies
         the burst multiplier on top.</li>
       <li>Vector index = corpus docs x 5 chunks/doc x 768-dim x 4 bytes, then sharded.</li>
-      <li>Latency p95 sums the critical-path line items; parallel grounding takes the slowest source, not the sum.</li>
+      <li>Latency p95 sums the critical-path line items; parallel grounding takes the slowest source, not the sum.
+        Per-stream decode rates are realistic API streaming speeds, not server aggregate throughput: roughly 140
+        tok/s Gemini 3 Pro, 250 tok/s Gemini 3.5 Flash, 360 tok/s Flash-Lite, 70 tok/s Claude Opus, 85 tok/s
+        self-hosted Llama, with TTFT of 180-600 ms by model.</li>
+      <li>Multi-agent latency is a validated pipeline: one ~100-token Orchestrator plan (later hand-offs are
+        function calls), a full draft generation (the Validator only scores a complete draft), a ~150-token
+        Validator verdict (draft prefill rides in its TTFT), then revise cycles. By default 20% of drafts fail
+        validation (a pinnable decision); the p95 request pays every extra draft + verdict cycle still likelier
+        than 5%, i.e. floor(log 0.05 / log rate) cycles, capped at one below the iteration cap.</li>
+      <li>Each latency SLO tier derives a different architecture, with budgets sized so the derived architecture
+        fits. Sub-second (1s): no agent at all - Agent Search Enterprise answers directly from its index with its
+        bundled Flash-Lite-class answerer (~200-token grounded answer plus ~70 ms retrieval, ~0.85s on the worst
+        path with gateway and cache lookup); no external model call, no tools, no run-state store, GenAI cost $0
+        (bundled in the per-query price), and live sources are flagged as unusable. Interactive (2s start / 5s
+        full): one streaming single agent with grounding and tools. Agentic (10s start / 12s full): the
+        validator-gated multi-agent team. Batch checks 10s on the full answer.</li>
+      <li>First token p95: a single agent (and the Agent Search answer) streams, so first token = full p95 minus
+        the output-streaming time (output tokens x ms/token, blended across the routing split). A multi-agent team
+        is validator-gated, so the first answer token waits for the validated draft and first token = full.</li>
+      <li>The peak load funnel works in requests/s at burst: the response cache serves its effective hit share, the
+        agent sees the misses, model calls multiply by the fan-out, and state ops assume 3 per request (session read,
+        turn write, run-state write) at ~100 peak QPS per database node, the same node count the cost lines bill.</li>
+      <li>Concurrency uses Little's law (in-flight = agent-side QPS x p95 seconds). Agent instances assume ~30
+        concurrently streamed requests per instance (agent work is I/O-bound on model calls) with a floor of 2 for HA.</li>
+      <li>Managed ScaNN serving nodes take the wider of the size bound (~50 GB per node) and the load bound (~800 QPS
+        per node). Provisioned Throughput is suggested past ~3M tokens/min at peak, because dynamic shared quota does
+        not guarantee capacity. A hybrid VLAN attachment is flagged past 60% utilisation.</li>
       <li>Model-call fan-out = agents x a damped ReAct loop (1 + (iterations - 1) x 0.5).</li>
       <li>Egress bytes = output tokens x 4 bytes. Internet egress appears only for external or public audiences on
         GCP; hybrid designs bill a Partner Interconnect VLAN instead (private-only ingress).</li>

@@ -90,6 +90,20 @@
     c.reasoningModel = realModel(a.models.reasoningModel);
     c.fastModel = realModel(a.models.fastModel);
     c.claude = /claude/.test(String(a.models.reasoningModel) + String(a.models.fastModel));
+    /* The no-agent path: Agent Search answers directly, so there is no agent
+       compute, model leg, Model Armor, run-state store, or self-host fleet to
+       provision; conflicted live sources are not provisioned either. */
+    c.answerOnly = !!a.agent.answerOnly;
+    if (c.answerOnly) {
+      c.gke = false; c.runtime = 'none'; c.pattern = 'none';
+      c.publicGateway = false;
+      c.stateAlloy = false; c.stateSpanner = false; c.stateCloudSql = false;
+      c.redisTier = false; c.redisSelf = false; c.redisOnGke = false;
+      c.redisManaged = !!a.caching.responseCacheOn;
+      c.armor = false; c.selfHost = false; c.secretManagerOn = false; c.claude = false;
+      c.vectorVertex = false; c.vectorAlloy = false; c.selfbuilt = false; c.alloyAny = false;
+      c.bigquerySrc = false; c.onpremSrc = false; c.streamSrc = false;
+    }
     c.docai = c.selfbuilt && (c.docCorpus || c.website);
     c.pscStores = c.alloyAny || c.stateCloudSql || c.redisManaged;
     c.networkUser = c.pscStores || c.gke || c.selfHost || c.hybrid;
@@ -121,9 +135,11 @@
       'gcloud compute regions list', '');
     add('name_prefix', 'review', 'Prefix for every resource name.', '', '');
     add('environment', 'review', 'Environment label (dev, staging, prod).', '', '');
-    add('agent_image', 'review', 'Container image for the agent service. Starts as a placeholder hello image; replace with your build of the agent/ directory.', 'gcloud builds submit agent/ --tag ...', 'the agent actually serving');
-    add('generation_instruction', 'review', 'System instruction for the drafting step. Generic on purpose; set it to your task wording.', '', '');
-    add('validation_instruction', 'review', 'System instruction for the validation step.', '', '');
+    if (!c.answerOnly) {
+      add('agent_image', 'review', 'Container image for the agent service. Starts as a placeholder hello image; replace with your build of the agent/ directory.', 'gcloud builds submit agent/ --tag ...', 'the agent actually serving');
+      add('generation_instruction', 'review', 'System instruction for the drafting step. Generic on purpose; set it to your task wording.', '', '');
+      add('validation_instruction', 'review', 'System instruction for the validation step.', '', '');
+    }
     if (c.vpcsc) add('access_policy_id', 'gated', 'Access Context Manager access policy id (org or folder scoped). Empty deploys without the VPC-SC perimeter.', 'gcloud access-context-manager policies list', 'the VPC-SC perimeter');
     if (c.website) add('site_url', 'gated', 'Owned site URL to crawl into the search index. Empty skips the crawl target (the data store is still created). The URI pattern is computed in HCL, so this is a plain tfvar.', '', 'the website crawl target');
     if (c.selfHost) add('vllm_endpoint', 'gated', 'OpenAI-compatible endpoint of your vLLM service (for example http://IP:8000/v1). Empty leaves the agent pointing at the model id alone, which fails for a self-hosted-only design.', 'after deploying the vLLM stack on the inference cluster', 'the self-hosted model calls');
@@ -150,6 +166,11 @@
     'adk-deploy': {
       title: 'Push the agent to Agent Runtime with the ADK CLI',
       detail: 'Agent Runtime packages the agent code at build time, which Terraform cannot do, so no reasoning-engine resource is emitted here. After apply, push the agent object with:\n\n```\nadk deploy agent_engine --agent agent/\n```',
+      inline: ''
+    },
+    'answer-api': {
+      title: 'Wire clients to the Agent Search answer API',
+      detail: 'This design has no agent of its own: clients (or your existing API edge) call the Agent Search engine answer endpoint directly, and the grounded answer is generated inside the service. Grant caller identities roles/discoveryengine.viewer (or front the API with IAP / your gateway) and point them at the engine created next to the data store (ids in the Terraform outputs).',
       inline: ''
     },
     'two-phase-apply': {
@@ -242,7 +263,8 @@
     if (c.claude) add('claude-terms', 'before-apply');
     if (c.vais && c.website) add('site-verify', 'before-apply');
     /* after-apply steps */
-    add('build-image', 'after-apply');
+    if (!c.answerOnly) add('build-image', 'after-apply');
+    if (c.answerOnly) add('answer-api', 'after-apply');
     if (c.runtime === 'agentengine') add('adk-deploy', 'after-apply');
     if (c.vais && c.docCorpus) add('import-docs', 'after-apply');
     if (c.vectorAlloy) add('scann-extension', 'after-apply');
@@ -357,11 +379,13 @@
     v('region', 'string', c.residencyPin ? undefined : q('us-central1'), c.residencyPin ? 'Primary region. This design pins data residency, so pick the region your compliance posture requires. No default on purpose.' : 'Primary region for regional resources.');
     v('name_prefix', 'string', q('agentic-design'), 'Prefix for resource names.');
     v('environment', 'string', q('dev'), 'Environment label, for example dev or prod.');
-    v('agent_image', 'string', q('us-docker.pkg.dev/cloudrun/container/hello'), 'Container image for the agent service. Replace with your build of the agent/ directory.');
-    v('generation_instruction', 'string', q('Generate a clear, accurate, grounded answer to the request.'), 'System instruction for the drafting step. Generic; set per deployment.');
-    v('validation_instruction', 'string', q('Check the answer is accurate, on topic, and free of personal data. Reply APPROVE or REVISE with a reason.'), 'System instruction for the validation step.');
-    v('generation_model', 'string', q(c.reasoningModel), 'Vertex model id for the reasoning / drafting steps.');
-    v('validation_model', 'string', q(c.fastModel), 'Vertex model id for the fast / validation steps.');
+    if (!c.answerOnly) {
+      v('agent_image', 'string', q('us-docker.pkg.dev/cloudrun/container/hello'), 'Container image for the agent service. Replace with your build of the agent/ directory.');
+      v('generation_instruction', 'string', q('Generate a clear, accurate, grounded answer to the request.'), 'System instruction for the drafting step. Generic; set per deployment.');
+      v('validation_instruction', 'string', q('Check the answer is accurate, on topic, and free of personal data. Reply APPROVE or REVISE with a reason.'), 'System instruction for the validation step.');
+      v('generation_model', 'string', q(c.reasoningModel), 'Vertex model id for the reasoning / drafting steps.');
+      v('validation_model', 'string', q(c.fastModel), 'Vertex model id for the fast / validation steps.');
+    }
     v('labels', 'map(string)', '{\n    managed-by = "system-design"\n  }', 'Labels applied to resources that support them.');
     if (c.vpcsc) v('access_policy_id', 'string', q(''), 'Access Context Manager access policy id (org or folder scoped). Empty deploys without the VPC-SC perimeter.');
     if (c.website) v('site_url', 'string', q(''), 'Owned site URL to crawl into the search index. Empty skips the crawl target.');
@@ -395,9 +419,11 @@
     if (!c.residencyPin) L.push('region                 = "us-central1"');
     L.push('name_prefix            = "agentic-design"');
     L.push('environment            = "dev"');
-    L.push('# agent_image          = "REGION-docker.pkg.dev/PROJECT/REPO/agent:latest"   # after: gcloud builds submit agent/');
-    L.push('# generation_instruction = "..."   # your task wording');
-    L.push('# validation_instruction = "..."');
+    if (!c.answerOnly) {
+      L.push('# agent_image          = "REGION-docker.pkg.dev/PROJECT/REPO/agent:latest"   # after: gcloud builds submit agent/');
+      L.push('# generation_instruction = "..."   # your task wording');
+      L.push('# validation_instruction = "..."');
+    }
     var gated = placeholders.filter(function (p) { return p.kind === 'gated'; });
     if (gated.length) {
       L.push('');
@@ -494,29 +520,33 @@
       ].join('\n'));
     }
 
-    /* service account + IAM: one runtime identity, least-privilege-ish roles */
-    B.push([
-      'resource "google_service_account" "agent" {',
-      '  account_id   = "${local.name}-agent"',
-      '  display_name = "Agent runtime service account"',
-      DEP,
-      '}'
-    ].join('\n'));
-    var roles = ['roles/aiplatform.user', 'roles/storage.objectAdmin', 'roles/logging.logWriter', 'roles/cloudtrace.agent', 'roles/bigquery.dataEditor'];
-    if (c.vais) roles.push('roles/discoveryengine.editor');
-    if (c.secretManagerOn) roles.push('roles/secretmanager.secretAccessor');
-    if (c.alloyAny) roles.push('roles/alloydb.client');
-    if (c.stateSpanner) roles.push('roles/spanner.databaseUser');
-    if (c.stateCloudSql) roles.push('roles/cloudsql.client');
-    roles.forEach(function (role, i) {
+    /* service account + IAM: one runtime identity, least-privilege-ish roles.
+       The no-agent design has no runtime identity: callers reach the Agent
+       Search answer API with their own identities (see the answer-api step). */
+    if (!c.answerOnly) {
       B.push([
-        'resource "google_project_iam_member" "agent_' + i + '" {',
-        '  project = var.project_id',
-        '  role    = ' + q(role),
-        '  member  = "serviceAccount:${google_service_account.agent.email}"',
+        'resource "google_service_account" "agent" {',
+        '  account_id   = "${local.name}-agent"',
+        '  display_name = "Agent runtime service account"',
+        DEP,
         '}'
       ].join('\n'));
-    });
+      var roles = ['roles/aiplatform.user', 'roles/storage.objectAdmin', 'roles/logging.logWriter', 'roles/cloudtrace.agent', 'roles/bigquery.dataEditor'];
+      if (c.vais) roles.push('roles/discoveryengine.editor');
+      if (c.secretManagerOn) roles.push('roles/secretmanager.secretAccessor');
+      if (c.alloyAny) roles.push('roles/alloydb.client');
+      if (c.stateSpanner) roles.push('roles/spanner.databaseUser');
+      if (c.stateCloudSql) roles.push('roles/cloudsql.client');
+      roles.forEach(function (role, i) {
+        B.push([
+          'resource "google_project_iam_member" "agent_' + i + '" {',
+          '  project = var.project_id',
+          '  role    = ' + q(role),
+          '  member  = "serviceAccount:${google_service_account.agent.email}"',
+          '}'
+        ].join('\n'));
+      });
+    }
 
     /* CMEK: key ring + key + a service-agent binding per managed store family.
        Self-hosted stores (Redis on GKE) take disk/app encryption, not a key. */
@@ -817,7 +847,7 @@
           '}'
         ].join('\n'));
       }
-    } else {
+    } else if (c.gke) {
       B.push([
         inline('two-phase-apply'),
         'resource "google_container_cluster" "agent" {',
@@ -1332,7 +1362,7 @@
     if (c.runtime === 'agentengine') {
       outs.push(['agent_url', 'google_cloud_run_v2_service.api.uri', 'Cloud Run URL of the agent service.']);
       if (c.publicGateway) outs.push(['api_gateway_host', 'google_api_gateway_gateway.gw.default_hostname', 'Public hostname of the API gateway.']);
-    } else {
+    } else if (c.gke) {
       outs.push(['agent_cluster', 'google_container_cluster.agent.name', 'GKE cluster hosting the agent.']);
       outs.push(['agent_endpoint', 'try(kubernetes_service_v1.agent.status[0].load_balancer[0].ingress[0].ip, "pending")', (c.privateOnly ? 'Internal' : 'External') + ' LoadBalancer IP of the agent service (after the second apply phase).']);
     }
@@ -1357,12 +1387,13 @@
     L.push('# Terraform bundle: ' + (c.automation ? 'task automation' : 'interactive assistant') + ' on Google Cloud');
     L.push('');
     L.push('Generated by the System Design tool from the design on the page. The architecture');
-    L.push('is main.tf; the deploy specifics are terraform.tfvars. The agent code in agent/ is');
-    L.push('generic: the task wording, models, and tool wiring come from configuration.');
+    L.push('is main.tf; the deploy specifics are terraform.tfvars.' + (c.answerOnly ? ' There is no agent/ code:' : ' The agent code in agent/ is'));
+    L.push(c.answerOnly ? 'this no-agent design answers directly from Agent Search.' : 'generic: the task wording, models, and tool wiring come from configuration.');
     L.push('');
     L.push('## What this provisions');
     L.push('');
-    if (c.runtime === 'agentengine') L.push('- The agent API on Cloud Run' + (c.publicGateway ? ' behind Cloud API Gateway' : (c.privateOnly ? ' with internal-only ingress (private-only hybrid topology)' : '')) + '; the Agent Runtime object itself is pushed with the ADK CLI after apply.');
+    if (c.answerOnly) L.push('- No agent: clients call the Agent Search answer API directly; the grounded answer is generated inside the service (see the answer-api step).');
+    else if (c.runtime === 'agentengine') L.push('- The agent API on Cloud Run' + (c.publicGateway ? ' behind Cloud API Gateway' : (c.privateOnly ? ' with internal-only ingress (private-only hybrid topology)' : '')) + '; the Agent Runtime object itself is pushed with the ADK CLI after apply.');
     else L.push('- The agent on GKE Autopilot (Deployment + ' + (c.privateOnly ? 'internal ' : '') + 'LoadBalancer Service).');
     if (c.vais) L.push('- Agent Search data store(s) and a search engine per store for managed retrieval.');
     if (c.vectorVertex) L.push('- A Vector Search (managed ScaNN) index and endpoint for the self-built retrieval pipeline.');
@@ -1598,9 +1629,11 @@
     files['main.tf'] = alignTf(mainTf(c));
     files['outputs.tf'] = alignTf(outputsTf(c));
     files['README.md'] = readme(c, placeholders, steps);
-    files['agent/agent.py'] = agentPy(c);
-    files['agent/requirements.txt'] = requirementsTxt();
-    files['agent/Dockerfile'] = dockerfile();
+    if (!c.answerOnly) {
+      files['agent/agent.py'] = agentPy(c);
+      files['agent/requirements.txt'] = requirementsTxt();
+      files['agent/Dockerfile'] = dockerfile();
+    }
     return { files: files, placeholders: placeholders, steps: steps, ctx: c };
   }
 

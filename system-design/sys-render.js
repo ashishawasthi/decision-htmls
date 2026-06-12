@@ -101,6 +101,27 @@
     });
   }
 
+  /* Dim the data-source checkboxes the derived design ignores (arch.retrieval
+     .ignoredSources): the box stays checked, but the label is struck through and
+     carries a ⚠ so the input matches the diagram, which never draws the source.
+     The input is never unchecked here - derivation does not mutate inputs, so
+     raising the SLO or changing the path brings the source straight back. */
+  function updateDataSourceMarks(arch) {
+    const ignored = new Set((arch && arch.retrieval && arch.retrieval.ignoredSources) || []);
+    $$('#dataSources label').forEach(lab => {
+      const cb = lab.querySelector('input'); if (!cb) return;
+      const off = cb.checked && ignored.has(cb.value);
+      lab.classList.toggle('inactive', off);
+      let wm = lab.querySelector('.warnmark');
+      if (off && !wm) {
+        wm = document.createElement('span'); wm.className = 'warnmark'; wm.textContent = '⚠';
+        wm.title = 'Selected but unused on this design path: the derivation ignores it, so it never appears in the architecture, cost, or BoM. See Issues & levers - raise the SLO or change the path to use it. Left checked so it returns when the design can use it.';
+        lab.appendChild(wm);
+      }
+      if (!off && wm) wm.remove();
+    });
+  }
+
   function issuesHtml(issues) {
     if (!issues.length) return '<div class="empty">No conflicts - clean config.</div>';
     const order = [], groups = {};
@@ -115,7 +136,7 @@
     cards.push(card(m.volLabel + ' avg / peak', `${fmt(m.volAvg, 2)} <small>/ ${fmt(m.volPeak, 2)}</small>`, 'actors x actions/day over the active window, x burst'));
     const fan = arch.agent.modelCallsPerReq;
     if (fan > 1) cards.push(card('Model-call QPS (peak)', `${fmt(m.volPeak * fan, 2)} <small>· x${fan} fan-out</small>`, 'user QPS x agent fan-out (agents x a damped ReAct loop); Model Armor quota and token spend size on this, not user QPS'));
-    cards.push(card('Tokens / day', fmt(m.tokensDay, 1), 'daily actions x (in+out)'));
+    if (!arch.agent.answerOnly) cards.push(card('Tokens / day', fmt(m.tokensDay, 1), 'daily actions x (in+out)'));
     if (arch.caching.responseCacheOn) {
       const chParts = [`base ${arch.caching.cacheHitBase || 0}%`];
       if (arch.caching.autocomplete) chParts.push('autocomplete +25');
@@ -125,7 +146,67 @@
     if (m.indexGB > 0 && arch.retrieval.storeDrawn) cards.push(card('Vector index', fmt(m.indexGB, 1) + ' <small>GB · ' + m.shards + ' shard(s)</small>', 'chunks x dim x 4 bytes, served from a managed ScaNN store'));
     if (m.gpuNodes) cards.push(card('Self-host fleet', `${m.gpuNodes} <small>x 8 ${(arch.sizing.accelerator || 'h100').toUpperCase()} · ${m.gpuUtilPct}% util</small>`, 'nodes to serve peak decode tokens/s at the chosen precision and accelerator; sized on peak QPS x output tokens'));
     cards.push(card('Latency p95', (m.latencyP95 >= 1000 ? (m.latencyP95 / 1000).toFixed(1) + 's' : Math.round(m.latencyP95) + 'ms') + (m.latencyBudget < Infinity ? ` <small${m.latencyOverBudget ? ' style="color:var(--err)"' : ''}>SLO ${m.latencyBudget / 1000}s</small>` : ''), 'critical-path sum; grounding fans out in parallel (slowest wins)'));
+    if (m.latencyStartP95 != null) cards.push(card('First token p95', (m.latencyStartP95 >= 1000 ? (m.latencyStartP95 / 1000).toFixed(1) + 's' : Math.round(m.latencyStartP95) + 'ms') + (m.latencyStartBudget < Infinity ? ` <small${m.latencyStartOverBudget ? ' style="color:var(--err)"' : ''}>start SLO ${m.latencyStartBudget / 1000}s</small>` : ''), m.latencyStartIsGated ? 'validator-gated team: the Validator only scores a complete draft, so the first answer token waits for the validated draft (= full p95); pin the pattern to single agent for a streamed start' : (arch.agent.answerOnly ? 'the Agent Search answer streams from the service: first token = full p95 minus the answer-streaming time' : 'single agent streams as it generates: first token = full p95 minus the output-streaming time')));
     return cards.join('');
+  }
+
+  /* Performance & capacity panel: a latency waterfall over the p95 line items,
+     the peak QPS funnel, and the concurrency ceilings. Pure function of
+     (m, arch); rows reuse the expandable cost-row pattern, so the substituted
+     formula behind every number sits one click away, same as the cost panel. */
+  function perfPanelHtml(m, arch) {
+    const cat = C(), fmt = cat.fmt;
+    const esc = s => String(s == null ? '' : s).replace(/"/g, '&quot;');
+    const msF = ms => ms >= 1000 ? (ms / 1000).toFixed(2) + 's' : Math.round(ms) + 'ms';
+    const pc = m.perfCalc || {};
+    const row = (label, val, o = {}) => {
+      const cls = `cost-row${o.warn ? ' warn' : ''}`;
+      const core = `<span class="cl"${o.why ? ` title="${esc(o.why)}"` : ''}>${label}${o.sub ? ` <small>${o.sub}</small>` : ''}</span><span class="cn">${val}</span>`;
+      if (!o.calc && !o.why) return `<div class="${cls}">${core}</div>`;
+      const detail = (o.calc ? `<div class="calc">${o.calc}</div>` : '') + (o.why ? `<div class="why">${o.why}</div>` : '');
+      return `<details class="cost-line"><summary class="${cls}">${core}</summary><div class="cost-detail">${detail}</div></details>`;
+    };
+    const grp = t => `<div class="cost-grp">${t}</div>`;
+    const unit = arch.purpose === 'automation' ? ' runs/s' : ' req/s';
+    const q = v => fmt(v, 2);
+    const rows = [];
+
+    /* Latency waterfall: bars scale to the larger of the p95 and the SLO budget,
+       so an under-budget design visibly leaves room. The streaming tail of the
+       generation item is hatched; parallel grounding branches are dotted. */
+    const scaleMax = Math.max(m.latencyP95, m.latencyBudget < Infinity ? m.latencyBudget : 0) || 1;
+    const w = ms => Math.min(100, Math.max(ms > 0 ? 0.8 : 0, ms / scaleMax * 100));
+    rows.push(grp('Latency p95 waterfall <small>(critical path; p95 assumes a cache miss)</small>'));
+    for (const p of m.latParts) {
+      const stream = p.stream && p.stream < p.ms ? p.stream : 0;
+      rows.push(`<div class="lat-row" title="${esc(p.note || '')}"><span class="lat-l">${p.label}</span><span class="lat-bar"><i style="width:${w(p.ms - stream)}%"></i>${stream ? `<i class="stream" style="width:${w(stream)}%" title="output streaming: ${msF(stream)} of ${msF(p.ms)}"></i>` : ''}</span><span class="lat-ms">${msF(p.ms)}</span></div>`);
+      if (p.parallel) for (const s of p.parallel) rows.push(`<div class="lat-row sub" title="parallel grounding branch - the slowest sets the stage time"><span class="lat-l">${s.label}</span><span class="lat-bar"><i class="par" style="width:${w(s.ms)}%"></i></span><span class="lat-ms">${msF(s.ms)}</span></div>`);
+    }
+    if (m.latencyStartP95 != null) rows.push(`<div class="lat-row tot${m.latencyStartOverBudget ? ' over' : ''}" title="${m.latencyStartIsGated ? 'the Validator only scores a complete draft, so the first answer token waits for the validated draft: start = full' : 'the answer streams: first token = full p95 minus the streaming tail'}"><span class="lat-l">First token p95${m.latencyStartIsGated ? ' <small>= full · validator-gated</small>' : ''}</span><span class="lat-bar"><i class="mark" style="width:${w(m.latencyStartP95)}%"></i></span><span class="lat-ms">${msF(m.latencyStartP95)}${m.latencyStartBudget < Infinity ? ` / ${msF(m.latencyStartBudget)} SLO` : ''}</span></div>`);
+    rows.push(`<div class="lat-row tot${m.latencyOverBudget ? ' over' : ''}" title="sum of the line items above; parallel branches already collapsed to the slowest"><span class="lat-l">Full answer p95</span><span class="lat-bar"><i class="mark full" style="width:${w(m.latencyP95)}%"></i></span><span class="lat-ms">${msF(m.latencyP95)}${m.latencyBudget < Infinity ? ` / ${msF(m.latencyBudget)} SLO` : ''}</span></div>`);
+
+    /* Peak QPS funnel: each stage sees a different load, and each names what
+       is sized on it. */
+    rows.push(grp(`Peak load funnel <small>(${arch.purpose === 'automation' ? 'runs' : 'requests'}/s at burst)</small>`));
+    const answerOnly = !!arch.agent.answerOnly;
+    rows.push(row('Client ingress', q(m.volPeak) + unit, { sub: arch.topology.privateOnly ? 'IAP / mTLS over interconnect' : (arch.gov.gateway ? 'API Gateway + Apigee' : 'direct'), calc: pc.ingress, why: 'What the request edge is sized and rate-limited on.' }));
+    if (arch.caching.responseCacheOn) rows.push(row('Served from response cache', q(m.volPeak * m.cacheHitEff) + unit, { sub: Math.round(m.cacheHitEff * 100) + '% effective hit rate', calc: pc.cache, why: 'Hits return in 5-30 ms and never reach the agent, the models, or retrieval.' }));
+    rows.push(row(answerOnly ? 'Agent Search answers' : 'Agent compute', q(m.qpsAgentPeak) + unit, { sub: answerOnly ? 'managed answer API, no agent' : `~${m.agentInstances} instance(s)`, calc: pc.agentQps, why: answerOnly ? 'Cache misses answered directly by Agent Search; what its query quota is sized on.' : 'Cache misses that run the full agent path; what the agent runtime autoscales on.' }));
+    if (m.qpsRetrievalPeak > 0 && !answerOnly) rows.push(row('Retrieval queries', q(m.qpsRetrievalPeak) + ' q/s', { sub: arch.retrieval.ragEngine === 'vais' ? 'Agent Search' : (arch.retrieval.vectorDB === 'vertex' ? 'Vector Search' : 'AlloyDB ScaNN'), calc: arch.retrieval.selfbuilt ? pc.vvs : '', why: 'One grounding query per agent-served request.' }));
+    if (m.qpsLivePeak > 0) rows.push(row('Live source queries', q(m.qpsLivePeak) + ' q/s', { sub: (arch.retrieval.liveSel || []).map(s => cat.SRC_LABEL[s] || s).join(' · '), why: 'Query-time calls to each selected live source on the hot path.' }));
+    if (m.qpsWebPeak > 0) rows.push(row('Web grounding searches', q(m.qpsWebPeak) + ' q/s', { sub: 'billed per search', why: 'One live web search per agent-served request, matching the grounding cost line.' }));
+    if (m.qpsModelPeak > 0) rows.push(row('Model calls', q(m.qpsModelPeak) + ' calls/s', { sub: `x${arch.agent.modelCallsPerReq} fan-out${arch.models.armorOn ? ' · screened by Model Armor' : ''}`, calc: pc.modelQps, why: 'Model rate limits (and Model Armor) size on this stream, not on user QPS.' }));
+    if (m.stateOpsPeak > 0) rows.push(row('State store ops', q(m.stateOpsPeak) + ' ops/s', { sub: `${m.dbNodes} node(s)`, calc: pc.state, why: 'Session read plus turn and run-state writes; the same node count the state-store cost line bills.' }));
+    if (m.linkMbpsPeak != null) rows.push(row('Interconnect VLAN load', (m.linkMbpsPeak < 10 ? m.linkMbpsPeak.toFixed(1) : String(Math.round(m.linkMbpsPeak))) + ' Mbps', { sub: `${m.linkUtilPct < 1 ? '<1' : Math.round(m.linkUtilPct)}% of the link`, calc: pc.link, why: 'Every request and response rides the private link in a hybrid design; token payloads rarely stress it.' }));
+
+    /* Concurrency and the ceilings that bind first. */
+    rows.push(grp('Concurrency &amp; ceilings'));
+    rows.push(row('In-flight at peak', fmt(m.inflightPeak, 1), { sub: arch.purpose === 'automation' ? 'concurrent runs' : 'concurrent requests', calc: pc.inflight, why: "Little's law: arrival rate x time in system. Connection pools, run-state working sets, and instance counts size on this." }));
+    if (m.agentInstances != null) rows.push(row('Agent instances', String(m.agentInstances), { sub: `${cat.K.perf.instConcurrency} streams/instance · floor ${cat.K.perf.instMin} for HA`, calc: pc.instances, why: 'Agentic requests hold a streamed connection open while awaiting model calls, so instances are concurrency-bound, not CPU-bound.' }));
+    if (!answerOnly) rows.push(row('Token throughput at peak', `${fmt(m.tokInPeakSec, 1)} in · ${fmt(m.tokOutPeakSec, 1)} out tok/s`, { sub: fmt(m.tokPerMinPeak, 1) + ' tok/min' + (m.needsProvisionedThroughput ? ' · reserve Provisioned Throughput' : ''), warn: m.needsProvisionedThroughput, calc: pc.tok, why: 'What the model quota must sustain at peak. Dynamic shared quota does not guarantee capacity; past ~' + fmt(cat.K.perf.ptTokMinThreshold) + ' tok/min, reserve Provisioned Throughput for the steady share.' }));
+    if (m.vvsNodes && arch.retrieval.storeDrawn && arch.retrieval.selfbuilt && arch.retrieval.vectorDB === 'vertex') rows.push(row('Vector serving nodes', String(m.vvsNodes), { sub: m.vvsNodesQps > m.vvsNodesSize ? 'QPS-bound' : 'size-bound', calc: pc.vvs, why: 'The wider of the index-size bound and the peak-QPS bound; the Vector Search cost line bills this same count.' }));
+    if (m.gpuFleetTPS) rows.push(row('Self-host fleet capacity', fmt(m.gpuFleetTPS, 1) + ' tok/s', { sub: m.gpuHeadroomPct != null ? `+${Math.round(m.gpuHeadroomPct)}% headroom over peak` : 'routing sends it no traffic', calc: pc.gpu, why: 'Decode capacity of the GPU fleet at the configured utilisation vs the peak output tokens/s it was sized for.' }));
+    return `<div class="costbox">${rows.join('')}</div>`;
   }
 
   function costPanelHtml(m, cs, arch, inputs) {
@@ -148,7 +229,10 @@
     const grp = t => `<div class="cost-grp">${t}</div>`;
     const rows = [];
     const cp = m.costParts || {}, cc = m.costCalc || {};
-    if (!arch.models.selfHostAll) {
+    if (arch.agent.answerOnly) {
+      rows.push(grp('GenAI · bundled'));
+      rows.push(row('Model calls (yours)', money(0), { sub: 'none - the grounded answer is generated inside Agent Search', why: 'The no-agent path makes no external model call: Agent Search Enterprise bundles retrieval and answer generation in its per-query price (the Agent Search platform line below).' }));
+    } else if (!arch.models.selfHostAll) {
       rows.push(grp('GenAI · managed inference'));
       rows.push(row('Input · fresh', money(cp.fresh), { calc: cc.fresh, why: GP.fresh.why, ref: GP.fresh.ref }));
       rows.push(row('Input · cached', money(cp.cached), { sub: 'billed at model cache-read rate', calc: cc.cached, why: GP.cached.why, ref: GP.cached.ref }));
@@ -271,7 +355,8 @@
 
   NS.render = {
     buildDecisionsPanel, updateDecisions, updateInputMarks, decodeValue,
-    issuesHtml, metricCards, costPanelHtml, bomHtml, bindTooltips, applyInputHelp, renderChips,
+    updateDataSourceMarks,
+    issuesHtml, metricCards, perfPanelHtml, costPanelHtml, bomHtml, bindTooltips, applyInputHelp, renderChips,
     tfChecklistHtml,
   };
 })(typeof window !== 'undefined' ? (window.ASD2 = window.ASD2 || {}) : (globalThis.ASD2 = globalThis.ASD2 || {}));
