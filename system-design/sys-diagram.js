@@ -231,10 +231,8 @@
     let onpremDrawn = false;
     if (a.topology.hybridLink) {
       onpremDrawn = true;
-      const hasOnpremData = a.retrieval.liveSel.includes('onprem') && !answerOnly;
       L.push('subgraph ONPREM["On-premise"]');
       L.push(node('OnpremUsers', 'On-prem users / network', 'client'));
-      if (hasOnpremData) L.push(node('OnpremDB', 'On-prem systems / DB', 'data', 'cyl'));
       L.push('end');
       L.push('OnpremUsers == Cloud Interconnect ==> CloudRouter');
       const edge = a.models.inboundChips.length ? `-- ${C().LIGHT_AUTH} -->` : '-->';
@@ -245,7 +243,6 @@
       } else {
         L.push(`CloudRouter ${edge} ${a.agent.agentEntry}`);
       }
-      if (hasOnpremData) L.push(`${a.agent.dataAgent} == over interconnect ==> OnpremDB`);
     }
 
     /* ---- styling ---- */

@@ -96,7 +96,6 @@
     if (a.retrieval.ragOn) groundSubs.push({ label: 'Vector / hybrid retrieval', ms: L.retrieval });
     if (i.dataSources.includes('bigquery')) groundSubs.push({ label: 'BigQuery scan', ms: L.bigqueryScan });
     if (i.dataSources.includes('web')) groundSubs.push({ label: 'Web grounding (live search)', ms: L.webGround });
-    if (i.dataSources.includes('onprem')) groundSubs.push({ label: 'On-prem call', ms: L.onpremCall });
     const grounding = groundSubs.length ? Math.max(...groundSubs.map(s => s.ms)) : 0;
     const parts = [];
     const inbChips = a.models.inboundChips, outbChips = a.models.outboundChips;

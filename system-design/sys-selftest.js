@@ -67,7 +67,7 @@
     assert('revert: audience regulated -> internal_low -> regulated restores all outputs', roundTrip('assistant', 'expert_copilot', 'audienceSensitivity', 'internal_low'));
     assert('revert: deployment gcp -> hybrid -> gcp restores all outputs', roundTrip('assistant', 'expert_copilot', 'deployment', 'hybrid'));
     assert('revert: opsModel managed -> self_managed -> managed restores all outputs', roundTrip('assistant', 'expert_copilot', 'opsModel', 'self_managed'));
-    assert('revert: each data source add -> remove restores all outputs', ['web', 'onprem', 'stream', 'kg', 'website'].every(src => {
+    assert('revert: each data source add -> remove restores all outputs', ['web', 'stream', 'kg', 'website'].every(src => {
       const base = clone(P.assistant.expert_copilot.inputs);
       const before = fp('assistant', base, {});
       const mutated = clone(base); mutated.dataSources = base.dataSources.concat([src]);
@@ -155,11 +155,10 @@
       assert('self-managed: no Memorystore line (Redis rides the GKE line)', !x.comps.includes('Memorystore Cluster') && x.comps.includes('GKE Autopilot (agent)'));
     }
     {
-      const hy = clone(P.assistant.expert_copilot.inputs); hy.deployment = 'hybrid'; hy.dataSources = ['doc_corpus', 'onprem'];
+      const hy = clone(P.assistant.expert_copilot.inputs); hy.deployment = 'hybrid'; hy.dataSources = ['doc_corpus'];
       const x = pipe('assistant', hy);
       assert('hybrid: private-only ingress (no Client UI / EdgeGW / Apigee / API Gateway)', !/Client UI/.test(x.dg) && !/EdgeGW/.test(x.dg) && !x.comps.includes('Apigee') && !x.comps.includes('Cloud API Gateway'));
       assert('hybrid: IAP / mTLS hop on the interconnect into the agent', /OnpremUsers == Cloud Interconnect ==> CloudRouter/.test(x.dg) && /CloudRouter -- IAP \/ mTLS --> Orchestrator/.test(x.dg));
-      assert('hybrid: the Retrieval agent reads on-prem systems over the interconnect', /Retriever == over interconnect ==> OnpremDB/.test(x.dg) && !/Generator == over interconnect/.test(x.dg));
       assert('hybrid: dedicated VPC derives on for the Cloud Router', x.dv('dedicatedVpc') === true && /subgraph VPC\[/.test(x.dg));
       assert('hybrid: latency swaps the gateway hop for a 3ms IAP check', x.m.latParts.some(p => p.label === 'IAP / mTLS' && p.ms === 3) && !x.m.latParts.some(p => p.label === 'API Gateway'));
       assert('hybrid: BoM keeps Cloud IAP', x.comps.includes('Cloud IAP'));
@@ -232,8 +231,9 @@
       const w1 = pipe('assistant', webbed).m.costParts.grounding;
       assert('live web grounding adds a per-search cost', w0 === 0 && w1 > 0);
       const g1 = clone(base); g1.dataSources = ['doc_corpus', 'bigquery'];
-      const g2 = clone(base); g2.dataSources = ['doc_corpus', 'bigquery', 'onprem'];
-      assert('parallel grounding takes the max, not the sum', pipe('assistant', g1).m.latencyP95 === pipe('assistant', g2).m.latencyP95);
+      const g2 = clone(base); g2.dataSources = ['doc_corpus', 'bigquery', 'web'];
+      const groundMs = x => (x.m.latParts.find(p => p.label === 'Grounding') || {}).ms;
+      assert('parallel grounding takes the max, not the sum', groundMs(pipe('assistant', g1)) === groundMs(pipe('assistant', g2)));
     }
     {
       const big = Object.assign(clone(P.automation.internal_lowstakes.inputs), { actors: 50000, actionsPerDay: 60, tokensOut: 2000, modelStrategy: 'self_host' });

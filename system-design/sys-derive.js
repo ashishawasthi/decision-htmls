@@ -26,7 +26,7 @@
     const auto = purpose === 'automation';
     const ext = aud !== 'internal';
     const hasWeb = inputs.dataSources.includes('web');
-    const tools = auto || inputs.dataSources.some(s => ['onprem', 'bigquery', 'web', 'kg', 'stream'].includes(s));
+    const tools = auto || inputs.dataSources.some(s => ['bigquery', 'web', 'kg', 'stream'].includes(s));
     const highVol = (inputs.actors || 0) * (inputs.actionsPerDay || 0) >= 1e5;
     const G = [];
     const set = (key, label, on, why, cat) => { G.push({ key, label, on, why, cat }); };

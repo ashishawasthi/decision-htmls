@@ -65,7 +65,6 @@
     c.ingestionSep = !!a.retrieval.ingestionSep;
     c.docCorpus = ds.indexOf('doc_corpus') >= 0;
     c.website = ds.indexOf('website') >= 0;
-    c.onpremSrc = ds.indexOf('onprem') >= 0;
     c.bigquerySrc = ds.indexOf('bigquery') >= 0;
     c.streamSrc = ds.indexOf('stream') >= 0;
     c.store = a.state.store;
@@ -102,7 +101,7 @@
       c.redisManaged = !!a.caching.responseCacheOn;
       c.armor = false; c.selfHost = false; c.secretManagerOn = false; c.claude = false;
       c.vectorVertex = false; c.vectorAlloy = false; c.selfbuilt = false; c.alloyAny = false;
-      c.bigquerySrc = false; c.onpremSrc = false; c.streamSrc = false;
+      c.bigquerySrc = false; c.streamSrc = false;
     }
     c.docai = c.selfbuilt && (c.docCorpus || c.website);
     c.dlpDeid = !!(a.retrieval && a.retrieval.dlpDeidIngest);
@@ -1475,16 +1474,6 @@
       L.push('');
       L.push('## Notes');
       notes.forEach(function (s) { L.push(''); L.push('- **' + s.title + '.** ' + s.detail.replace(/\n+/g, ' ')); });
-    }
-    if (c.onpremSrc && !c.hybrid) {
-      L.push('');
-      L.push('## On-prem data integration');
-      L.push('');
-      L.push('This design reads an on-prem source but has no interconnect bridge (deployment is');
-      L.push('GCP, not hybrid). Set up HA VPN or Cloud Interconnect between your VPC and the');
-      L.push('on-prem network, restrict firewall egress to the database host and port, resolve');
-      L.push('its hostname with a private DNS zone, and use a read-only database account.');
-      L.push('Select the Hybrid deployment in the designer to have the bridge emitted.');
     }
     return L.join('\n') + '\n';
   }

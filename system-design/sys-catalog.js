@@ -57,7 +57,7 @@
     bqScanMB: 50,
     /* Wire bytes per token, for egress, DLP inspection, and log-volume estimates. */
     net: { bytesPerTok: 4 },
-    lat: { retrieval: 70, rerank: 80, bigqueryScan: 1200, webGround: 600, onpremCall: 400, qualityGate: 80, cacheExact: 5, cacheSem: 30,
+    lat: { retrieval: 70, rerank: 80, bigqueryScan: 1200, webGround: 600, qualityGate: 80, cacheExact: 5, cacheSem: 30,
       /* Multi-agent line items: the Orchestrator plans once (~planTok tokens, later
          hand-offs are function calls); the Validator reads the COMPLETE draft and
          writes a ~verdictTok-token critique (draft prefill rides inside its TTFT).
@@ -109,12 +109,12 @@
 
   /* Data sources: indexed content (crawled/parsed/embedded offline), live-queried
      sources, and live web grounding via the model web-search tool. */
-  const SRC_LABEL = { bigquery: 'BigQuery', onprem: 'On-prem', stream: 'Stream', kg: 'KG', web: 'Web', website: 'Site', doc_corpus: 'Corpus' };
+  const SRC_LABEL = { bigquery: 'BigQuery', stream: 'Stream', kg: 'KG', web: 'Web', website: 'Site', doc_corpus: 'Corpus' };
   const INDEXED_SRC = ['doc_corpus', 'website'];
-  const LIVE_SRC = ['bigquery', 'onprem', 'kg', 'stream'];
+  const LIVE_SRC = ['bigquery', 'kg', 'stream'];
   const INDEXED_LABEL = { doc_corpus: 'Docs', website: 'Site' };
-  /* Sources with a slow query-time call: BigQuery scan, on-prem fetch, live web search. */
-  const LATENCY_HEAVY = ['bigquery', 'onprem', 'web'];
+  /* Sources with a slow query-time call: BigQuery scan, live web search. */
+  const LATENCY_HEAVY = ['bigquery', 'web'];
   /* p95 budget (ms) per latency preset on the assistant path. LATENCY_BUDGET
      checks the full answer, LATENCY_BUDGET_START the first token of the final
      answer. Each tier's budget fits the architecture it derives:
@@ -189,13 +189,11 @@
     SemLayer: 'The semantic layer for text-to-SQL: schema, column descriptions, and the canonical metric definitions, supplied to the model as a cached prefix (~90% discount, so the big schema context is nearly free). Schema and column descriptions are the number-one accuracy predictor in this design, ahead of model choice - accuracy goes up when descriptions improve, with no model change. The metric dictionary is a readiness gate: agree the definitions with finance before launch, or the copilot industrializes the ambiguity.',
     CloudRouter: 'Terminates the on-prem Cloud Interconnect inside the dedicated VPC (Cloud Router + VLAN attachment). The sole ingress in a hybrid deployment.',
     OnpremUsers: 'The on-premise network: users and callers reach the system over the private interconnect, not the public internet.',
-    OnpremDB: 'On-premise systems of record the agent reads back over the same private link.',
   };
 
   /* Role of each data source, shown as a hover tooltip on the checkbox. */
   const DATA_SOURCE_ROLE = {
     doc_corpus: 'Document corpus parsed, chunked, and embedded for RAG (Document AI ingestion), then served from the vector store.',
-    onprem: 'On-prem or legacy system of record reached over a private link. Latency varies, so validate it fits the SLO.',
     stream: 'Streaming or event source (Pub/Sub, Kafka) for fresh, near-real-time context.',
     kg: 'Knowledge graph for entity and relationship lookups and multi-hop reasoning.',
     web: 'Live web grounding via the model web-search tool (Gemini Google Search or Claude web search) for fresh, public content the company does not own. Per-search cost; self-hosted Llama has no web search tool.',
@@ -232,7 +230,6 @@
     'Cloud Trace': 'components/cloud-trace.html',
     'Agent Platform Evals': 'components/vertex-ai-eval.html',
     'Model Registry': 'components/vertex-model-registry.html',
-    'On-prem DB': 'components/onprem.html',
     'Pub/Sub': 'components/pubsub.html',
     'Knowledge graph': 'components/knowledge-graph.html',
     'Web/OSINT': 'components/web-osint.html',
@@ -244,7 +241,7 @@
     'Claude Opus 4.8': 'components/model-claude-opus-48.html',
     'Llama 4 (self-host)': 'components/model-llama4-selfhost.html',
   };
-  const DS_COMPONENT = { bigquery: 'BigQuery', doc_corpus: 'Document AI', stream: 'Pub/Sub', onprem: 'On-prem DB', kg: 'Knowledge graph', web: 'Web/OSINT', website: 'Agent Search' };
+  const DS_COMPONENT = { bigquery: 'BigQuery', doc_corpus: 'Document AI', stream: 'Pub/Sub', kg: 'Knowledge graph', web: 'Web/OSINT', website: 'Agent Search' };
   const docFor = name => COMPONENT_DOC[name] || MODEL_DOC[name] || null;
 
   /* Price book: billable list rates per component, verified against the official

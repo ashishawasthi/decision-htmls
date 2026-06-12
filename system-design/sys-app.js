@@ -51,7 +51,7 @@
     $('#purpose').value = state.purpose;
     /* input-row visibility, from inputs alone */
     const hasIndexed = state.inputs.dataSources.some(s => NS.catalog.INDEXED_SRC.includes(s));
-    const staleable = state.inputs.dataSources.some(s => ['stream', 'bigquery', 'onprem', 'doc_corpus', 'website'].includes(s));
+    const staleable = state.inputs.dataSources.some(s => ['stream', 'bigquery', 'doc_corpus', 'website'].includes(s));
     const vis = { latencySlo: state.purpose === 'assistant', corpus: hasIndexed, freshness: staleable, languages: state.purpose === 'assistant' };
     $$('section.config .ctl[data-vis]').forEach(el => el.classList.toggle('hidden', vis[el.dataset.vis] === false));
     $('#actorLabel').textContent = state.purpose === 'automation' ? 'engineers' : 'seats';

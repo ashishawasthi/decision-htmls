@@ -46,8 +46,8 @@
       },
       strictpii_verify: {
         label: 'Strict-PII verification',
-        desc: 'Low-volume, strict-PII verification that grounds live on web, knowledge graph, and on-prem data in real time.',
-        inputs: inp({ actors: 300, actionsPerDay: 8, burst: 3, tokensIn: 6000, tokensOut: 1000, audienceSensitivity: 'internal_strictpii', dataSources: ['web', 'kg', 'onprem'], corpusSize: 0, freshness: 'realtime' }),
+        desc: 'Low-volume, strict-PII verification that grounds live on web and knowledge graph data in real time.',
+        inputs: inp({ actors: 300, actionsPerDay: 8, burst: 3, tokensIn: 6000, tokensOut: 1000, audienceSensitivity: 'internal_strictpii', dataSources: ['web', 'kg'], corpusSize: 0, freshness: 'realtime' }),
       },
     },
     automation: {
@@ -56,7 +56,7 @@
       internal_lowstakes: {
         label: 'Internal · low-stakes',
         desc: 'Internal low-stakes automation with light governance, running at minutes-scale latency.',
-        inputs: inp({ actors: 300, actionsPerDay: 6, burst: 3, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_low', dataSources: ['bigquery', 'onprem'], corpusSize: 0 }),
+        inputs: inp({ actors: 300, actionsPerDay: 6, burst: 3, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_low', dataSources: ['bigquery'], corpusSize: 0 }),
       },
       self_managed: {
         label: 'Self-Managed',
@@ -66,7 +66,7 @@
       strictpii: {
         label: 'Strict-PII / high-stakes',
         desc: 'Strict-PII, high-stakes automation that mandates a sandbox, Model Armor, and data residency.',
-        inputs: inp({ actors: 400, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 60, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_strictpii', dataSources: ['bigquery', 'onprem'], corpusSize: 0 }),
+        inputs: inp({ actors: 400, actionsPerDay: 8, burst: 3, activeHoursPerWeek: 60, latencyPreset: 'minutes', tokensIn: 8000, tokensOut: 2000, audienceSensitivity: 'internal_strictpii', dataSources: ['bigquery'], corpusSize: 0 }),
       },
       external_facing: {
         label: 'External-facing',
