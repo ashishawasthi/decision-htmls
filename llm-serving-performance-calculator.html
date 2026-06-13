@@ -203,6 +203,7 @@
     .input-row label { flex: 1; padding: 0; }
     .input-row input[type=number] { width: 110px; text-align: right; }
     .input-row .unit { color: var(--muted); font-size: 11px; min-width: 84px; }
+    .input-row .readout { font-family: var(--mono); font-size: 12px; color: var(--accent); font-weight: 600; text-align: right; white-space: nowrap; }
 
     .range-row { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
     .range-row input[type=range] { flex: 1; }
@@ -397,8 +398,8 @@
             <span class="unit">tokens</span>
           </div>
           <div class="input-row">
-            <label for="ctxTok">Avg context held in KV</label>
-            <input type="number" id="ctxTok" value="2500" min="1" step="100">
+            <label>Context held in KV</label>
+            <span class="readout" id="ctxDerived">2250 avg / 2500 peak</span>
             <span class="unit">tokens</span>
           </div>
           <div class="range-row">
@@ -406,9 +407,10 @@
             <input type="range" id="batch" min="1" max="256" step="1" value="32">
             <output id="batchOut">32</output>
           </div>
-          <div class="tradeoff">Avg context is prompt + generated so far; it sizes the KV cache per request. Batch size
-            is how many requests decode together. Continuous batching reads the weights once per step for the whole
-            batch, so throughput climbs with batch until compute or the KV budget caps it.</div>
+          <div class="tradeoff">KV cache per request is sized from prompt + output: it holds the full prompt plus the tokens
+            generated so far, so it averages prompt + output/2 during decode and peaks at prompt + output. Latency uses the
+            average, capacity uses the peak. Batch size is how many requests decode together. Continuous batching reads the
+            weights once per step for the whole batch, so throughput climbs with batch until compute or the KV budget caps it.</div>
         </fieldset>
 
         <h2>Capacity target</h2>
@@ -626,7 +628,7 @@
     const state = {
       model: "llama-33-70b", prec: "fp8", kvFp8: false,
       accel: "h100", tp: 2, mfu: 0.4,
-      promptTok: 2000, outTok: 500, ctxTok: 2500, batch: 32,
+      promptTok: 2000, outTok: 500, batch: 32,
       peakQps: 20, sloTpot: 40, sloTtft: 1000, targetUtil: 70, costHr: 0,
     };
 
@@ -666,11 +668,13 @@
       const wBytesStep = weightBytes(m, prec);                   // read per decode step (active params for MoE)
       const wBytesFull = totalWeightBytes(m, prec);              // resident footprint
       const kvPerTok = kvBytesPerToken(m, s.kvFp8);
-      const kvPerReq = kvPerTok * s.ctxTok;
+      const ctxAvg = s.promptTok + s.outTok / 2;     // mean KV occupancy across the decode
+      const ctxPeak = s.promptTok + s.outTok;        // KV occupancy at the last decode step
+      const kvPerReq = kvPerTok * ctxPeak;           // capacity is sized for the peak
 
       // ---- decode step time at a given batch (memory vs compute, larger wins) ----
       function stepTime(batch) {
-        const memBytes = wBytesStep + batch * kvPerTok * s.ctxTok;   // weights + active KV read this step
+        const memBytes = wBytesStep + batch * kvPerTok * ctxAvg;   // weights + average active KV read this step
         const tMem = memBytes / aggBw;
         const tComp = (2 * (m.moe ? m.active : m.params) * batch) / peakFlops; // 2*N*batch FLOPs, no MFU haircut on the floor
         return { t: Math.max(tMem, tComp), tMem, tComp, bound: tComp > tMem ? "compute" : "memory" };
@@ -733,7 +737,7 @@
 
       return {
         m, a, prec, tp, aggBw, peakFlops, hbmTotal,
-        wBytesStep, wBytesFull, kvPerTok, kvPerReq, kvAtBatch, kvLayers,
+        wBytesStep, wBytesFull, kvPerTok, kvPerReq, kvAtBatch, kvLayers, ctxAvg, ctxPeak,
         tpotMs, sysTps, perStreamTps, decodeBound: st.bound, tMem: st.tMem, tComp: st.tComp,
         ttftMs, ttftBound, e2eMs,
         ridge, aiDecode, batchToSaturate,
@@ -832,9 +836,10 @@
       } else {
         hbmOver.style.display = "none";
       }
+      $("#ctxDerived").textContent = `${fmtInt(r.ctxAvg)} avg / ${fmtInt(r.ctxPeak)} peak`;
       $("#concStats").innerHTML =
         statHtml("KV per token", fmtMB(r.kvPerTok * 1000) + "<small>/1k</small>", `${(r.kvPerTok).toFixed(0)} B/token`) +
-        statHtml("KV per request", fmtGB(r.kvPerReq), `at ${fmtInt(state.ctxTok)} ctx`) +
+        statHtml("KV per request", fmtGB(r.kvPerReq), `at ${fmtInt(r.ctxPeak)} peak ctx`) +
         statHtml("Max concurrent", r.fits ? fmtInt(r.maxConc) : "does not fit", r.fits ? `on ${r.tp}x ${r.a.type.toUpperCase()}` : `weights > ${(r.hbmTotal * HBM_USABLE / GB).toFixed(0)} GB usable`, r.fits ? (r.maxConc < state.batch ? "warn" : "accent") : "bad") +
         statHtml("Weights resident", fmtGB(r.wBytesFull), `${(r.hbmTotal / GB).toFixed(0)} GB HBM total`);
 
@@ -856,7 +861,7 @@
           `giving ${fmtTps(r.perReplicaTps)} output tok/s each, so to serve peak at ${state.targetUtil}% utilization you need <b>${fmtInt(r.replicas)}</b> replica${r.replicas === 1 ? "" : "s"} of ${r.tp}x ${r.a.name.split("(")[0].trim()}` +
           `${r.costPer1MOut != null ? `. At $${state.costHr}/device/hr that is about $${r.costPer1MOut.toFixed(2)} per million output tokens at your current batch.` : "."}` +
           ` This count charges decode tokens only; prefill of the ${fmtInt(state.promptTok)}-token prompts adds about ${(r.prefillShare * 100).toFixed(0)}% more accelerator time per replica, so treat it as a floor and use chunked or disaggregated prefill if TTFT drifts.` +
-          `${r.maxConc <= r.bSlo ? ` Concurrency is KV-bound here, so the lever is HBM, not the SLO: quantize the KV cache to FP8, shrink the average context, or add tensor-parallel devices.` : ""}`;
+          `${r.maxConc <= r.bSlo ? ` Concurrency is KV-bound here, so the lever is HBM, not the SLO: quantize the KV cache to FP8, shrink the prompt or output, or add tensor-parallel devices.` : ""}`;
       } else {
         $("#capStats").innerHTML = statHtml("Batch at SLO", "0", "SLO not reachable", "bad");
         $("#capNote").innerHTML = `Even batch 1 cannot meet a ${state.sloTpot} ms/token TPOT on this hardware` +
@@ -919,7 +924,7 @@
           render();
         });
       });
-      const nums = [["#promptTok", "promptTok"], ["#outTok", "outTok"], ["#ctxTok", "ctxTok"], ["#peakQps", "peakQps"], ["#sloTpot", "sloTpot"], ["#sloTtft", "sloTtft"], ["#targetUtil", "targetUtil"], ["#costHr", "costHr"]];
+      const nums = [["#promptTok", "promptTok"], ["#outTok", "outTok"], ["#peakQps", "peakQps"], ["#sloTpot", "sloTpot"], ["#sloTtft", "sloTtft"], ["#targetUtil", "targetUtil"], ["#costHr", "costHr"]];
       nums.forEach(([sel, key]) => $(sel).addEventListener("input", e => {
         const v = parseFloat(e.target.value);
         state[key] = isNaN(v) ? 0 : v;
@@ -946,18 +951,18 @@
       assert("determinism: same inputs give same outputs", r1 === r2);
 
       // 70B FP16 single-stream memory-bound floor: 140GB / 3.35 TB/s ~= 42ms ~= 24 tok/s on one H100
-      const h100 = compute({ ...state, model: "llama-33-70b", accel: "h100", prec: "bf16", tp: 1, batch: 1, ctxTok: 1 });
+      const h100 = compute({ ...state, model: "llama-33-70b", accel: "h100", prec: "bf16", tp: 1, batch: 1, promptTok: 1, outTok: 1 });
       assert("70B BF16 batch-1 TPOT ~42ms on 1x H100", near(h100.tpotMs, 42, 4));
       assert("70B BF16 batch-1 ~24 tok/s on 1x H100", near(h100.perStreamTps, 24, 3));
       assert("70B batch-1 decode is memory-bound", h100.decodeBound === "memory");
 
       // H200 has more bandwidth: 140GB / 4.8 TB/s ~= 29ms ~= 34 tok/s
-      const h200 = compute({ ...state, model: "llama-33-70b", accel: "h200", prec: "bf16", tp: 1, batch: 1, ctxTok: 1 });
+      const h200 = compute({ ...state, model: "llama-33-70b", accel: "h200", prec: "bf16", tp: 1, batch: 1, promptTok: 1, outTok: 1 });
       assert("70B BF16 batch-1 ~34 tok/s on 1x H200", near(h200.perStreamTps, 34, 3));
       assert("H200 faster than H100 at batch 1", h200.perStreamTps > h100.perStreamTps);
 
       // Blackwell B200 has 8 TB/s HBM (vs H200's 4.8), so memory-bound decode is faster at batch 1
-      const b200 = compute({ ...state, model: "llama-33-70b", accel: "b200", prec: "bf16", tp: 1, batch: 1, ctxTok: 1 });
+      const b200 = compute({ ...state, model: "llama-33-70b", accel: "b200", prec: "bf16", tp: 1, batch: 1, promptTok: 1, outTok: 1 });
       assert("B200 decodes 70B faster than H200 at batch 1", b200.perStreamTps > h200.perStreamTps);
       // TPU v7 Ironwood has native FP8; older TPUs (v6e) correctly fall back to BF16
       assert("Ironwood TPU exposes native FP8, v6e does not", ACCEL["tpu-v7"].fp8TF > 0 && ACCEL["tpu-v6e"].fp8TF === 0);
@@ -982,12 +987,12 @@
       assert("system throughput rises with batch", b32 > b1);
 
       // tensor parallel adds bandwidth: 70B fits and runs faster on 2 GPUs
-      const tp1 = compute({ ...state, model: "llama-33-70b", accel: "h100", tp: 1, batch: 1, ctxTok: 1 });
-      const tp2 = compute({ ...state, model: "llama-33-70b", accel: "h100", tp: 2, batch: 1, ctxTok: 1 });
+      const tp1 = compute({ ...state, model: "llama-33-70b", accel: "h100", tp: 1, batch: 1, promptTok: 1, outTok: 1 });
+      const tp2 = compute({ ...state, model: "llama-33-70b", accel: "h100", tp: 2, batch: 1, promptTok: 1, outTok: 1 });
       assert("2x H100 decodes faster than 1x at batch 1", tp2.perStreamTps > tp1.perStreamTps);
 
       // MoE reads only active params per token, so it decodes faster than a dense model of equal total size
-      const moe = compute({ ...state, model: "nemotron-3-super-120b", accel: "h100", tp: 2, batch: 1, ctxTok: 1 });
+      const moe = compute({ ...state, model: "nemotron-3-super-120b", accel: "h100", tp: 2, batch: 1, promptTok: 1, outTok: 1 });
       assert("MoE active-param read makes decode fast", moe.perStreamTps > 0 && moe.wBytesStep < totalWeightBytes(MODELS["nemotron-3-super-120b"], "bf16"));
 
       // hybrid Mamba models size the KV cache by attention layers (Super: 8 of 88), not total layers
