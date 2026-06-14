@@ -66,6 +66,7 @@
     c.docCorpus = ds.indexOf('doc_corpus') >= 0;
     c.website = ds.indexOf('website') >= 0;
     c.bigquerySrc = ds.indexOf('bigquery') >= 0;
+    c.alloydbOltpSrc = ds.indexOf('alloydb_oltp') >= 0;
     c.streamSrc = ds.indexOf('stream') >= 0;
     c.store = a.state.store;
     c.stateAlloy = c.store.indexOf('alloydb') >= 0;
@@ -101,7 +102,7 @@
       c.redisManaged = !!a.caching.responseCacheOn;
       c.armor = false; c.selfHost = false; c.secretManagerOn = false; c.claude = false;
       c.vectorVertex = false; c.vectorAlloy = false; c.selfbuilt = false; c.alloyAny = false;
-      c.bigquerySrc = false; c.streamSrc = false;
+      c.bigquerySrc = false; c.streamSrc = false; c.alloydbOltpSrc = false;
     }
     c.docai = c.selfbuilt && (c.docCorpus || c.website);
     c.dlpDeid = !!(a.retrieval && a.retrieval.dlpDeidIngest);
@@ -166,6 +167,16 @@
     'adk-deploy': {
       title: 'Push the agent to Agent Runtime with the ADK CLI',
       detail: 'Agent Runtime packages the agent code at build time, which Terraform cannot do, so no reasoning-engine resource is emitted here. After apply, push the agent object with:\n\n```\nadk deploy agent_engine --agent agent/\n```',
+      inline: ''
+    },
+    'note-managed-sessions': {
+      title: 'Sessions and memory are managed by Agent Runtime',
+      detail: 'This design provisions no bring-your-own state database. Agent Runtime persists conversation and run state in managed Sessions (via the ADK VertexAiSessionService) and long-term memory in Memory Bank, so there is no Redis or AlloyDB to run. Automation checkpoints land as durable session events. Keep durable audit and long-term event history in BigQuery.',
+      inline: ''
+    },
+    'note-oltp-mcp': {
+      title: 'Wire AlloyDB through the read-only MCP server',
+      detail: 'The AlloyDB operational source is the company\'s existing database, queried READ-ONLY - this config does not create that primary. Deploy the AlloyDB Remote MCP server (Cloud Run or GKE) against a dedicated read pool, configure OAuth + IAM with a read-only role and an allow-list of parameterized functions (no raw text-to-SQL, no writes), then bind its service account to the Retrieval agent\'s tools. Point it at the read pool, not the primary, so agent reads never contend with operational traffic; reads reflect ~25ms replication lag.',
       inline: ''
     },
     'note-dlp-deid': {
@@ -271,6 +282,7 @@
     if (!c.answerOnly) add('build-image', 'after-apply');
     if (c.answerOnly) add('answer-api', 'after-apply');
     if (c.runtime === 'agentengine') add('adk-deploy', 'after-apply');
+    if (c.runtime === 'agentengine' && c.store === 'managed') add('note-managed-sessions', 'after-apply', 'note');
     if (c.vais && c.docCorpus) add('import-docs', 'after-apply');
     if (c.vectorAlloy) add('scann-extension', 'after-apply');
     if (c.vectorVertex) add('vector-backfill', 'after-apply');
@@ -281,6 +293,7 @@
     if (c.gateway) add('iap-brand', 'after-apply');
     /* notes */
     add('note-model-map', 'after-apply', 'note');
+    if (c.alloydbOltpSrc) add('note-oltp-mcp', 'after-apply', 'note');
     if (c.dlpDeid) add('note-dlp-deid', 'after-apply', 'note');
     if (c.publicGateway) add('note-apigee', 'after-apply', 'note');
     if (c.selfbuilt && (c.ingestionSep || c.website)) add('note-dataflow', 'after-apply', 'note');
@@ -298,7 +311,7 @@
     if (c.runtime === 'agentengine' || c.hitl) apis.push('run.googleapis.com');
     if (c.publicGateway) { apis.push('apigateway.googleapis.com'); apis.push('servicemanagement.googleapis.com'); apis.push('servicecontrol.googleapis.com'); }
     if (c.armor) apis.push('modelarmor.googleapis.com');
-    if (c.alloyAny) apis.push('alloydb.googleapis.com');
+    if (c.alloyAny || c.alloydbOltpSrc) apis.push('alloydb.googleapis.com');
     if (c.stateSpanner) apis.push('spanner.googleapis.com');
     if (c.stateCloudSql) apis.push('sqladmin.googleapis.com');
     if (c.redisManaged) { apis.push('redis.googleapis.com'); apis.push('networkconnectivity.googleapis.com'); }

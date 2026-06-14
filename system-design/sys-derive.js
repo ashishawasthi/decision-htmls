@@ -26,7 +26,7 @@
     const auto = purpose === 'automation';
     const ext = aud !== 'internal';
     const hasWeb = inputs.dataSources.includes('web');
-    const tools = auto || inputs.dataSources.some(s => ['bigquery', 'web', 'kg', 'stream'].includes(s));
+    const tools = auto || inputs.dataSources.some(s => ['bigquery', 'alloydb_oltp', 'web', 'kg', 'stream'].includes(s));
     const highVol = (inputs.actors || 0) * (inputs.actionsPerDay || 0) >= 1e5;
     const G = [];
     const set = (key, label, on, why, cat) => { G.push({ key, label, on, why, cat }); };
@@ -141,10 +141,17 @@
     resolve('dlpDeidIngest', corpusDocs && ragOn && sens.lvl >= 2,
       !corpusDocs ? 'no document corpus to de-identify' : !ragOn ? 'nothing is indexed' : sens.lvl >= 2 ? 'regulated tier: de-identify before anything is embedded or indexed' : 'low-sensitivity corpus skips the de-identification pass');
 
-    /* ---- state ---- */
+    /* ---- state ----
+       Managed Agent Runtime ships its own persistent Sessions + Memory Bank, so the
+       managed path keeps no bring-your-own state store. Self-managed (GKE) must BYO:
+       Redis on GKE persists (AOF/RDB) and recovers, so it stands as the durable tier
+       on its own; active-active multi-region still needs Spanner fronted by that Redis. */
+    const onManaged = d('agentRuntime') === 'agentengine' && !answerOnly;
     resolve('stateStore',
-      auto ? (d('multiRegion') ? 'spanner' : 'alloydb') : (d('multiRegion') ? 'redis_spanner' : 'redis_alloydb'),
-      d('multiRegion') ? 'active-active multi-region writes need Spanner' : (auto ? 'AlloyDB is the regional transactional default' : 'Redis hot tier + AlloyDB durable is the regional assistant default'));
+      onManaged ? 'managed' : (d('multiRegion') ? 'redis_spanner' : 'redis'),
+      onManaged ? 'Agent Runtime manages sessions + long-term memory (Memory Bank); no separate state database'
+        : (d('multiRegion') ? 'active-active multi-region writes need Spanner, fronted by a Redis hot tier on GKE'
+          : 'Redis on GKE persists (AOF/RDB) and recovers; no separate durable database'));
     resolve('contextCache', (i.tokensIn || 0) >= 2048, 'pays off above the ~2k-token minimum cacheable prefix');
     resolve('reuseInputPct', 50, 'typical shared system-prompt + retrieved fraction');
 
@@ -247,6 +254,11 @@
       : d('stateStore') === 'redis_spanner' ? { label: 'Spanner<br/>active-active durable', conn: 'PSC' }
         : null;
     const stateManaged = !redisSelf;
+    /* A BYO state store is drawn whenever the store is not the managed-sessions value
+       (so a pinned BYO store on the managed path still draws); the managed path instead
+       shows Agent Runtime Sessions + Memory Bank. */
+    const stateDrawn = d('stateStore') !== 'managed' && !answerOnly;
+    const managedSessions = d('stateStore') === 'managed' && !answerOnly;
 
     /* CMEK and Data Access audit cover the managed stores only. v2 delta vs the
        original: a self-built design's vector store is now itself a managed service
@@ -254,7 +266,7 @@
     const kmsTargets = [];
     if (storeDrawn && selfbuilt) kmsTargets.push('Store');
     if (storeDrawn) kmsTargets.push('GCS');
-    if (stateManaged && !answerOnly) kmsTargets.push('State');
+    if (stateDrawn && stateManaged) kmsTargets.push('State');
     if (durTier && !answerOnly) kmsTargets.push('StateDur');
     if (responseCacheOn && !gke) kmsTargets.push('Cache');
 
@@ -288,7 +300,7 @@
         dlpDeidIngest: !!d('dlpDeidIngest') && storeDrawn && corpusDocs,
       },
       state: {
-        store: d('stateStore'), drawn: !answerOnly, redisTier, redisSelf, redisOnGke, stateInVpc: redisSelf,
+        store: d('stateStore'), drawn: stateDrawn, managedSessions, redisTier, redisSelf, redisOnGke, stateInVpc: redisSelf,
         stateManaged, stateConn: redisSelf ? null : 'PSC', stateLabel, durTier,
       },
       caching: {
@@ -330,6 +342,9 @@
     else if ((sens.aud !== 'internal' || sens.lvl >= 2) && d('semanticCache')) add('privacy', 'Namespace the semantic cache per tenant or team, never globally - a shared semantic cache can serve one team an answer generated from another team\'s context, a data leak by construction. Per-team namespaces keep most of the hit rate, because repeat questions cluster within a team.', '', 'semanticCache');
     if (sens.lvl >= 2 && corpusDocs && ragOn && !d('dlpDeidIngest')) add('privacy', 'De-identification at ingest is pinned off at a regulated or strict-PII tier - raw PII flows into the embeddings and the index, and every retrieved chunk can replay it. The index is as sensitive as the rawest document in it.', '', 'dlpDeidIngest');
     if (i.dataSources.includes('bigquery') && !answerOnly) add('cost', 'The BigQuery cost bomb is the scan, not the model: validate generated SQL against the catalog, dry-run it, and enforce a partition filter plus maximum-bytes-billed on every query - one ungoverned full-table scan can cost more than the model does all day. Row-level security lives in BigQuery with read-only per-user credentials (generated DML/DDL is rejected, custom quotas back-stop the bytes cap), and materialized hot aggregates keep repeat executive questions instant.', 'cost guardrails', 'costKillSwitch');
+    if (i.dataSources.includes('bigquery') && !answerOnly) add('data', 'Text-to-SQL accuracy lives in the semantic layer (schema, column descriptions, canonical metric definitions) - the number-one accuracy predictor here, ahead of model choice. Supply it to the model as a cached prompt prefix (the model context cache, not a queried store): the big schema context bills at the ~10% cache-read rate, so it is nearly free. Agree the metric dictionary with finance before launch, or the copilot industrializes the ambiguity.', 'accuracy up', '');
+    if (i.dataSources.includes('alloydb_oltp') && !answerOnly) add('data', 'AlloyDB operational reads must stay read-only: query the database through the AlloyDB Remote MCP server (OAuth + IAM, allowlisted parameterized functions) or a read pool with a read-only role - never raw agent text-to-SQL against the transactional primary, which risks lock contention and writes. Scope a dedicated read pool so agent reads never contend with operational traffic.', '', 'dataSources');
+    if (i.dataSources.includes('alloydb_oltp') && !answerOnly) add('freshness', 'AlloyDB operational reads use a read pool at ~25ms replication lag - fine for most lookups, and point reads are fast enough for any SLO; but for ultra-volatile fields (live inventory, account balances) query the primary or accept near-real-time staleness.', '', 'dataSources');
     if (auto && d('reactMaxIter') > cat.K.perf.maxAgentSteps) add('scaling', `A step cap of ${d('reactMaxIter')} is fine as the loop GUARD (~1.5x expected), but expected task length must stay 5-8 verifiable steps with deterministic checks between them - at ${Math.round(cat.K.perf.stepSuccess * 100)}% per step, ${d('reactMaxIter')} routine steps compounds to ~${Math.round(Math.pow(cat.K.perf.stepSuccess, d('reactMaxIter')) * 100)}% end-to-end; split agents by verification boundary instead. Hitting the guard escalates the case with its trace attached, and a rising guard-hit rate means the process or tools changed underneath the agent.`, '', 'reactMaxIter');
     if (selfbuilt && chunks > 1e8 && !d('metadataPrefilter')) add('scaling', 'Pure ANN recall degrades past ~100M chunks - add a metadata pre-filter + shard (the metadata already supports it), and cascade the reranker: a small reranker over ~50 candidates feeding a stronger one over ~10, before it becomes the bottleneck.', '', 'metadataPrefilter');
     if (d('multiRegion') && pinned('stateStore') && !String(d('stateStore')).includes('spanner')) add('conflict', 'Multi-region active-active is on but the state store is pinned to a single-primary store - AlloyDB / Cloud SQL cannot serve active-active writes; unpin to derive Spanner.', '', 'stateStore');
@@ -349,7 +364,10 @@
       else if (!d('autocomplete')) add('cost', 'Live web grounding is billed per search - autocomplete + response cache cut repeat grounded calls on the popular head.', 'grounding down', 'autocomplete');
     }
     if (!d('smartRouting') && !answerOnly) add('cost', 'Route lookups to the fast model; reserve the reasoning model for hard queries.', '', 'smartRouting');
-    if (auto) add('data', 'Keep durable audit and long-term event history in BigQuery, not the transactional state store - the state DB holds resumable run state; BigQuery holds the append-only history.', '', 'stateStore');
+    if (auto) add('data', 'Keep durable audit and long-term event history in BigQuery - run state lives in Agent Runtime Sessions (managed) or a self-managed store, but the append-only history belongs in BigQuery either way.', '', 'stateStore');
+    if (auto && gke && d('stateStore') === 'redis') add('data', 'Self-managed automation checkpoints to Redis on GKE - enable AOF/RDB persistence and a replica so a crashed run resumes; Redis persistence has a small write-loss window, so pin AlloyDB or Spanner if you need strict transactional checkpoints.', '', 'stateStore');
+    if (onManaged && d('multiRegion')) add('conflict', 'Agent Runtime managed Sessions are regional - active-active multi-region needs a self-managed agent on GKE with Spanner. Switch the operating model to self-managed, or drop multi-region.', '', 'multiRegion');
+    if (gke && d('stateStore') === 'managed') add('conflict', 'A self-managed agent has no Agent Runtime Sessions to fall back on - pin a bring-your-own state store (Redis on GKE, AlloyDB, or Spanner), or switch to the managed Agent Runtime.', '', 'stateStore');
     if (subsecond && !answerOnly && i.dataSources.some(s => cat.LATENCY_HEAVY.includes(s))) {
       const slow = i.dataSources.filter(s => cat.LATENCY_HEAVY.includes(s)).map(s => cat.SRC_LABEL[s] || s);
       add('conflict', `Slow live sources on a sub-second path: ${slow.join(', ')} each add a query-time call that will not fit a 1s p95 - remove them from the hot path or raise the SLO.`, 'latency down', 'latencyPreset');

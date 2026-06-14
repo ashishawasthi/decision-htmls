@@ -156,17 +156,16 @@
     }
     if (a.retrieval.liveSel.length && !answerOnly) {
       L.push(node('Live', `Live data<br/>${a.retrieval.liveSel.map(s => cat.SRC_LABEL[s]).join(' · ')}`, 'data'));
-      /* Generated SQL never executes raw: catalog check, dry-run, partition
-         filter + maximum-bytes-billed cap gate the text-to-SQL leg. */
-      L.push(a.retrieval.liveSel.includes('bigquery')
-        ? `${a.agent.dataAgent} -- SQL gates · dry-run + bytes cap --> Live`
-        : `${a.agent.dataAgent} --> Live`);
-      /* Text-to-SQL accuracy lives in the semantic layer (schema + descriptions
-         + canonical metric definitions), supplied as a cached prompt prefix. */
-      if (a.retrieval.liveSel.includes('bigquery')) {
-        L.push(node('SemLayer', 'Semantic layer<br/>schema + metric defs', 'data'));
-        L.push(`SemLayer -. cached prefix .-> ${a.agent.dataAgent}`);
-      }
+      /* Each access pattern gets its own labelled edge to the Live node: BigQuery
+         runs governed text-to-SQL (catalog check, dry-run, partition filter +
+         maximum-bytes-billed cap); AlloyDB is a read-only MCP tool call
+         (allowlisted parameterized functions), never raw SQL on the operational
+         primary; everything else (KG, streaming) is a plain live read. */
+      const liveEdges = [];
+      if (a.retrieval.liveSel.includes('bigquery')) liveEdges.push('-- SQL gates · dry-run + bytes cap -->');
+      if (a.retrieval.liveSel.includes('alloydb_oltp')) liveEdges.push('-- MCP tool-call · read-only -->');
+      if (!liveEdges.length) liveEdges.push('-->');
+      liveEdges.forEach(e => L.push(`${a.agent.dataAgent} ${e} Live`));
     }
     if (a.retrieval.hasWebGrounding && !answerOnly) {
       L.push(node('WebG', 'Web grounding<br/>Google Search', 'data'));
@@ -179,8 +178,10 @@
       L.push('AE -. Redis AUTH .-> SecretMgr');
     }
 
-    /* ---- state: hot tier (in-VPC Redis or managed over PSC) + durable tier.
-       The no-agent path keeps no run state (Agent Search manages sessions). ---- */
+    /* ---- state: managed Agent Runtime keeps no BYO store (Sessions + Memory Bank
+       are part of the runtime); the self-managed path brings its own hot tier (in-VPC
+       Redis on GKE or managed over PSC) plus an optional durable tier. The no-agent
+       path keeps no run state (Agent Search manages sessions). ---- */
     if (a.state.drawn) {
       if (!a.state.stateInVpc) L.push(node('State', a.state.stateLabel, 'data', 'cyl'));
       L.push(`AE -- state${a.state.stateConn ? ` · ${a.state.stateConn}` : ''} --> State`);
@@ -188,6 +189,9 @@
         L.push(node('StateDur', a.state.durTier.label, 'data', 'cyl'));
         L.push(`State -. durable · ${a.state.durTier.conn} .-> StateDur`);
       }
+    } else if (a.state.managedSessions) {
+      L.push(node('Sessions', 'Agent Runtime sessions<br/>+ Memory Bank', 'data', 'cyl'));
+      L.push('AE -- session + memory state --> Sessions');
     }
 
     /* ---- CMEK and Data Access audit, over the managed stores only ---- */

@@ -57,7 +57,7 @@
     bqScanMB: 50,
     /* Wire bytes per token, for egress, DLP inspection, and log-volume estimates. */
     net: { bytesPerTok: 4 },
-    lat: { retrieval: 70, rerank: 80, bigqueryScan: 1200, webGround: 600, qualityGate: 80, cacheExact: 5, cacheSem: 30,
+    lat: { retrieval: 70, rerank: 80, bigqueryScan: 1200, alloydbOltp: 450, webGround: 600, qualityGate: 80, cacheExact: 5, cacheSem: 30,
       /* Multi-agent line items: the Orchestrator plans once (~planTok tokens, later
          hand-offs are function calls); the Validator reads the COMPLETE draft and
          writes a ~verdictTok-token critique (draft prefill rides inside its TTFT).
@@ -109,9 +109,9 @@
 
   /* Data sources: indexed content (crawled/parsed/embedded offline), live-queried
      sources, and live web grounding via the model web-search tool. */
-  const SRC_LABEL = { bigquery: 'BigQuery', stream: 'Stream', kg: 'KG', web: 'Web', website: 'Site', doc_corpus: 'Corpus' };
+  const SRC_LABEL = { bigquery: 'BigQuery', alloydb_oltp: 'AlloyDB', stream: 'Stream', kg: 'KG', web: 'Web', website: 'Site', doc_corpus: 'Corpus' };
   const INDEXED_SRC = ['doc_corpus', 'website'];
-  const LIVE_SRC = ['bigquery', 'kg', 'stream'];
+  const LIVE_SRC = ['bigquery', 'alloydb_oltp', 'kg', 'stream'];
   const INDEXED_LABEL = { doc_corpus: 'Docs', website: 'Site' };
   /* Sources with a slow query-time call: BigQuery scan, live web search. */
   const LATENCY_HEAVY = ['bigquery', 'web'];
@@ -130,6 +130,7 @@
   const LATENCY_BUDGET_START = { interactive: 2000, agentic: 10000 };
 
   const STATE_STORE_LABEL = {
+    managed: 'Managed (Agent Runtime sessions)',
     redis: 'State store (Memorystore)',
     redis_spanner: 'State store (Redis + Spanner)',
     redis_alloydb: 'State store (Redis + AlloyDB)',
@@ -184,9 +185,9 @@
     Appr: 'Confidence-gated human review (maker-checker or dual-control): irreversible actions (payments, customer communications, anything legal) and items whose business-critical fields miss their confidence thresholds queue here WITH the agent\'s full reasoning and trace attached; confident, reversible work flows straight through. Async: a queued run resumes on approval. Review staffing is the real cost - flag rate x volume x minutes per review - so the confidence threshold is a staffing-and-risk decision the business signs off, tuned per field, not an ML knob.',
     Fb: 'Captures thumbs and reasons from users and feeds them into the eval set, so quality does not silently decay.',
     Trig: 'The event that starts a run: a ticket, a webhook, or a scheduled job.',
-    State: 'Transactional run and session state: automation checkpoints after EACH step, so a crashed case resumes instead of restarting. Default is AlloyDB: PostgreSQL-compatible, HA, with pgvector/ScaNN for agent memory, and cheaper than Spanner for a single region. Use Spanner for active-active multi-region writes. Per-case session memory is fine; cross-case long-term memory goes through human review before it becomes standing behavior, because a poisoned memory contaminates every future case. Durable audit and long-term event history belong in BigQuery.',
-    StateDur: 'Durable tier paired with the hot Redis cache: AlloyDB (regional HA) by default, or Spanner (active-active multi-region writes) when the design needs them. Both are managed services reached over a Private Service Connect endpoint, so they live outside the dedicated VPC.',
-    SemLayer: 'The semantic layer for text-to-SQL: schema, column descriptions, and the canonical metric definitions, supplied to the model as a cached prefix (~90% discount, so the big schema context is nearly free). Schema and column descriptions are the number-one accuracy predictor in this design, ahead of model choice - accuracy goes up when descriptions improve, with no model change. The metric dictionary is a readiness gate: agree the definitions with finance before launch, or the copilot industrializes the ambiguity.',
+    State: 'Run and session state for a self-managed (GKE) agent. Default is Redis on GKE: it persists with AOF/RDB snapshots and recovers from a replica, so it stands as the durable tier on its own - no separate transactional database. Active-active multi-region adds a Spanner durable tier fronted by that Redis. Per-case session memory is fine; cross-case long-term memory goes through human review before it becomes standing behavior, because a poisoned memory contaminates every future case. Durable audit and long-term event history belong in BigQuery. On the managed Agent Runtime path there is no bring-your-own state store - see Sessions.',
+    Sessions: 'On the managed Agent Runtime path, conversation and run state are persisted by Agent Engine Sessions and long-term memory by Memory Bank - both fully managed, with no database to provision and no Redis or AlloyDB to run. Automation checkpoints land as durable session events. Durable audit and long-term event history still belong in BigQuery.',
+    StateDur: 'Durable tier paired with the hot Redis cache: Spanner (active-active multi-region writes) by default, or AlloyDB when a regional relational tier is pinned. Both are managed services reached over a Private Service Connect endpoint, so they live outside the dedicated VPC.',
     CloudRouter: 'Terminates the on-prem Cloud Interconnect inside the dedicated VPC (Cloud Router + VLAN attachment). The sole ingress in a hybrid deployment.',
     OnpremUsers: 'The on-premise network: users and callers reach the system over the private interconnect, not the public internet.',
   };
@@ -200,6 +201,7 @@
     website: 'Company website pages (owned) crawled and indexed into Agent Search (website data store) or a self-built crawler, then served from the index like documents.',
     bigquery_assistant: 'Analytical / structured grounding via text-to-SQL. Conditional fit: keep it off the sub-second hot path and pair it with an indexed source for RAG.',
     bigquery_automation: 'Primary grounding and data-processing source. Async minute-scale runs absorb its query latency, so large scans and joins are fine.',
+    alloydb_oltp: 'Operational / transactional grounding from an AlloyDB database holding the application\'s own data - current records and historical (the columnar engine serves moderate analytics in place, so a separate warehouse is not required). Read-only ONLY: the agent queries through the AlloyDB Remote MCP server (OAuth + IAM, allowlisted parameterized functions) or a read pool with a read-only role - never raw text-to-SQL against the primary. Point reads are fast (fits every SLO), but the read pool runs at ~25ms replication lag, so query the primary for ultra-volatile fields.',
   };
 
   /* Google Cloud component explainers (separate pages under components/, opened in
@@ -211,6 +213,7 @@
     'Spanner': 'components/spanner.html',
     'AlloyDB': 'components/alloydb.html',
     'AlloyDB (state)': 'components/alloydb.html',
+    'AlloyDB read pool': 'components/alloydb.html',
     'Memorystore Cluster': 'components/memorystore.html',
     'Apigee': 'components/apigee.html',
     'Model Armor': 'components/model-armor.html',
@@ -241,7 +244,7 @@
     'Claude Opus 4.8': 'components/model-claude-opus-48.html',
     'Llama 4 (self-host)': 'components/model-llama4-selfhost.html',
   };
-  const DS_COMPONENT = { bigquery: 'BigQuery', doc_corpus: 'Document AI', stream: 'Pub/Sub', kg: 'Knowledge graph', web: 'Web/OSINT', website: 'Agent Search' };
+  const DS_COMPONENT = { bigquery: 'BigQuery', alloydb_oltp: 'AlloyDB', doc_corpus: 'Document AI', stream: 'Pub/Sub', kg: 'Knowledge graph', web: 'Web/OSINT', website: 'Agent Search' };
   const docFor = name => COMPONENT_DOC[name] || MODEL_DOC[name] || null;
 
   /* Price book: billable list rates per component, verified against the official
@@ -359,6 +362,11 @@
       rates: PB.alloy, ref: 'https://cloud.google.com/alloydb/pricing',
       note: 'primary + read pool',
       why: `A ${PB.alloy.baseVcpu} vCPU / ${PB.alloy.baseGiB} GiB regional primary at $${PB.alloy.vcpuHr}/vCPU-hr + $${PB.alloy.gibHr}/GiB-hr, plus one ${PB.alloy.poolVcpu} vCPU / ${PB.alloy.poolGiB} GiB read-pool node per ~100 peak QPS and storage at $${PB.alloy.storagePerGB}/GB-mo.`,
+    },
+    'AlloyDB read pool': {
+      rates: PB.alloy, ref: 'https://cloud.google.com/alloydb/pricing',
+      note: 'read pool (operational primary already runs)',
+      why: `A dedicated read pool isolates the agent's read-only operational queries from the live transactional primary: one ${PB.alloy.poolVcpu} vCPU / ${PB.alloy.poolGiB} GiB read-pool node per ~100 peak live QPS at $${PB.alloy.vcpuHr}/vCPU-hr + $${PB.alloy.gibHr}/GiB-hr. The transactional primary is the company's existing operational database, not provisioned here; the agent reads it read-only through the AlloyDB Remote MCP server.`,
     },
     'BM25': {
       free: true,

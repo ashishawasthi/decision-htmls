@@ -81,10 +81,10 @@
       return fp('assistant', base, {}) === before;
     })());
     assert('revert: multiRegion pin on -> off restores the state store', (() => {
-      const base = clone(P.automation.internal_lowstakes.inputs);
+      const base = clone(P.automation.internal_lowstakes.inputs); base.opsModel = 'self_managed';
       const on = pipe('automation', base, { multiRegion: true });
       const off = pipe('automation', base, {});
-      return on.dv('stateStore') === 'spanner' && off.dv('stateStore') === 'alloydb';
+      return on.dv('stateStore') === 'redis_spanner' && off.dv('stateStore') === 'redis';
     })());
 
     /* ---- 3. presets only set inputs; derived posture matches the original ---- */
@@ -107,7 +107,7 @@
       assert('the bundled answer streams: first token = full minus the answer tail, not the request tokensOut', x.m.latParts.some(p => /Agent Search answer/.test(p.label) && p.stream > 0) && x.m.latencyStartP95 > 0 && Math.abs(x.m.latencyP95 - x.m.latencyStartP95 - NS.catalog.K.lat.vaisAnswerTok * NS.catalog.modelById('gemini-31-flash-lite').msPerOutTok) < 0.5);
       const ss = clone(P.assistant.expert_copilot.inputs); ss.latencyPreset = 'subsecond';
       const nx = pipe('assistant', ss);
-      assert('no-agent path flags selected live sources as ignored, keeps the indexed corpus', nx.arch.retrieval.ignoredSources.includes('bigquery') && !nx.arch.retrieval.ignoredSources.includes('doc_corpus') && !/Live data/.test(nx.dg));
+      assert('no-agent path flags selected live sources as ignored, keeps the indexed corpus', nx.arch.retrieval.ignoredSources.includes('alloydb_oltp') && !nx.arch.retrieval.ignoredSources.includes('doc_corpus') && !/Live data/.test(nx.dg));
       assert('every other tier uses all selected sources (nothing flagged ignored)', pipe('assistant', P.assistant.expert_copilot.inputs).arch.retrieval.ignoredSources.length === 0 && pipe('assistant', Object.assign(clone(P.assistant.expert_copilot.inputs), { latencyPreset: 'interactive' })).arch.retrieval.ignoredSources.length === 0);
       assert('retrieval pinned off flags the indexed source as ignored too', pipe('assistant', P.assistant.expert_copilot.inputs, { retrieval: 'none' }).arch.retrieval.ignoredSources.includes('doc_corpus'));
     }
@@ -125,7 +125,7 @@
       const low = pipe('automation', P.automation.internal_lowstakes.inputs);
       assert('low-stakes automation: light governance, action controls on', low.arch.gov.gateway === false && low.arch.gov.guardrails === false && low.arch.gov.sandbox === false && low.arch.gov.rulesEngine === true && low.arch.gov.toolAuthz === true && low.arch.gov.hitlApproval === 'maker_checker');
       assert('low-stakes automation leaves CMEK + VPC-SC off', low.dv('cmek') === false && low.dv('enforceVpcSc') === false);
-      assert('automation derives AlloyDB state + per-run minutes', low.dv('stateStore') === 'alloydb' && low.arch.effLatency === 'minutes');
+      assert('managed automation uses Agent Runtime sessions + per-run minutes', low.dv('stateStore') === 'managed' && low.arch.effLatency === 'minutes');
       const sp = pipe('automation', P.automation.strictpii.inputs);
       assert('strict-PII automation mandates sandbox + gateway + residency + dual control', sp.arch.gov.sandbox === true && sp.arch.gov.gateway === true && sp.arch.gov.residencyPin === true && sp.arch.gov.hitlApproval === 'dual');
       assert('the sandbox is dispatched by the Orchestrator, not the Generator', /Orchestrator --> Sand/.test(sp.dg) && !/Generator --> Sand/.test(sp.dg));
@@ -134,13 +134,13 @@
     /* ---- 4. domain invariants on the diagram and BoM ---- */
     {
       const x = pipe('assistant', P.assistant.expert_copilot.inputs);
-      assert('fully managed design draws no VPC box, state over PSC', !/subgraph VPC\[/.test(x.dg) && /AE -- state · PSC --> State/.test(x.dg));
+      assert('managed Agent Runtime keeps no BYO state store - managed Sessions instead', !/subgraph VPC\[/.test(x.dg) && !/AE -- state/.test(x.dg) && /AE -- session \+ memory state --> Sessions/.test(x.dg) && !x.comps.includes('AlloyDB (state)'));
       assert('fully managed design has no Secret Manager (diagram or BoM)', !/SecretMgr/.test(x.dg) && !x.comps.includes('Secret Manager'));
       assert('regulated tier draws the perimeter and lists VPC Service Controls', /subgraph PERIM/.test(x.dg) && x.comps.includes('VPC Service Controls'));
-      assert('CMEK edges reach managed stores only', /KMS -\. encrypts \.-> GCS/.test(x.dg) && /KMS -\. encrypts \.-> StateDur/.test(x.dg) && !/KMS -\. encrypts \.-> Cache/.test(x.dg));
+      assert('CMEK edges reach managed stores only', /KMS -\. encrypts \.-> GCS/.test(x.dg) && !/KMS -\. encrypts \.-> Cache/.test(x.dg) && !/KMS -\. encrypts \.-> State\b/.test(x.dg));
       assert('Data Access audit edges mirror the CMEK target set', x.arch.security.auditTargets.join() === x.arch.security.kmsTargets.join() && /-\. data access \.-> Audit/.test(x.dg));
       assert('multi-agent routes every hand-off through the Orchestrator (no point-to-point links, no drawn responses)', /Orchestrator --> Generator/.test(x.dg) && /Orchestrator --> Validator/.test(x.dg) && !/Generator --> Validator/.test(x.dg) && !/revise/.test(x.dg) && !/Generator --> Orchestrator/.test(x.dg) && !/Retriever --> Orchestrator/.test(x.dg));
-      assert('multi-agent data tools hang off the Retrieval agent, never the Generator', /Orchestrator --> Retriever/.test(x.dg) && /Retriever -- SQL gates · dry-run \+ bytes cap --> Live/.test(x.dg) && !/Generator --> Store/.test(x.dg) && !/Generator --> Live/.test(x.dg) && !/Generator --> WebG/.test(x.dg));
+      assert('multi-agent data tools hang off the Retrieval agent, never the Generator', /Orchestrator --> Retriever/.test(x.dg) && /Retriever -- MCP tool-call · read-only --> Live/.test(x.dg) && !/Generator --> Store/.test(x.dg) && !/Generator --> Live/.test(x.dg) && !/Generator --> WebG/.test(x.dg));
       assert('managed Agent Search folds retrieval into the store (de-identify before import at this tier)', !/Retrieval funnel/.test(x.dg) && /Retriever --> Store/.test(x.dg) && /Idx -\. de-identify \.-> DLPDeid/.test(x.dg) && /DLPDeid -\. import \+ parse \+ embed \.-> Store/.test(x.dg));
       assert('no HNSW or Elastic anywhere in diagram or BoM', !/HNSW|Elastic/i.test(x.dg) && !x.comps.some(c => /HNSW|Elastic/i.test(c)));
     }
@@ -148,11 +148,20 @@
       const x = pipe('assistant', P.assistant.self_managed.inputs);
       const vb = vpcBlock(x.dg);
       assert('self-managed: GKE agent box and Redis tier inside the VPC', /subgraph AE/.test(vb) && /State\[\(/.test(vb) && /Cache\[\(/.test(vb));
-      assert('self-managed: managed ScaNN store and durable tier outside the VPC over PSC', !/Store\[\(/.test(vb) && !/StateDur/.test(vb) && /Retr -- PSC --> Store/.test(x.dg) && /State -\. durable · PSC \.-> StateDur/.test(x.dg));
+      assert('self-managed: managed ScaNN store outside the VPC over PSC, Redis-only state (no durable tier)', !/Store\[\(/.test(vb) && /Retr -- PSC --> Store/.test(x.dg) && !/StateDur/.test(x.dg));
       assert('self-managed: the Retrieval agent fronts the in-VPC funnel', /Retriever --> Retr/.test(x.dg) && !/Generator --> Retr/.test(x.dg));
       assert('self-managed: SecretMgr drawn for the Redis AUTH and listed in the BoM', /AE -\. Redis AUTH \.-> SecretMgr/.test(x.dg) && x.comps.includes('Secret Manager'));
       assert('self-managed: CMEK covers the managed store but never in-VPC Redis', /KMS -\. encrypts \.-> Store/.test(x.dg) && !/KMS -\. encrypts \.-> State\b/.test(x.dg) && !/KMS -\. encrypts \.-> Cache/.test(x.dg));
       assert('self-managed: no Memorystore line (Redis rides the GKE line)', !x.comps.includes('Memorystore Cluster') && x.comps.includes('GKE Autopilot (agent)'));
+    }
+    {
+      const smBase = clone(P.automation.internal_lowstakes.inputs); smBase.opsModel = 'self_managed';
+      const sm = pipe('automation', smBase);
+      assert('self-managed automation = Redis-only state with the persistence caveat lint', sm.dv('stateStore') === 'redis' && sm.arch.state.drawn === true && !/StateDur/.test(sm.dg) && sm.lint.some(l => l.src === 'stateStore' && /write-loss window/.test(l.msg)));
+      const mmr = pipe('assistant', P.assistant.expert_copilot.inputs, { multiRegion: true });
+      assert('managed + multi-region warns that Agent Runtime Sessions are regional', mmr.lint.some(l => l.src === 'multiRegion' && /regional/.test(l.msg)));
+      const mgd = pipe('assistant', P.assistant.expert_copilot.inputs);
+      assert('managed assistant: no BYO state store, Sessions node drawn', mgd.arch.state.drawn === false && mgd.arch.state.managedSessions === true && /Agent Runtime sessions/.test(mgd.dg) && !mgd.comps.includes('AlloyDB (state)'));
     }
     {
       const hy = clone(P.assistant.expert_copilot.inputs); hy.deployment = 'hybrid'; hy.dataSources = ['doc_corpus'];
@@ -219,7 +228,7 @@
       assert('peak volume is at least the average', x.m.volPeak >= x.m.volAvg);
       assert('latency parts sum to the p95 total', Math.abs(x.m.latParts.reduce((s, p) => s + p.ms, 0) - x.m.latencyP95) < 1 && x.m.latParts.length > 0);
       assert('platform cost adds to GenAI in the run-rate', x.cs.platMo > 0 && Math.abs(x.cs.totalMo - ((x.m.costOpt || 0) + (x.m.gpuMo || 0) + x.cs.platMo)) < 1e-6);
-      assert('BigQuery is volume-modeled', x.cs.priced.some(c => c.name === 'BigQuery'));
+      assert('BigQuery is volume-modeled', pipe('assistant', P.assistant.conversational_analytics.inputs).cs.priced.some(c => c.name === 'BigQuery'));
     }
     {
       const base = clone(P.assistant.expert_copilot.inputs);
@@ -323,7 +332,7 @@
       assert('tfgen emits the core files and the ADK skeleton', ['versions.tf', 'variables.tf', 'terraform.tfvars', 'main.tf', 'outputs.tf', 'README.md', 'agent/agent.py'].every(k => k in man.g.files));
       assert('tfgen: project_id is a required placeholder and its variable has no default', man.g.placeholders.some(p => p.var === 'project_id' && p.kind === 'required') && !/\n {2}default/.test(man.g.files['variables.tf'].match(/variable "project_id" \{[\s\S]*?\n\}/)[0]));
       assert('tfgen: README carries every step title and placeholder var', man.g.steps.every(s => man.g.files['README.md'].includes(s.title)) && man.g.placeholders.every(p => man.g.files['README.md'].includes('`' + p.var + '`')));
-      assert('tfgen: managed design = Agent Runtime via adk deploy, Memorystore, KMS, no Secret Manager', man.g.steps.some(s => s.id === 'adk-deploy') && /google_redis_cluster/.test(man.g.files['main.tf']) && /google_kms_crypto_key/.test(man.g.files['main.tf']) && !/google_secret_manager_secret/.test(man.g.files['main.tf']));
+      assert('tfgen: managed design = Agent Runtime via adk deploy + managed Sessions, KMS, no Secret Manager, no BYO state DB', man.g.steps.some(s => s.id === 'adk-deploy') && man.g.steps.some(s => s.id === 'note-managed-sessions') && /google_kms_crypto_key/.test(man.g.files['main.tf']) && !/google_secret_manager_secret/.test(man.g.files['main.tf']) && !/google_alloydb_cluster/.test(man.g.files['main.tf']) && !/google_spanner_instance/.test(man.g.files['main.tf']));
       const hyIn = clone(P.assistant.expert_copilot.inputs); hyIn.deployment = 'hybrid';
       const hy = tg('assistant', hyIn);
       assert('tfgen hybrid: no public gateway, internal-only ingress, gated interconnect bridge + onprem tfvars', !/google_api_gateway/.test(hy.g.files['main.tf']) && /INGRESS_TRAFFIC_INTERNAL_ONLY/.test(hy.g.files['main.tf']) && /google_compute_interconnect_attachment/.test(hy.g.files['main.tf']) && hy.g.placeholders.some(p => p.var === 'onprem_interconnect' && p.kind === 'gated'));
@@ -359,11 +368,14 @@
       assert('a single agent streams: first token = full minus the streaming tail', s.m.latencyStartIsGated === false && Math.abs(s.m.latencyP95 - s.m.latencyStartP95 - stream) < 0.5 && s.m.latParts.some(p => p.stream > 0 && p.stream < p.ms));
       assert('agent QPS, model-call QPS, and the fan-out reconcile', Math.abs(x.m.qpsModelPeak - x.m.qpsAgentPeak * x.arch.agent.modelCallsPerReq) < 1e-9 && x.m.qpsAgentPeak <= x.m.volPeak);
       assert("in-flight at peak follows Little's law and instances respect the HA floor", Math.abs(x.m.inflightPeak - x.m.qpsAgentPeak * x.m.latencyP95 / 1000) < 1e-9 && x.m.agentInstances >= NS.catalog.K.perf.instMin);
-      assert('state sizing is single-sourced into the state-store cost line', x.cs.priced.some(c => c.name === 'AlloyDB (state)' && c.calc.includes(`${x.m.dbNodes} read-pool`)));
+      const stx = pipe('assistant', P.assistant.expert_copilot.inputs, { stateStore: 'alloydb' });
+      assert('state sizing is single-sourced into the state-store cost line', stx.cs.priced.some(c => c.name === 'AlloyDB (state)' && c.calc.includes(`${stx.m.dbNodes} read-pool`)));
       assert('every perf calc string carries substituted numbers', ['ingress', 'agentQps', 'modelQps', 'inflight', 'instances', 'tok', 'state'].every(k => typeof x.m.perfCalc[k] === 'string' && /\d/.test(x.m.perfCalc[k])));
     }
     {
-      const longIn = clone(P.assistant.expert_copilot.inputs); longIn.tokensOut = 1000;
+      /* Heavy grounding (BigQuery scan) so the long-answer full p95 lands in the
+         10-12s window; expert_copilot's default AlloyDB read is too fast for this. */
+      const longIn = clone(P.assistant.expert_copilot.inputs); longIn.tokensOut = 1000; longIn.dataSources = ['bigquery', 'doc_corpus'];
       const x = pipe('assistant', longIn);
       assert('long answers blow the 10s start budget before the 12s full budget and lint first-token', x.m.latencyStartOverBudget === true && x.m.latencyOverBudget === false && x.lint.some(l => /First token/.test(l.msg)));
       const es = pipe('assistant', P.assistant.enterprise_search.inputs);
@@ -425,8 +437,21 @@
       assert('automation surfaces compounded task success and the narrow-agent guard lint', Math.abs(lo.m.runSuccessPct - Math.pow(0.99, Math.min(lo.arch.agent.reactMaxIter, 8)) * 100) < 0.1 && pipe('automation', P.automation.internal_lowstakes.inputs, { reactMaxIter: 12 }).lint.some(l => l.src === 'reactMaxIter' && /compounds/.test(l.msg)));
       assert('the guard never lowers the expected-step metric (12-step guard still compounds over 8)', pipe('automation', P.automation.internal_lowstakes.inputs, { reactMaxIter: 12 }).m.runSuccessSteps === 8);
       assert('assistants carry no compounded-success metric', pipe('assistant', P.assistant.expert_copilot.inputs).m.runSuccessPct == null);
-      assert('semantic layer feeds the text-to-SQL leg as a cached prefix', /SemLayer/.test(ca.dg) && /cached prefix/.test(ca.dg));
-      assert('automation state writes checkpoint per step (cap + 2); assistants stay at 3', Math.abs(lo.m.stateOpsPeak - lo.m.qpsAgentPeak * (lo.arch.agent.reactMaxIter + 2)) < 1e-9 && (() => { const e = pipe('assistant', P.assistant.expert_copilot.inputs); return Math.abs(e.m.stateOpsPeak - e.m.qpsAgentPeak * 3) < 1e-9; })());
+      assert('semantic-layer guidance is an off-diagram lever, not a node', !/SemLayer/.test(ca.dg) && ca.lint.some(l => /semantic layer/i.test(l.msg)));
+      {
+        const oltpIn = clone(P.assistant.conversational_analytics.inputs);
+        oltpIn.dataSources = (oltpIn.dataSources || []).concat(['alloydb_oltp']);
+        oltpIn.latencyPreset = 'interactive';
+        const o = pipe('assistant', oltpIn);
+        assert('AlloyDB joins the Live data box with a read-only MCP edge; BigQuery keeps SQL gates', o.arch.retrieval.liveSel.includes('alloydb_oltp') && /BigQuery · AlloyDB/.test(o.dg) && /-- MCP tool-call · read-only --> Live/.test(o.dg) && /-- SQL gates · dry-run \+ bytes cap --> Live/.test(o.dg));
+        assert('AlloyDB surfaces read-only + read-pool-freshness lints, no AlloyDB SLO conflict on interactive', o.lint.some(l => l.src === 'dataSources' && /read-only/i.test(l.msg)) && o.lint.some(l => l.src === 'dataSources' && /replication lag/i.test(l.msg)) && !o.lint.some(l => l.sev === 'conflict' && /AlloyDB/i.test(l.msg)));
+        assert('AlloyDB bills a priced read-pool BoM line', o.comps.includes('AlloyDB read pool') && o.cs.priced.some(c => c.name === 'AlloyDB read pool' && c.mo > 0 && /read-pool/.test(c.calc)));
+        assert('AlloyDB on the no-agent sub-second path conflicts (cannot be queried)', pipe('assistant', (() => { const a = clone(oltpIn); a.latencyPreset = 'subsecond'; return a; })()).lint.some(l => l.sev === 'conflict' && /can never be queried/.test(l.msg)));
+      }
+      /* State-op rates apply to a bring-your-own store (self-managed). Managed Agent
+         Runtime persists state in Sessions, so it bills no separate state ops. */
+      const smAuto = pipe('automation', (() => { const b = clone(P.automation.internal_lowstakes.inputs); b.opsModel = 'self_managed'; return b; })());
+      assert('self-managed automation checkpoints per step (cap + 2); self-managed assistants stay at 3; managed bills 0', Math.abs(smAuto.m.stateOpsPeak - smAuto.m.qpsAgentPeak * (smAuto.arch.agent.reactMaxIter + 2)) < 1e-9 && (() => { const e = pipe('assistant', P.assistant.self_managed.inputs); return Math.abs(e.m.stateOpsPeak - e.m.qpsAgentPeak * 3) < 1e-9; })() && lo.m.stateOpsPeak === 0);
       assert('chunk math matches the parsed document (48 chunks/doc) and CJK scales ingestion ~1.8x', (() => {
         const base = pipe('assistant', P.assistant.self_managed.inputs);
         const zhIn = clone(P.assistant.self_managed.inputs); zhIn.languages = ['en', 'zh'];

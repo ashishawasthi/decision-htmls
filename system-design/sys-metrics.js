@@ -95,6 +95,7 @@
     const groundSubs = [];
     if (a.retrieval.ragOn) groundSubs.push({ label: 'Vector / hybrid retrieval', ms: L.retrieval });
     if (i.dataSources.includes('bigquery')) groundSubs.push({ label: 'BigQuery scan', ms: L.bigqueryScan });
+    if (i.dataSources.includes('alloydb_oltp')) groundSubs.push({ label: 'AlloyDB read', ms: L.alloydbOltp });
     if (i.dataSources.includes('web')) groundSubs.push({ label: 'Web grounding (live search)', ms: L.webGround });
     const grounding = groundSubs.length ? Math.max(...groundSubs.map(s => s.ms)) : 0;
     const parts = [];
@@ -253,7 +254,7 @@
       inflight: `${nf(m.qpsAgentPeak, 2)} agent-side peak/s x ${nf(m.latencyP95 / 1000, 2)} s in system (Little's law: L = lambda x W)`,
       instances: answerOnly ? 'managed answer API - autoscaling is the service side of the contract' : `ceil(${nf(m.inflightPeak, 1)} in-flight / ${PF.instConcurrency} concurrent streams per instance), floor of ${PF.instMin} for HA`,
       tok: answerOnly ? 'no model quota of yours - Agent Search bundles the answer generation' : `${nf(m.qpsAgentPeak, 2)} agent-side peak/s x (${nf(i.tokensIn)} in + ${nf(i.tokensOut)} out) tokens x 60 s = ${nf(m.tokPerMinPeak)} tok/min`,
-      state: a.state.drawn ? `${nf(m.qpsAgentPeak, 2)} agent-side peak/s x ${stateOps} state ops/${a.purpose === 'automation' ? 'run (checkpoint after each step + read/close)' : 'req'}; ${m.dbNodes} node(s) at ~100 peak QPS each` : '',
+      state: a.state.drawn ? `${nf(m.qpsAgentPeak, 2)} agent-side peak/s x ${stateOps} state ops/${a.purpose === 'automation' ? 'run (checkpoint after each step + read/close)' : 'req'}; ${m.dbNodes} node(s) at ~100 peak QPS each` : (a.state.managedSessions ? 'state persisted by Agent Runtime Sessions; 0 separate state-store ops/s across 0 nodes' : ''),
       vvs: m.vvsNodes ? `max(size: ${m.vvsNodesSize} node(s) at ~${vvsShardGB} GB each, load: ${m.vvsNodesQps} node(s) at ~${PF.vvsQpsPerNode} QPS each on ${nf(m.qpsRetrievalPeak, 1)} retrieval QPS)` : '',
       link: m.linkMbpsPeak != null ? `${nf(m.volPeak, 2)} peak/s x ${nf(i.tokensIn + i.tokensOut)} tok x ${K.net.bytesPerTok} B x 8 bits vs the ${vlanGbps} Gbps VLAN attachment` : '',
       gpu: m.gpuFleetTPS ? `${m.gpuNodes} node(s) x ${nf(m.gpuNodeTPS)} tok/s x ${m.gpuUtilPct}% util = ${nf(m.gpuFleetTPS)} tok/s vs ${nf(m.gpuPeakOutTPS)} required at peak` : '',
@@ -316,7 +317,20 @@
        Agent Search has no built-in de-id, so the managed path pre-processes. */
     if (a.retrieval.dlpDeidIngest) b.add('Cloud DLP (ingest de-identify)');
     if (i.dataSources.includes('bigquery') && !a.agent.answerOnly) b.add('BigQuery');
-    if (a.state.drawn) b.add(a.state.store.includes('spanner') ? 'Spanner' : a.state.store.includes('alloydb') ? 'AlloyDB (state)' : a.state.store === 'redis' ? 'Memorystore Cluster' : 'Cloud SQL');
+    /* AlloyDB operational source: the operational primary is the company's existing
+       database; the agent only adds a dedicated read pool (read isolation), so it
+       bills its own line even when AlloyDB is also the vector store. */
+    if (i.dataSources.includes('alloydb_oltp') && !a.agent.answerOnly) b.add('AlloyDB read pool');
+    /* The managed-sessions path adds no store line (bundled in Agent Runtime). A
+       self-hosted Redis-on-GKE state store rides the GKE line, so it is not billed
+       here; a managed Redis (redisTier without GKE) is a Memorystore line. */
+    if (a.state.drawn) {
+      const s = a.state.store;
+      if (s.includes('spanner')) b.add('Spanner');
+      else if (s.includes('alloydb')) b.add('AlloyDB (state)');
+      else if (s === 'redis') { if (!a.state.redisSelf) b.add('Memorystore Cluster'); }
+      else if (s === 'cloudsql') b.add('Cloud SQL');
+    }
     /* Managed Memorystore: the Redis hot tier when it is not self-hosted on GKE,
        and the managed response cache. Self-hosted Redis rides the GKE line. */
     if ((a.state.drawn && a.state.redisTier && !a.state.redisSelf) || (a.caching.responseCacheOn && !a.agent.gke)) b.add('Memorystore Cluster');
@@ -396,6 +410,10 @@
         const base = (r.baseVcpu * r.vcpuHr + r.baseGiB * r.gibHr) * H;
         const pool = (r.poolVcpu * r.vcpuHr + r.poolGiB * r.gibHr) * H;
         return { mo: base + dbNodes * pool + m.indexGB * r.storagePerGB, calc: `primary $${nf(base)} + ${dbNodes} read-pool node x $${nf(pool)} + ${nf(m.indexGB, 1)} GB x $${r.storagePerGB} storage` };
+      },
+      'AlloyDB read pool': r => {
+        const pool = (r.poolVcpu * r.vcpuHr + r.poolGiB * r.gibHr) * H;
+        return { mo: dbNodes * pool, calc: `${dbNodes} read-pool node x $${nf(pool)} (read isolation from the existing operational primary; queried read-only via the MCP server)` };
       },
       'Dataflow': r => docsDay > 0
         ? { mo: r.baseMo + docsDay * r.perDoc, calc: `$${r.baseMo} daily-batch floor + ${nf(docsDay)} changed docs/day x $${r.perDoc}` }
