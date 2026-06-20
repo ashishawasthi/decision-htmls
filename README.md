@@ -4,6 +4,8 @@ A set of HTML tools for reasoning about how to build and run
 generative AI workloads on Google Cloud. Each tool is a single 
 HTML file that opens straight from disk.
 
+**Live:** [storage.googleapis.com/ashishawasthi.appspot.com/index.html](https://storage.googleapis.com/ashishawasthi.appspot.com/index.html)
+
 ## Tools
 
 | File | What it answers |
